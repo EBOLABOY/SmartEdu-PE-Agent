@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+
+# Environment and local state
+**/.env
+.codex-tasks/
+paths.json
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.local
+
+# Official source attachments and unpacked notice folder
+深圳市教育局关于开展2026年国家智慧教育平台全面深化应用教师数字素养提升实践活动的通知/
+*.pdf
+*.doc
+*.docx
+*.pptx
