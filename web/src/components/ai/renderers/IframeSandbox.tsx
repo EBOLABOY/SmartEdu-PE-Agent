@@ -1,6 +1,9 @@
 "use client";
 
+import { ShieldAlert } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+
+import { analyzeSandboxHtml, injectSandboxCsp } from "@/lib/sandbox-html";
 
 interface IframeSandboxProps {
   htmlContent: string;
@@ -9,31 +12,14 @@ interface IframeSandboxProps {
 const DESIGN_WIDTH = 1920;
 const DESIGN_HEIGHT = 1080;
 
-function injectSandboxCsp(htmlContent: string) {
-  const csp = [
-    "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
-    "img-src data: blob:",
-    "font-src data:",
-    "connect-src 'none'",
-    "frame-ancestors 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-  ].join("; ");
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`;
-
-  if (/<head[\s>]/i.test(htmlContent)) {
-    return htmlContent.replace(/<head([^>]*)>/i, `<head$1>${meta}`);
-  }
-
-  return `<!DOCTYPE html><html lang="zh-CN"><head>${meta}<meta charset="utf-8"></head><body>${htmlContent}</body></html>`;
-}
-
 export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const sandboxedHtml = useMemo(() => injectSandboxCsp(htmlContent), [htmlContent]);
+  const securityReport = useMemo(() => analyzeSandboxHtml(htmlContent), [htmlContent]);
+  const sandboxedHtml = useMemo(
+    () => (securityReport.blockedReasons.length === 0 ? injectSandboxCsp(htmlContent) : ""),
+    [htmlContent, securityReport.blockedReasons.length],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -54,6 +40,27 @@ export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
     return () => observer.disconnect();
   }, []);
 
+  if (securityReport.blockedReasons.length > 0) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-black p-6">
+        <div className="max-w-xl rounded-2xl border border-destructive/40 bg-background/95 p-6 text-left shadow-xl">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="size-5 text-destructive" />
+            <h3 className="text-sm font-semibold text-foreground">已阻断高风险大屏预览</h3>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            当前大屏包含外部资源或高风险操作。为保证系统稳定，本次预览已被拒绝。
+          </p>
+          <div className="mt-4 space-y-2 text-sm text-foreground">
+            {securityReport.blockedReasons.map((reason) => (
+              <p key={reason}>- {reason}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-black">
       <iframe
@@ -65,8 +72,14 @@ export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
           height: DESIGN_HEIGHT,
           transform: `translate(-50%, -50%) scale(${scale})`,
         }}
-        title="Artifact Preview Sandbox"
+        title="互动大屏预览"
       />
+
+      {securityReport.warnings.length > 0 ? (
+        <div className="absolute left-4 top-4 max-w-md rounded-xl border border-border/60 bg-background/90 px-3 py-2 text-xs text-foreground shadow-md backdrop-blur">
+          {securityReport.warnings[0]}
+        </div>
+      ) : null}
     </div>
   );
 }

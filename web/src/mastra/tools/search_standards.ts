@@ -1,7 +1,14 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
-import { peStandards2022Entries, type PeStandardEntry } from "../knowledge/standards_2022";
+import { DEFAULT_STANDARDS_MARKET, standardsMarketSchema, type StandardsMarket } from "@/lib/lesson-authoring-contract";
+
+import {
+  peStandards2022Corpus,
+  peStandards2022Entries,
+  type PeStandardCorpus,
+  type PeStandardEntry,
+} from "../knowledge/standards_2022";
 
 export type StandardReference = {
   id: string;
@@ -17,6 +24,26 @@ export type StandardReference = {
   teachingImplications: string[];
   citation: string;
   score: number;
+};
+
+export type StandardsCorpusMetadata = {
+  corpusId: string;
+  displayName: string;
+  officialStatus: string;
+  sourceName: string;
+  issuer: string;
+  version: string;
+  url: string;
+  availability: "ready" | "planned";
+};
+
+export type StandardsSearchResult = {
+  requestedMarket: StandardsMarket;
+  resolvedMarket: StandardsMarket;
+  references: StandardReference[];
+  context: string;
+  corpus: StandardsCorpusMetadata;
+  warning?: string;
 };
 
 const DEFAULT_LIMIT = 6;
@@ -120,7 +147,38 @@ function toReference(entry: PeStandardEntry, score: number): StandardReference {
   };
 }
 
-export function searchStandards(query: string, limit = DEFAULT_LIMIT): StandardReference[] {
+function toCorpusMetadata(corpus: PeStandardCorpus, availability: StandardsCorpusMetadata["availability"]): StandardsCorpusMetadata {
+  return {
+    corpusId: corpus.corpusId,
+    displayName: corpus.displayName,
+    officialStatus: corpus.officialStatus,
+    sourceName: corpus.source.name,
+    issuer: corpus.source.issuer,
+    version: corpus.source.version,
+    url: corpus.source.url,
+    availability,
+  };
+}
+
+function resolveStandardsMarket(market = DEFAULT_STANDARDS_MARKET) {
+  if (market === "us-shape-k12") {
+    return {
+      requestedMarket: market,
+      resolvedMarket: DEFAULT_STANDARDS_MARKET,
+      corpus: toCorpusMetadata(peStandards2022Corpus, "ready"),
+      warning: "当前仓库尚未接入 SHAPE 体育标准知识库，已自动回退到中国《义务教育体育与健康课程标准（2022年版）》结构化语料。",
+    };
+  }
+
+  return {
+    requestedMarket: market,
+    resolvedMarket: market,
+    corpus: toCorpusMetadata(peStandards2022Corpus, "ready"),
+    warning: undefined,
+  };
+}
+
+function scoreCorpusEntries(query: string, limit = DEFAULT_LIMIT) {
   const scoredReferences = peStandards2022Entries
     .map((entry) => toReference(entry, scoreEntry(entry, query)))
     .filter((reference) => reference.score > 0)
@@ -136,15 +194,9 @@ export function searchStandards(query: string, limit = DEFAULT_LIMIT): StandardR
     .map((entry) => toReference(entry, 0));
 }
 
-export function buildStandardsContext(query: string, limit = DEFAULT_LIMIT) {
-  const references = searchStandards(query, limit);
-
-  return buildStandardsContextFromReferences(references);
-}
-
 export function buildStandardsContextFromReferences(references: StandardReference[]) {
   if (references.length === 0) {
-    return "未检索到匹配的《义务教育体育与健康课程标准（2022年版）》结构化条目；请以教育部正式课标文本为准。";
+    return "未检索到匹配的体育课程标准结构化条目；请以目标市场的正式现行课标文本为准。";
   }
 
   return references
@@ -164,14 +216,59 @@ export function buildStandardsContextFromReferences(references: StandardReferenc
     .join("\n\n");
 }
 
+export function searchStandards(
+  query: string,
+  options: {
+    limit?: number;
+    market?: StandardsMarket;
+  } = {},
+): StandardsSearchResult {
+  const { limit = DEFAULT_LIMIT, market = DEFAULT_STANDARDS_MARKET } = options;
+  const resolved = resolveStandardsMarket(market);
+  const references = scoreCorpusEntries(query, limit);
+
+  return {
+    requestedMarket: resolved.requestedMarket,
+    resolvedMarket: resolved.resolvedMarket,
+    references,
+    context: buildStandardsContextFromReferences(references),
+    corpus: resolved.corpus,
+    warning: resolved.warning,
+  };
+}
+
+export function buildStandardsContext(
+  query: string,
+  options: {
+    limit?: number;
+    market?: StandardsMarket;
+  } = {},
+) {
+  return searchStandards(query, options).context;
+}
+
 export const searchStandardsTool = createTool({
   id: "search-standards",
-  description: "检索《义务教育体育与健康课程标准（2022年版）》结构化条目，用于生成合规体育教案。",
+  description: "检索体育课程标准结构化条目，用于生成合规体育教案，并返回目标市场与语料解析信息。",
   inputSchema: z.object({
     query: z.string().describe("教师输入的课程主题、年级、运动项目、安全要求或评价要求。"),
     limit: z.number().int().min(1).max(10).optional().describe("最多返回的课标条目数量，默认 6 条。"),
+    market: standardsMarketSchema.optional().describe("目标教育市场。当前仓库默认支持中国义务教育体育课标。"),
   }),
   outputSchema: z.object({
+    requestedMarket: standardsMarketSchema,
+    resolvedMarket: standardsMarketSchema,
+    corpus: z.object({
+      corpusId: z.string(),
+      displayName: z.string(),
+      officialStatus: z.string(),
+      sourceName: z.string(),
+      issuer: z.string(),
+      version: z.string(),
+      url: z.string().url(),
+      availability: z.enum(["ready", "planned"]),
+    }),
+    warning: z.string().optional(),
     references: z.array(
       z.object({
         id: z.string(),
@@ -191,12 +288,7 @@ export const searchStandardsTool = createTool({
     ),
     context: z.string(),
   }),
-  execute: async ({ query, limit }) => {
-    const references = searchStandards(query, limit);
-
-    return {
-      references,
-      context: buildStandardsContext(query, limit),
-    };
+  execute: async ({ query, limit, market }) => {
+    return searchStandards(query, { limit, market });
   },
 });

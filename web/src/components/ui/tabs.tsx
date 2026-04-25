@@ -29,13 +29,23 @@ export function Tabs({
 }: React.HTMLAttributes<HTMLDivElement> & TabsContextValue) {
   return (
     <TabsContext.Provider value={{ value, onValueChange }}>
-      <div className={cn("w-full", className)}>{children}</div>
+      <div data-slot="tabs" className={cn("w-full", className)}>{children}</div>
     </TabsContext.Provider>
   );
 }
 
 export function TabsList({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex items-end gap-4", className)} role="tablist" {...props} />;
+  return (
+    <div
+      data-slot="tabs-list"
+      className={cn(
+        "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+        className,
+      )}
+      role="tablist"
+      {...props}
+    />
+  );
 }
 
 export function TabsTrigger({
@@ -50,9 +60,13 @@ export function TabsTrigger({
   return (
     <button
       aria-selected={selected}
+      data-slot="tabs-trigger"
+      data-state={selected ? "active" : "inactive"}
       className={cn(
-        "border-b-2 border-transparent px-1 pb-3 text-sm font-medium text-neutral-500 transition-colors hover:text-neutral-900",
-        selected && "border-neutral-950 text-neutral-950",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+        selected
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
         className,
       )}
       onClick={() => context.onValueChange(value)}
@@ -76,5 +90,16 @@ export function TabsContent({
     return null;
   }
 
-  return <div className={cn("h-full", className)} role="tabpanel" {...props} />;
+  return (
+    <div
+      data-slot="tabs-content"
+      data-state="active"
+      className={cn(
+        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        className,
+      )}
+      role="tabpanel"
+      {...props}
+    />
+  );
 }

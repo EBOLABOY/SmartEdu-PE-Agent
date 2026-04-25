@@ -1,0 +1,231 @@
+import { describe, expect, it } from "vitest";
+
+import { buildArtifactLifecycle } from "@/components/ai/artifact-model";
+import type {
+  PersistedArtifactVersion,
+  SmartEduUIMessage,
+  WorkflowTraceData,
+} from "@/lib/lesson-authoring-contract";
+
+function createTrace(requestId: string, mode: "lesson" | "html"): WorkflowTraceData {
+  return {
+    protocolVersion: "structured-v1",
+    requestId,
+    mode,
+    phase: "completed",
+    responseTransport: "structured-data-part",
+    requestedMarket: "cn-compulsory-2022",
+    resolvedMarket: "cn-compulsory-2022",
+    warnings: [],
+    trace: [],
+    updatedAt: "2026-04-25T12:00:00.000Z",
+  };
+}
+
+const PERSISTED_VERSIONS: PersistedArtifactVersion[] = [
+  {
+    id: "11111111-1111-1111-1111-111111111111",
+    artifactId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    stage: "lesson",
+    contentType: "markdown",
+    content: "# 历史教案\n\n## 热身活动",
+    status: "ready",
+    protocolVersion: "structured-v1",
+    versionNumber: 1,
+    createdAt: "2026-04-25T12:00:00.000Z",
+    isCurrent: true,
+    trace: createTrace("persisted-lesson-trace", "lesson"),
+  },
+  {
+    id: "22222222-2222-2222-2222-222222222222",
+    artifactId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    stage: "html",
+    contentType: "html",
+    content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>历史大屏</h1></body></html>",
+    status: "ready",
+    protocolVersion: "structured-v1",
+    versionNumber: 1,
+    createdAt: "2026-04-25T12:05:00.000Z",
+    isCurrent: true,
+    trace: createTrace("persisted-html-trace", "html"),
+  },
+];
+
+describe("artifact-model", () => {
+  it("会在无实时消息时回放持久化的教案与大屏", () => {
+    const lifecycle = buildArtifactLifecycle([], "ready", false, PERSISTED_VERSIONS);
+
+    expect(lifecycle.markdown).toContain("# 历史教案");
+    expect(lifecycle.html).toContain("<h1>历史大屏</h1>");
+    expect(lifecycle.stage).toBe("html");
+    expect(lifecycle.activeArtifact?.stage).toBe("html");
+    expect(lifecycle.activeArtifact?.persistedVersionId).toBe(
+      "22222222-2222-2222-2222-222222222222",
+    );
+    expect(lifecycle.versions[0]?.isCurrent).toBe(true);
+    expect(lifecycle.activeTrace?.requestId).toBe("persisted-html-trace");
+    expect(lifecycle.versions).toHaveLength(2);
+  });
+
+  it("会在仅教案为当前版本时优先展示当前教案并清空大屏", () => {
+    const lifecycle = buildArtifactLifecycle([], "ready", false, [
+      {
+        ...PERSISTED_VERSIONS[0],
+        isCurrent: true,
+      },
+      {
+        ...PERSISTED_VERSIONS[1],
+        isCurrent: false,
+      },
+    ]);
+
+    expect(lifecycle.stage).toBe("lesson");
+    expect(lifecycle.html).toBe("");
+    expect(lifecycle.markdown).toContain("# 历史教案");
+    expect(lifecycle.activeArtifact?.stage).toBe("lesson");
+    expect(lifecycle.activeArtifact?.isCurrent).toBe(true);
+  });
+
+  it("会在已有实时 assistant Artifact 时优先使用实时版本", () => {
+    const assistantMessage = {
+      id: "assistant-lesson",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "lesson",
+            contentType: "markdown",
+            content: "# 实时教案\n\n## 主教材",
+            isComplete: false,
+            status: "streaming",
+            source: "data-part",
+            updatedAt: "2026-04-25T12:10:00.000Z",
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle(
+      [assistantMessage],
+      "streaming",
+      false,
+      PERSISTED_VERSIONS,
+    );
+
+    expect(lifecycle.markdown).toContain("# 实时教案");
+    expect(lifecycle.html).toBe("");
+    expect(lifecycle.status).toBe("streaming");
+    expect(lifecycle.versions).toHaveLength(1);
+    expect(lifecycle.versions[0]?.id).toBe("assistant-lesson-lesson");
+  });
+
+  it("会在恢复到包含 html 的历史消息时直接展示互动大屏", () => {
+    const historyMessages = [
+      {
+        id: "assistant-lesson-history",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-artifact",
+            id: "artifact",
+            data: {
+              protocolVersion: "structured-v1",
+              stage: "lesson",
+              contentType: "markdown",
+              content: "# 历史教案\n\n## 主教材",
+              isComplete: true,
+              status: "ready",
+              source: "data-part",
+              updatedAt: "2026-04-25T12:00:00.000Z",
+            },
+          },
+        ],
+      },
+      {
+        id: "assistant-html-history",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-artifact",
+            id: "artifact",
+            data: {
+              protocolVersion: "structured-v1",
+              stage: "html",
+              contentType: "html",
+              content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>历史大屏</h1></body></html>",
+              isComplete: true,
+              status: "ready",
+              source: "data-part",
+              updatedAt: "2026-04-25T12:05:00.000Z",
+            },
+          },
+        ],
+      },
+    ] as SmartEduUIMessage[];
+
+    const lifecycle = buildArtifactLifecycle(historyMessages, "ready", false, []);
+
+    expect(lifecycle.stage).toBe("html");
+    expect(lifecycle.html).toContain("<h1>历史大屏</h1>");
+    expect(lifecycle.activeArtifact?.stage).toBe("html");
+  });
+
+  it("会在项目存在持久化当前版本时覆盖历史消息中的旧大屏", () => {
+    const historyMessages = [
+      {
+        id: "assistant-html-history",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-artifact",
+            id: "artifact",
+            data: {
+              protocolVersion: "structured-v1",
+              stage: "html",
+              contentType: "html",
+              content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>旧大屏</h1></body></html>",
+              isComplete: true,
+              status: "ready",
+              source: "data-part",
+              updatedAt: "2026-04-25T12:05:00.000Z",
+            },
+          },
+        ],
+      },
+    ] as SmartEduUIMessage[];
+
+    const lifecycle = buildArtifactLifecycle(historyMessages, "ready", false, [
+      {
+        ...PERSISTED_VERSIONS[0],
+        isCurrent: true,
+      },
+      {
+        ...PERSISTED_VERSIONS[1],
+        isCurrent: false,
+      },
+    ]);
+
+    expect(lifecycle.stage).toBe("lesson");
+    expect(lifecycle.html).toBe("");
+    expect(lifecycle.markdown).toContain("# 历史教案");
+    expect(lifecycle.versions).toHaveLength(2);
+  });
+
+  it("会在新请求仅有用户消息时停止回放旧历史", () => {
+    const userMessage = {
+      id: "user-lesson",
+      role: "user",
+      parts: [{ type: "text", text: "请重新生成一份新教案" }],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([userMessage], "submitted", false, PERSISTED_VERSIONS);
+
+    expect(lifecycle.versions).toHaveLength(0);
+    expect(lifecycle.markdown).toBe("");
+    expect(lifecycle.html).toBe("");
+    expect(lifecycle.status).toBe("streaming");
+  });
+});
