@@ -8,8 +8,8 @@ type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row
 
 const BASE_ROW: ArtifactVersionRow = {
   artifact_id: "11111111-1111-1111-1111-111111111111",
-  content: "# 教案方案",
-  content_type: "markdown",
+  content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+  content_type: "lesson-json",
   created_at: "2026-04-25T12:00:00.000Z",
   created_by: "22222222-2222-2222-2222-222222222222",
   id: "33333333-3333-3333-3333-333333333333",
@@ -70,6 +70,6 @@ describe("artifact-version-history", () => {
     });
 
     expect(version.contentType).toBe("lesson-json");
-    expect(version.content).toContain("操控性技能");
+    expect(version.content).toContain("\"title\":\"XXX\"");
   });
 });

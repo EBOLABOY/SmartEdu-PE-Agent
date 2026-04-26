@@ -11,11 +11,10 @@ import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
-import { competitionLessonPlanToMarkdown } from "@/lib/competition-lesson-markdown";
 
 export type ExtractedArtifact = {
   stage?: GenerationMode;
-  markdown: string;
+  lessonContent: string;
   html: string;
   htmlComplete: boolean;
   source: "structured" | "none";
@@ -29,7 +28,7 @@ export type ExtractedArtifact = {
 };
 
 const EMPTY_EXTRACTED_ARTIFACT: ExtractedArtifact = {
-  markdown: "",
+  lessonContent: "",
   html: "",
   htmlComplete: false,
   source: "none",
@@ -48,16 +47,11 @@ export function lessonContentToPlan(
   }
 }
 
-function lessonContentToMarkdown(
+function normalizeLessonArtifactContent(
   content: string,
-  contentType: ArtifactContentType,
-  lessonPlan?: CompetitionLessonPlan,
+  _contentType: ArtifactContentType,
 ) {
-  if (contentType !== "lesson-json") {
-    return content;
-  }
-
-  return lessonPlan ? competitionLessonPlanToMarkdown(lessonPlan) : content;
+  return content;
 }
 
 export function getMessageText(message: Pick<UIMessage, "parts">) {
@@ -65,6 +59,16 @@ export function getMessageText(message: Pick<UIMessage, "parts">) {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("");
+}
+
+export function getMessageReasoningText(message: Pick<UIMessage, "parts">) {
+  return message.parts
+    .filter((part): part is Extract<SmartEduUIMessage["parts"][number], { type: "reasoning" }> =>
+      part.type === "reasoning",
+    )
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export type HtmlDocumentExtraction = {
@@ -141,12 +145,11 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
 
     return {
       stage: structuredArtifact.stage,
-      markdown:
+      lessonContent:
         structuredArtifact.stage === "lesson"
-          ? lessonContentToMarkdown(
+          ? normalizeLessonArtifactContent(
               structuredArtifact.content,
               structuredArtifact.contentType,
-              lessonPlan,
             )
           : "",
       html: structuredArtifact.stage === "html" ? structuredArtifact.content : "",

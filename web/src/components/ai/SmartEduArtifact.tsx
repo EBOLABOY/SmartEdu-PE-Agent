@@ -14,7 +14,7 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -27,10 +27,9 @@ import {
   ArtifactTitle,
 } from "@/components/ai-elements/artifact";
 import type { ArtifactLifecycle, ArtifactLifecycleStatus, ArtifactSnapshot } from "@/components/ai/artifact-model";
+import ArtifactTextViewer from "@/components/ai/renderers/ArtifactTextViewer";
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
-import LessonEditor from "@/components/ai/renderers/LessonEditor";
-import MarkdownViewer from "@/components/ai/renderers/MarkdownViewer";
 import CompetitionLessonPrintFrame, {
   type CompetitionLessonPrintFrameHandle,
 } from "@/components/lesson-print/CompetitionLessonPrintFrame";
@@ -40,10 +39,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportHtmlResponseSchema } from "@/lib/lesson-authoring-contract";
-import { markdownToCompetitionLessonPlan } from "@/lib/competition-lesson-markdown";
 
 type ArtifactView = "lesson" | "canvas" | "versions";
-type LessonPresentation = "print" | "draft";
 
 interface SmartEduArtifactProps {
   lifecycle: ArtifactLifecycle;
@@ -52,7 +49,6 @@ interface SmartEduArtifactProps {
   isRestoringVersion?: boolean;
   projectId?: string | null;
   onGenerateHtml: () => void;
-  onLessonMarkdownChange?: (markdown: string) => void;
   onRestoreArtifactVersion?: (snapshot: ArtifactSnapshot) => Promise<void> | void;
 }
 
@@ -215,29 +211,24 @@ export default function SmartEduArtifact({
   isRestoringVersion = false,
   projectId,
   onGenerateHtml,
-  onLessonMarkdownChange,
   onRestoreArtifactVersion,
 }: SmartEduArtifactProps) {
   const [view, setView] = useState<ArtifactView | null>(null);
-  const [lessonPresentation, setLessonPresentation] = useState<LessonPresentation>("print");
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const printFrameRef = useRef<CompetitionLessonPrintFrameHandle>(null);
-  const pendingHtmlToastRef = useRef(false);
   const activeView = view ?? getDefaultView(lifecycle);
   const html = lifecycle.html;
   const streamingHtml = lifecycle.streamingHtml;
   const hasHtml = Boolean(html.trim());
   const isGeneratingHtml = lifecycle.stage === "html" && lifecycle.isHtmlStreaming;
-  const hasLesson = Boolean(lifecycle.markdown.trim());
-  const isStreamingLessonDraft =
+  const hasLesson = Boolean(lifecycle.lessonPlan || lifecycle.lessonContent.trim());
+  const isStreamingLessonJson =
     lifecycle.stage === "lesson" &&
     lifecycle.status === "streaming" &&
-    lifecycle.activeArtifact?.contentType === "markdown";
-  const competitionLessonPlan = useMemo(
-    () => lifecycle.lessonPlan ?? markdownToCompetitionLessonPlan(lifecycle.markdown),
-    [lifecycle.lessonPlan, lifecycle.markdown],
-  );
+    lifecycle.activeArtifact?.contentType === "lesson-json" &&
+    !lifecycle.lessonPlan;
+  const competitionLessonPlan = lifecycle.lessonPlan;
   const effectiveSelectedVersionId =
     selectedVersionId && lifecycle.versions.some((snapshot) => snapshot.id === selectedVersionId)
       ? selectedVersionId
@@ -251,23 +242,6 @@ export default function SmartEduArtifact({
       !selectedVersion.isCurrent &&
       onRestoreArtifactVersion,
   );
-
-  useEffect(() => {
-    if (isLoading && lifecycle.stage === "html") {
-      pendingHtmlToastRef.current = true;
-      return;
-    }
-
-    if (!isLoading && pendingHtmlToastRef.current && lifecycle.html.trim()) {
-      toast.success("互动大屏已生成", { description: "可在画布中预览或导出大屏文件。", id: "generate-html" });
-      pendingHtmlToastRef.current = false;
-      return;
-    }
-
-    if (!isLoading && !lifecycle.html.trim()) {
-      pendingHtmlToastRef.current = false;
-    }
-  }, [isLoading, lifecycle.html, lifecycle.stage]);
 
   const downloadBlob = useMemo(() => {
     if (!hasHtml) {
@@ -350,7 +324,6 @@ export default function SmartEduArtifact({
   };
 
   const generateHtml = () => {
-    toast.loading("正在生成互动大屏", { description: "AI 将基于已确认教案生成可预览的大屏。", id: "generate-html" });
     onGenerateHtml();
   };
 
@@ -442,34 +415,16 @@ export default function SmartEduArtifact({
                     <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
                       <div className="flex min-w-0 items-center gap-2">
                         <h2 className="shrink-0 text-sm font-semibold text-foreground">
-                          {isStreamingLessonDraft ? "教案草稿生成中" : "教案预览"}
+                          {isStreamingLessonJson ? "教案结构化生成中" : "教案预览"}
                         </h2>
                         <span className="hidden truncate text-xs text-muted-foreground lg:inline">
-                          {isStreamingLessonDraft
-                            ? "正在流式生成 Markdown 草稿，完成后自动切换正式打印版。"
-                            : "固定 A4 模板，修改请在左侧对话提出。"}
+                          {isStreamingLessonJson
+                              ? "正在流式生成 CompetitionLessonPlan JSON，校验通过后自动切换正式打印版。"
+                              : "固定 A4 模板，修改请在左侧对话提出。"}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
-                          <Button
-                            className="h-7 rounded-sm px-2.5 text-xs"
-                            onClick={() => setLessonPresentation("print")}
-                            type="button"
-                            variant={lessonPresentation === "print" ? "brand" : "ghost"}
-                          >
-                            正式打印版
-                          </Button>
-                          <Button
-                            className="h-7 rounded-sm px-2.5 text-xs"
-                            onClick={() => setLessonPresentation("draft")}
-                            type="button"
-                            variant={lessonPresentation === "draft" ? "brand" : "ghost"}
-                          >
-                            草稿编辑
-                          </Button>
-                        </div>
-                        {lessonPresentation === "print" && !isStreamingLessonDraft ? (
+                        {competitionLessonPlan && !isStreamingLessonJson ? (
                           <Button className="h-8 px-2.5 text-xs" onClick={printLesson} type="button" variant="outline">
                             <Printer className="size-3.5" />
                             打印/另存 PDF
@@ -478,18 +433,12 @@ export default function SmartEduArtifact({
                       </div>
                     </div>
                     <div className="min-h-0 flex-1">
-                      {isStreamingLessonDraft ? (
-                        <MarkdownViewer content={lifecycle.markdown} />
-                      ) : lessonPresentation === "print" ? (
+                      {isStreamingLessonJson || !competitionLessonPlan ? (
+                        <ArtifactTextViewer content={lifecycle.lessonContent} />
+                      ) : (
                         <div className="h-full min-h-0 overflow-hidden bg-slate-100">
                           <CompetitionLessonPrintFrame ref={printFrameRef} lesson={competitionLessonPlan} />
                         </div>
-                      ) : (
-                        <LessonEditor
-                          content={lifecycle.markdown}
-                          disabled={isLoading}
-                          onMarkdownChange={onLessonMarkdownChange}
-                        />
                       )}
                     </div>
                   </div>
@@ -593,7 +542,7 @@ export default function SmartEduArtifact({
 
                       <div className="min-h-0 flex-1">
                         {selectedVersion.stage === "lesson" ? (
-                          <MarkdownViewer content={selectedVersion.content} />
+                          <ArtifactTextViewer content={selectedVersion.content} />
                         ) : selectedVersion.status === "streaming" ? (
                           <HtmlGenerationPanel
                             code={selectedVersion.content}

@@ -23,6 +23,6 @@ describe("competition-lesson-fields", () => {
     const field = getCompetitionLessonEditableField("/evaluation/1/description");
 
     expect(field?.label).toBe("二颗星评价");
-    expect(field?.read(DEFAULT_COMPETITION_LESSON_PLAN)).toContain("运动兴趣较高");
+    expect(field?.read(DEFAULT_COMPETITION_LESSON_PLAN)).toBe("XXX");
   });
 });

@@ -89,7 +89,7 @@ create table public.artifact_versions (
   source_message_id uuid references public.messages(id) on delete set null,
   created_by uuid references auth.users(id) on delete set null,
   stage public.artifact_stage not null,
-  content_type text not null check (content_type in ('markdown', 'html')),
+  content_type text not null check (content_type in ('html', 'lesson-json')),
   content text not null,
   status public.artifact_status not null default 'ready',
   protocol_version text not null,

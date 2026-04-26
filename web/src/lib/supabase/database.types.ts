@@ -29,7 +29,7 @@ export type Database = {
         Row: {
           artifact_id: string;
           content: string;
-          content_type: "markdown" | "html" | "lesson-json";
+          content_type: "html" | "lesson-json";
           created_at: string;
           created_by: string | null;
           id: string;
@@ -45,7 +45,7 @@ export type Database = {
         Insert: {
           artifact_id: string;
           content: string;
-          content_type: "markdown" | "html" | "lesson-json";
+          content_type: "html" | "lesson-json";
           created_at?: string;
           created_by?: string | null;
           id?: string;
@@ -304,7 +304,7 @@ export type Database = {
       create_artifact_version: {
         Args: {
           artifact_content: string;
-          artifact_content_type: "markdown" | "html" | "lesson-json";
+          artifact_content_type: "html" | "lesson-json";
           artifact_protocol_version: string;
           artifact_request_id?: string | null;
           artifact_stage: "lesson" | "html";

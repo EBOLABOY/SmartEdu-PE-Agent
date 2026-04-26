@@ -35,8 +35,8 @@ describe("project-chat-store", () => {
           data: {
             protocolVersion: "structured-v1",
             stage: "lesson",
-            contentType: "markdown",
-            content: "# 教案方案\n\n## 热身",
+            contentType: "lesson-json",
+            content: JSON.stringify({ title: "篮球运球接力" }),
             isComplete: true,
             status: "ready",
             source: "data-part",
@@ -46,7 +46,7 @@ describe("project-chat-store", () => {
       ],
     } as SmartEduUIMessage);
 
-    expect(content).toContain("# 教案方案");
+    expect(content).toContain("篮球运球接力");
   });
 
   it("会把结构化 html Artifact 摘要化为工作台提示文案", () => {

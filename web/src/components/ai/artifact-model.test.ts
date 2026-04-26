@@ -28,8 +28,8 @@ const PERSISTED_VERSIONS: PersistedArtifactVersion[] = [
     id: "11111111-1111-1111-1111-111111111111",
     artifactId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     stage: "lesson",
-    contentType: "markdown",
-    content: "# 历史教案\n\n## 热身活动",
+    contentType: "lesson-json",
+    content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
     status: "ready",
     protocolVersion: "structured-v1",
     versionNumber: 1,
@@ -56,7 +56,7 @@ describe("artifact-model", () => {
   it("会在无实时消息时回放持久化的教案与大屏", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, PERSISTED_VERSIONS);
 
-    expect(lifecycle.markdown).toContain("# 历史教案");
+    expect(lifecycle.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.html).toContain("<h1>历史大屏</h1>");
     expect(lifecycle.stage).toBe("html");
     expect(lifecycle.activeArtifact?.stage).toBe("html");
@@ -82,7 +82,7 @@ describe("artifact-model", () => {
 
     expect(lifecycle.stage).toBe("lesson");
     expect(lifecycle.html).toBe("");
-    expect(lifecycle.markdown).toContain("# 历史教案");
+    expect(lifecycle.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.activeArtifact?.stage).toBe("lesson");
     expect(lifecycle.activeArtifact?.isCurrent).toBe(true);
   });
@@ -98,8 +98,8 @@ describe("artifact-model", () => {
           data: {
             protocolVersion: "structured-v1",
             stage: "lesson",
-            contentType: "markdown",
-            content: "# 实时教案\n\n## 主教材",
+            contentType: "lesson-json",
+            content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
             isComplete: false,
             status: "streaming",
             source: "data-part",
@@ -116,7 +116,7 @@ describe("artifact-model", () => {
       PERSISTED_VERSIONS,
     );
 
-    expect(lifecycle.markdown).toContain("# 实时教案");
+    expect(lifecycle.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.html).toBe("");
     expect(lifecycle.status).toBe("streaming");
     expect(lifecycle.versions).toHaveLength(1);
@@ -220,8 +220,8 @@ describe("artifact-model", () => {
             data: {
               protocolVersion: "structured-v1",
               stage: "lesson",
-              contentType: "markdown",
-              content: "# 历史教案\n\n## 主教材",
+              contentType: "lesson-json",
+              content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
               isComplete: true,
               status: "ready",
               source: "data-part",
@@ -296,7 +296,7 @@ describe("artifact-model", () => {
 
     expect(lifecycle.stage).toBe("lesson");
     expect(lifecycle.html).toBe("");
-    expect(lifecycle.markdown).toContain("# 历史教案");
+    expect(lifecycle.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.versions).toHaveLength(2);
   });
 
@@ -310,12 +310,12 @@ describe("artifact-model", () => {
     const lifecycle = buildArtifactLifecycle([userMessage], "submitted", false, PERSISTED_VERSIONS);
 
     expect(lifecycle.versions).toHaveLength(0);
-    expect(lifecycle.markdown).toBe("");
+    expect(lifecycle.lessonContent).toBe("");
     expect(lifecycle.html).toBe("");
     expect(lifecycle.status).toBe("streaming");
   });
 
-  it("会把持久化 lesson-json 派生为 Markdown 供旧视图消费", () => {
+  it("会把持久化 lesson-json 保持为 JSON 内容并解析 lessonPlan", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, [
       {
         ...PERSISTED_VERSIONS[0],
@@ -324,9 +324,9 @@ describe("artifact-model", () => {
       },
     ]);
 
-    expect(lifecycle.markdown).toContain("# 操控性技能－足球游戏");
+    expect(lifecycle.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
-    expect(lifecycle.versions[0]?.content).toContain("## 十、课时计划（教案）");
+    expect(lifecycle.versions[0]?.content).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.versions[0]?.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
     expect(lifecycle.versions[0]?.contentType).toBe("lesson-json");
   });

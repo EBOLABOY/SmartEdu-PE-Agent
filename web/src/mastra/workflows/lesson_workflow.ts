@@ -9,13 +9,14 @@ import {
   peTeacherContextSchema,
   standardsMarketSchema,
   workflowTraceEntrySchema,
+  workflowStandardsReferenceSchema,
   type GenerationMode,
   type LessonScreenPlan,
   type PeTeacherContext,
 } from "@/lib/lesson-authoring-contract";
 
 import { buildPeTeacherSystemPrompt } from "../agents/pe_teacher";
-import { searchStandards } from "../tools/search_standards";
+import { runStandardsRetrievalSkill } from "../skills/standards_retrieval_skill";
 
 export const lessonWorkflowInputSchema = z.object({
   query: z.string().trim().min(1),
@@ -41,14 +42,15 @@ export const lessonWorkflowOutputSchema = z.object({
     url: z.string().url(),
     availability: z.enum(["ready", "planned"]),
     referenceCount: z.number(),
+    references: z.array(workflowStandardsReferenceSchema).optional(),
     warning: z.string().optional(),
   }),
   generationPlan: z.object({
     mode: generationModeSchema,
     confirmedLessonRequired: z.boolean(),
-    outputProtocol: z.enum(["lesson-json", "markdown", "html-document"]),
+    outputProtocol: z.enum(["lesson-json", "html-document"]),
     responseTransport: z.literal("structured-data-part"),
-    assistantTextPolicy: z.enum(["mirror-markdown", "suppress-json-text", "suppress-html-text"]),
+    assistantTextPolicy: z.enum(["mirror-json-text", "suppress-json-text", "suppress-html-text"]),
     maxSteps: z.number(),
     protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
   }),
@@ -89,7 +91,8 @@ const retrieveStandardsStep = createStep({
   inputSchema: lessonWorkflowInputSchema,
   outputSchema: standardsRetrievalOutputSchema,
   execute: async ({ inputData }) => {
-    const standardsResult = searchStandards(inputData.query, {
+    const standardsResult = runStandardsRetrievalSkill({
+      query: inputData.query,
       market: inputData.market,
     });
 
@@ -125,6 +128,16 @@ const retrieveStandardsStep = createStep({
         url: standardsResult.corpus.url,
         availability: standardsResult.corpus.availability,
         referenceCount: standardsResult.references.length,
+        references: standardsResult.references.map((reference) => ({
+          id: reference.id,
+          title: reference.title,
+          summary: reference.summary,
+          citation: reference.citation,
+          module: reference.module,
+          gradeBands: reference.gradeBands,
+          sectionPath: reference.sectionPath,
+          score: reference.score,
+        })),
         ...(standardsResult.warning ? { warning: standardsResult.warning } : {}),
       },
       trace,
@@ -176,9 +189,9 @@ const planDeliveryStep = createStep({
       generationPlan: {
         mode: inputData.mode,
         confirmedLessonRequired: inputData.mode === "html",
-        outputProtocol: inputData.mode === "html" ? ("html-document" as const) : ("markdown" as const),
+        outputProtocol: inputData.mode === "html" ? ("html-document" as const) : ("lesson-json" as const),
         responseTransport: "structured-data-part" as const,
-        assistantTextPolicy: inputData.mode === "html" ? ("suppress-html-text" as const) : ("mirror-markdown" as const),
+        assistantTextPolicy: inputData.mode === "html" ? ("suppress-html-text" as const) : ("mirror-json-text" as const),
         maxSteps: 3,
         protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
       },
@@ -190,7 +203,7 @@ const planDeliveryStep = createStep({
           detail:
             inputData.mode === "html"
               ? "已规划 HTML 结构化 Artifact 推流，并抑制原始 HTML 文本进入会话历史。"
-              : "已规划 Markdown 草稿实时推流，完成后后台转换为 CompetitionLessonPlan JSON Artifact。",
+              : "已规划 CompetitionLessonPlan JSON 实时推流，完成后直接校验并封装为正式 Artifact。",
         },
       ],
     };

@@ -6,6 +6,7 @@ import {
   resolveLessonSupportModule,
   type LessonSupportModule,
 } from "./lesson-screen-modules";
+import { competitionLessonPlanSchema, type CompetitionLessonPlanRow } from "./competition-lesson-contract";
 import { renderLessonScreenScript } from "./lesson-screen-script";
 import { buildLessonScreenProjectState } from "./lesson-screen-state";
 import { renderLessonScreenStyles } from "./lesson-screen-styles";
@@ -156,6 +157,12 @@ function formatDurationLabel(seconds: number) {
 }
 
 function getLessonTitle(lessonPlan: string) {
+  try {
+    return competitionLessonPlanSchema.parse(JSON.parse(lessonPlan)).title;
+  } catch {
+    // Continue with legacy text extraction for historical lesson artifacts.
+  }
+
   const heading = lessonPlan
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -323,6 +330,49 @@ function parseLooseSlides(lessonPlan: string) {
   return slides;
 }
 
+function createSlideFromLessonRow(row: CompetitionLessonPlanRow): LessonSlide {
+  const content = [
+    ...row.content,
+    ...row.methods.teacher,
+    ...row.methods.students,
+  ].filter(Boolean);
+  const joined = [...content, ...row.organization].join(" ");
+  const durationSeconds = parseDurationSeconds(row.time) ?? 300;
+  const boardRequired = BOARD_KEYWORDS.test(joined);
+
+  return {
+    title: row.content[0] ?? row.structure,
+    durationSeconds,
+    durationLabel: row.time,
+    estimated: false,
+    content: content.slice(0, 5),
+    organization: row.organization.join("；") || "按结构化教案组织形式开展。",
+    teacherTip: row.methods.teacher[0] ?? "聚焦本环节重难点，及时提示与纠错。",
+    studentAction: row.methods.students[0] ?? "按要求观察、练习、合作与反馈。",
+    safety: "保持安全距离，听从口令，控制练习强度。",
+    assessment: "观察参与度、动作质量和合作表现。",
+    boardRequired,
+    supportModule: resolveLessonSupportModule({
+      title: row.content[0] ?? row.structure,
+      content,
+      organization: row.organization.join("；"),
+      boardRequired,
+    }),
+    actionSteps: buildActionSteps(row.content[0] ?? row.structure, content),
+    selfHelp: buildSelfHelp(row.content[0] ?? row.structure, joined),
+  };
+}
+
+function parseJsonLessonSlides(lessonPlan: string) {
+  try {
+    const parsed = competitionLessonPlanSchema.parse(JSON.parse(lessonPlan));
+
+    return parsed.periodPlan.rows.map(createSlideFromLessonRow);
+  } catch {
+    return [];
+  }
+}
+
 function takeShortText(value: string, maxLength = 34) {
   const compact = value.replace(/\s+/g, "");
 
@@ -385,7 +435,11 @@ function buildSelfHelp(title: string, source: string) {
 }
 
 export function extractLessonSlides(lessonPlan: string) {
-  const parsedSlides = [...parseTableSlides(lessonPlan), ...parseLooseSlides(lessonPlan)];
+  const parsedSlides = [
+    ...parseJsonLessonSlides(lessonPlan),
+    ...parseTableSlides(lessonPlan),
+    ...parseLooseSlides(lessonPlan),
+  ];
   const seen = new Set<string>();
   const uniqueSlides = parsedSlides.filter((slide) => {
     const identity = normalizeSlideIdentity(slide);

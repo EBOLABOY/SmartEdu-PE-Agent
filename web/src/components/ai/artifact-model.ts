@@ -2,10 +2,10 @@ import { useMemo } from "react";
 
 import {
   extractArtifactFromMessage,
+  getMessageReasoningText,
   getMessageText,
   lessonContentToPlan,
 } from "@/lib/artifact-protocol";
-import { competitionLessonPlanToMarkdown } from "@/lib/competition-lesson-markdown";
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 import type {
   ArtifactContentType,
@@ -34,7 +34,7 @@ export type ArtifactSnapshot = {
 };
 
 export type ArtifactLifecycle = {
-  markdown: string;
+  lessonContent: string;
   html: string;
   streamingHtml: string;
   isHtmlStreaming: boolean;
@@ -66,16 +66,12 @@ function resolveSnapshotStatus(
   return fallbackStatus;
 }
 
-export { extractArtifactFromMessage, getMessageText };
+export { extractArtifactFromMessage, getMessageReasoningText, getMessageText };
 
-function lessonContentToMarkdown(content: string, contentType?: ArtifactContentType) {
+function normalizeLessonVersionContent(content: string, contentType?: ArtifactContentType) {
   const lessonPlan = contentType ? lessonContentToPlan(content, contentType) : undefined;
 
-  if (!lessonPlan) {
-    return content;
-  }
-
-  return competitionLessonPlanToMarkdown(lessonPlan);
+  return lessonPlan ? JSON.stringify(lessonPlan) : content;
 }
 
 function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): ArtifactSnapshot {
@@ -89,7 +85,7 @@ function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): Artif
       (version.stage === "html"
         ? `大屏版本 ${version.versionNumber}`
         : `教案版本 ${version.versionNumber}`),
-    content: lessonContentToMarkdown(version.content, version.contentType),
+    content: normalizeLessonVersionContent(version.content, version.contentType),
     contentType: version.contentType,
     lessonPlan,
     status: version.status,
@@ -161,7 +157,7 @@ export function buildArtifactLifecycle(
       latestTrace = extracted.trace;
     }
 
-    if (extracted.markdown) {
+    if (extracted.lessonContent) {
       const version = liveVersions.filter((item) => item.stage === "lesson").length + 1;
       const fallbackStatus: ArtifactLifecycleStatus =
         isStreaming && index === assistantMessages.length - 1 ? "streaming" : "ready";
@@ -170,7 +166,7 @@ export function buildArtifactLifecycle(
         id: `${messageId}-lesson`,
         stage: "lesson",
         title: extracted.title ?? `教案版本 ${version}`,
-        content: extracted.markdown,
+        content: extracted.lessonContent,
         contentType: extracted.artifact?.contentType,
         lessonPlan: extracted.lessonPlan,
         status: resolveSnapshotStatus(extracted.status, fallbackStatus),
@@ -226,7 +222,7 @@ export function buildArtifactLifecycle(
   const activeArtifact = shouldPreferHtml ? latestHtml : latestLesson;
 
   return {
-    markdown: latestLesson?.content ?? "",
+    lessonContent: latestLesson?.content ?? "",
     html: shouldPreferHtml ? latestReadyHtml?.content ?? "" : "",
     streamingHtml:
       shouldPreferHtml && latestHtml?.status === "streaming" ? latestHtml.content : "",

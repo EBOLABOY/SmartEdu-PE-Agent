@@ -1,6 +1,5 @@
 import {
   artifactVersionsResponseSchema,
-  type ArtifactContentType,
   projectIdSchema,
   saveLessonArtifactVersionRequestBodySchema,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -172,11 +171,7 @@ export async function POST(
   }
 
   const requestId = crypto.randomUUID();
-  const contentType: ArtifactContentType = parsedBody.data.lessonPlan ? "lesson-json" : "markdown";
-  const content =
-    contentType === "lesson-json"
-      ? JSON.stringify(parsedBody.data.lessonPlan)
-      : parsedBody.data.markdown ?? "";
+  const content = JSON.stringify(parsedBody.data.lessonPlan);
 
   try {
     await saveArtifactVersionWithSupabase(supabase, {
@@ -185,7 +180,7 @@ export async function POST(
       artifact: {
         protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
         stage: "lesson",
-        contentType,
+        contentType: "lesson-json",
         content,
         isComplete: true,
         status: "ready",

@@ -3,4 +3,4 @@ alter table public.artifact_versions
 
 alter table public.artifact_versions
   add constraint artifact_versions_content_type_check
-  check (content_type in ('markdown', 'html', 'lesson-json'));
+  check (content_type in ('html', 'lesson-json'));

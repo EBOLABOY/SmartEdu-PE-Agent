@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractArtifactFromMessage,
   extractHtmlDocumentFromText,
+  getMessageReasoningText,
   getStructuredArtifactPart,
 } from "@/lib/artifact-protocol";
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
@@ -66,7 +67,7 @@ describe("artifact-protocol", () => {
     expect(extraction.htmlComplete).toBe(false);
   });
 
-  it("能从结构化 lesson data part 中解析流式教案", () => {
+  it("能从结构化 lesson-json data part 中解析流式教案", () => {
     const message: SmartEduUIMessage = {
       id: "assistant-lesson",
       role: "assistant",
@@ -77,8 +78,8 @@ describe("artifact-protocol", () => {
           data: {
             protocolVersion: "structured-v1",
             stage: "lesson",
-            contentType: "markdown",
-            content: "# 教案方案\n\n## 一、基础信息",
+            contentType: "lesson-json",
+            content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
             isComplete: false,
             status: "streaming",
             source: "data-part",
@@ -92,9 +93,30 @@ describe("artifact-protocol", () => {
     const extracted = extractArtifactFromMessage(message);
 
     expect(artifact?.stage).toBe("lesson");
-    expect(extracted.markdown).toContain("# 教案方案");
+    expect(extracted.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
+    expect(extracted.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
     expect(extracted.status).toBe("streaming");
     expect(extracted.html).toBe("");
+  });
+
+  it("能从 reasoning part 中提取模型返回的思考文本", () => {
+    const message: SmartEduUIMessage = {
+      id: "assistant-reasoning",
+      role: "assistant",
+      parts: [
+        {
+          type: "reasoning",
+          text: "先分析年级和教材，再匹配课标。",
+          state: "done",
+        },
+        {
+          type: "text",
+          text: "教案生成中。",
+        },
+      ],
+    };
+
+    expect(getMessageReasoningText(message)).toBe("先分析年级和教材，再匹配课标。");
   });
 
   it("能从结构化 html data part 中解析 HTML Artifact", () => {
@@ -123,10 +145,10 @@ describe("artifact-protocol", () => {
 
     expect(extracted.html).toContain("<body>OK</body>");
     expect(extracted.htmlComplete).toBe(true);
-    expect(extracted.markdown).toBe("");
+    expect(extracted.lessonContent).toBe("");
   });
 
-  it("能从结构化 lesson-json data part 中派生 Markdown", () => {
+  it("能从结构化 lesson-json data part 中保留 JSON 内容并解析 lessonPlan", () => {
     const message: SmartEduUIMessage = {
       id: "assistant-lesson-json",
       role: "assistant",
@@ -150,8 +172,7 @@ describe("artifact-protocol", () => {
 
     const extracted = extractArtifactFromMessage(message);
 
-    expect(extracted.markdown).toContain("# 操控性技能－足球游戏");
-    expect(extracted.markdown).toContain("## 十、课时计划（教案）");
+    expect(extracted.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(extracted.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
     expect(extracted.artifact?.contentType).toBe("lesson-json");
   });

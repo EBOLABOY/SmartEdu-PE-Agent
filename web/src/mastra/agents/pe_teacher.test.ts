@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildPeTeacherSystemPrompt, PE_TEACHER_SYSTEM_PROMPT } from "@/mastra/agents/pe_teacher";
+import { peTeacherPromptSkills } from "@/mastra/skills";
 
 describe("pe_teacher", () => {
   it("默认注入广东省比赛体育教案参考格式", () => {
@@ -10,15 +11,24 @@ describe("pe_teacher", () => {
     expect(PE_TEACHER_SYSTEM_PROMPT).toContain("课的结构、具体教学内容、教与学的方法、组织形式、运动时间、强度");
   });
 
-  it("lesson 阶段要求流式输出 Markdown 草稿", () => {
+  it("暴露可枚举的 prompt skills，便于后续 runtime skill 化", () => {
+    expect(Object.keys(peTeacherPromptSkills).sort()).toEqual([
+      "baseTeacherPersonaSkill",
+      "competitionLessonFormatSkill",
+      "htmlScreenSkill",
+      "lessonAuthoringSkill",
+    ]);
+  });
+
+  it("lesson 阶段要求流式输出 CompetitionLessonPlan JSON", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, { mode: "lesson" });
 
-    expect(prompt).toContain("必须严格采用广东省比赛体育教案参考格式");
-    expect(prompt).toContain("Markdown 教案草稿");
-    expect(prompt).toContain("只输出 Markdown 正文");
-    expect(prompt).toContain("| 星级 | 评价方面 |");
-    expect(prompt).toContain("| 课的结构 | 具体教学内容 | 教与学的方法 | 组织形式 | 运动时间 | 强度 |");
-    expect(prompt).toContain("运动时间”列必须统一使用“X分钟”或“X-Y分钟”格式");
+    expect(prompt).toContain("必须严格依据广东省比赛体育教案参考格式");
+    expect(prompt).toContain("CompetitionLessonPlan JSON");
+    expect(prompt).toContain("只输出 JSON 对象本体");
+    expect(prompt).toContain("evaluation 数组");
+    expect(prompt).toContain("periodPlan.rows 数组");
+    expect(prompt).toContain("time 必须统一使用“X分钟”或“X-Y分钟”格式");
     expect(prompt).toContain("禁止使用 2’、2'、2min、2, 或纯数字");
     expect(prompt).not.toContain("请确认教案是否无误，确认后我再生成互动大屏");
   });
@@ -38,7 +48,7 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("教师姓名：王明");
     expect(prompt).toContain("任教年级：四年级");
     expect(prompt).toContain("水平：水平二");
-    expect(prompt).toContain("“学校：”和“授课教师：”必须同步填写");
+    expect(prompt).toContain("teacher.school 和 teacher.name 必须同步填写");
     expect(prompt).toContain("副标题必须采用“—水平X·X年级”格式");
     expect(prompt).toContain("基础信息表中的年级与水平必须同步填写");
   });

@@ -8,10 +8,12 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import React, { Suspense, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import AssistantProcess from "@/components/ai/AssistantProcess";
 import SmartEduArtifact from "@/components/ai/SmartEduArtifact";
 import {
   extractArtifactFromMessage,
   getMessageText,
+  type ArtifactLifecycle,
   useArtifactLifecycle,
 } from "@/components/ai/artifact-model";
 import {
@@ -20,6 +22,22 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
+import {
+  InlineCitation,
+  InlineCitationCard,
+  InlineCitationCardBody,
+  InlineCitationCardTrigger,
+  InlineCitationCarousel,
+  InlineCitationCarouselContent,
+  InlineCitationCarouselHeader,
+  InlineCitationCarouselIndex,
+  InlineCitationCarouselItem,
+  InlineCitationCarouselNext,
+  InlineCitationCarouselPrev,
+  InlineCitationQuote,
+  InlineCitationSource,
+  InlineCitationText,
+} from "@/components/ai-elements/inline-citation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import {
   PromptInput,
@@ -29,6 +47,8 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
+import { Source, Sources, SourcesContent, SourcesTrigger } from "@/components/ai-elements/sources";
+import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
 import AuthPanel from "@/components/auth/AuthPanel";
 import BrandLogo from "@/components/BrandLogo";
 import LandingPage from "@/components/LandingPage";
@@ -45,10 +65,16 @@ import {
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
-import { competitionLessonPlanToMarkdown, markdownToCompetitionLessonPlan } from "@/lib/competition-lesson-markdown";
 import { competitionLessonPatchResponseSchema } from "@/lib/competition-lesson-patch";
 import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
-import { buildLessonScreenPlanFromMarkdown } from "@/lib/lesson-screen-plan";
+import {
+  getAssistantCitationLabel,
+  getAssistantCitationSources,
+  getAssistantSources,
+  getAssistantSuggestions,
+  type AssistantSourceItem,
+} from "@/lib/assistant-reference-ui";
+import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -167,7 +193,6 @@ async function requestSaveLessonArtifactVersion(
   projectId: string,
   input: {
     lessonPlan?: CompetitionLessonPlan;
-    markdown: string;
     summary?: string;
   },
 ): Promise<ArtifactVersionsResponse> {
@@ -177,7 +202,6 @@ async function requestSaveLessonArtifactVersion(
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      markdown: input.markdown,
       lessonPlan: input.lessonPlan,
       title: "教案 Artifact",
       summary: input.summary,
@@ -286,9 +310,93 @@ function getAssistantConversationText(message: SmartEduUIMessage) {
   return rawText || "正在生成...";
 }
 
+function AssistantInlineCitation({
+  citationLabel,
+  citationSources,
+  sources,
+  text,
+}: {
+  citationLabel: string;
+  citationSources: string[];
+  sources: AssistantSourceItem[];
+  text: string;
+}) {
+  if (!citationSources.length || !sources.length) {
+    return <MessageResponse>{text}</MessageResponse>;
+  }
+
+  return (
+    <p className="text-sm leading-relaxed">
+      <InlineCitation>
+        <InlineCitationText>{text}</InlineCitationText>
+        <InlineCitationCard>
+          <InlineCitationCardTrigger sources={citationSources}>
+            {citationLabel}
+          </InlineCitationCardTrigger>
+          <InlineCitationCardBody>
+            <InlineCitationCarousel>
+              <InlineCitationCarouselHeader>
+                <InlineCitationCarouselPrev />
+                <InlineCitationCarouselIndex />
+                <InlineCitationCarouselNext />
+              </InlineCitationCarouselHeader>
+              <InlineCitationCarouselContent>
+                {sources.map((source) => (
+                  <InlineCitationCarouselItem key={source.id}>
+                    <InlineCitationSource
+                      description={source.description}
+                      title={source.title}
+                      url={source.href}
+                    />
+                    <InlineCitationQuote>{source.citation}</InlineCitationQuote>
+                  </InlineCitationCarouselItem>
+                ))}
+              </InlineCitationCarouselContent>
+            </InlineCitationCarousel>
+          </InlineCitationCardBody>
+        </InlineCitationCard>
+      </InlineCitation>
+    </p>
+  );
+}
+
+function AssistantSources({ sources }: { sources: AssistantSourceItem[] }) {
+  if (!sources.length) {
+    return null;
+  }
+
+  return (
+    <Sources className="mt-3 mb-0 rounded-xl border border-border/60 bg-background/60 p-2.5 text-muted-foreground">
+      <SourcesTrigger className="text-foreground" count={sources.length}>
+        <span className="font-medium">课标来源 {sources.length} 条</span>
+      </SourcesTrigger>
+      <SourcesContent className="w-full">
+        {sources.map((source) => (
+          <Source
+            className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-left transition-colors hover:bg-muted"
+            href={source.href}
+            key={source.id}
+            title={source.title}
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-medium text-foreground">{source.title}</span>
+              <span className="mt-0.5 line-clamp-2 block text-muted-foreground">
+                {source.citation}
+              </span>
+            </span>
+          </Source>
+        ))}
+      </SourcesContent>
+    </Sources>
+  );
+}
+
 function ChatMessage({ message }: { message: SmartEduUIMessage }) {
   const isUser = message.role === "user";
   const text = isUser ? getMessageText(message) : getAssistantConversationText(message);
+  const sources = isUser ? [] : getAssistantSources(message);
+  const citationSources = isUser ? [] : getAssistantCitationSources(message);
+  const citationLabel = isUser ? "" : getAssistantCitationLabel(message);
 
   return (
     <Message from={message.role}>
@@ -302,7 +410,16 @@ function ChatMessage({ message }: { message: SmartEduUIMessage }) {
         {isUser ? (
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{text}</div>
         ) : (
-          <MessageResponse>{text}</MessageResponse>
+          <>
+            <AssistantInlineCitation
+              citationLabel={citationLabel}
+              citationSources={citationSources}
+              sources={sources}
+              text={text}
+            />
+            <AssistantProcess message={message} />
+            <AssistantSources sources={sources} />
+          </>
         )}
       </MessageContent>
     </Message>
@@ -312,6 +429,7 @@ function ChatMessage({ message }: { message: SmartEduUIMessage }) {
 function ChatPanel({
   error,
   isLoading,
+  lifecycle,
   messages,
   onSubmitPrompt,
   projectTitle,
@@ -320,12 +438,20 @@ function ChatPanel({
 }: {
   error: Error | undefined;
   isLoading: boolean;
+  lifecycle: ArtifactLifecycle;
   messages: SmartEduUIMessage[];
   onSubmitPrompt: (query: string) => void;
   projectTitle?: string;
   status: ChatStatus;
   stop: () => void;
 }) {
+  const suggestions = getAssistantSuggestions({
+    canGenerateHtml: Boolean(lifecycle.lessonPlan) && !lifecycle.html,
+    hasHtml: Boolean(lifecycle.html),
+    hasLessonPlan: Boolean(lifecycle.lessonPlan),
+    isLoading,
+  });
+
   return (
     <aside className="z-40 flex h-full min-w-0 flex-col border-r border-border bg-card">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card/95 px-4 backdrop-blur-sm">
@@ -368,6 +494,17 @@ function ChatPanel({
       </Conversation>
 
       <div className="border-t border-border bg-linear-to-b from-card/80 to-muted/40 p-3">
+        {suggestions.length ? (
+          <Suggestions className="mb-2">
+            {suggestions.map((suggestion) => (
+              <Suggestion
+                key={suggestion}
+                onClick={onSubmitPrompt}
+                suggestion={suggestion}
+              />
+            ))}
+          </Suggestions>
+        ) : null}
         <PromptInput
           className="relative rounded-2xl bg-background shadow-[0_12px_32px_rgba(15,23,42,0.12)] transition-all focus-within:shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
           onSubmit={(message) => {
@@ -533,10 +670,6 @@ function AppContent() {
   const [isProjectSheetOpen, setIsProjectSheetOpen] = useState(false);
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
   const [authRevision, setAuthRevision] = useState(0);
-  const [editedLessonMarkdown, setEditedLessonMarkdown] = useState<{
-    sourceId: string;
-    markdown: string;
-  } | null>(null);
   const { messages, sendMessage, setMessages, status, error, stop } = useChat<SmartEduUIMessage>({
     transport: new DefaultChatTransport({
       api: "/api/chat",
@@ -573,34 +706,9 @@ function AppContent() {
     lessonConfirmed,
     persistedVersions,
   );
-  const latestLessonSourceId =
-    [...artifactLifecycle.versions].reverse().find((snapshot) => snapshot.stage === "lesson")?.id ?? "lesson-draft";
-  const latestLessonMarkdown =
-    editedLessonMarkdown?.sourceId === latestLessonSourceId
-      ? editedLessonMarkdown.markdown
-      : artifactLifecycle.markdown;
-  const hasLocalLessonEdit =
-    editedLessonMarkdown?.sourceId === latestLessonSourceId &&
-    editedLessonMarkdown.markdown.trim() !== artifactLifecycle.markdown.trim();
-  const effectiveArtifactLifecycle = useMemo(
-    () => ({
-      ...artifactLifecycle,
-      markdown: latestLessonMarkdown,
-      ...(hasLocalLessonEdit
-        ? {
-            html: "",
-            streamingHtml: "",
-            isHtmlStreaming: false,
-            htmlPreviewVersionId: undefined,
-            lessonPlan: undefined,
-            stage: "lesson" as const,
-          }
-        : {}),
-    }),
-    [artifactLifecycle, hasLocalLessonEdit, latestLessonMarkdown],
-  );
+  const effectiveArtifactLifecycle = artifactLifecycle;
   const canGenerateHtml =
-    Boolean(latestLessonMarkdown.trim()) &&
+    Boolean(effectiveArtifactLifecycle.lessonPlan) &&
     !effectiveArtifactLifecycle.html &&
     !isLoading &&
     !isHistoryLoading;
@@ -878,23 +986,28 @@ function AppContent() {
     }
 
     const shouldPatchCurrentLesson =
-      Boolean(latestLessonMarkdown.trim()) && isLikelyLessonPatchInstruction(normalizedQuery);
+      Boolean(effectiveArtifactLifecycle.lessonPlan) && isLikelyLessonPatchInstruction(normalizedQuery);
 
     if (shouldPatchCurrentLesson) {
       void (async () => {
         try {
-          const currentLessonPlan =
-            effectiveArtifactLifecycle.lessonPlan ?? markdownToCompetitionLessonPlan(latestLessonMarkdown);
+          const currentLessonPlan = effectiveArtifactLifecycle.lessonPlan;
+
+          if (!currentLessonPlan) {
+            toast.warning("当前教案尚未完成结构化校验", {
+              description: "请等待 JSON 教案生成完成并切换为正式打印版后，再发起局部修改。",
+            });
+            return;
+          }
+
           const patchResult = await requestCompetitionLessonPatch({
             instruction: normalizedQuery,
             lessonPlan: currentLessonPlan,
           });
-          const markdown = competitionLessonPlanToMarkdown(patchResult.lessonPlan);
           const changedPaths = patchResult.patch.operations.map((operation) => operation.path);
           const summary = `结构化字段修改：${summarizeCompetitionLessonPatch(changedPaths)}`;
 
           setLessonConfirmed(false);
-          setEditedLessonMarkdown(null);
           setMessages((currentMessages) => [
             ...currentMessages,
             ...createLocalPatchMessages({
@@ -907,7 +1020,6 @@ function AppContent() {
           if (explicitProjectId) {
             const payload = await requestSaveLessonArtifactVersion(explicitProjectId, {
               lessonPlan: patchResult.lessonPlan,
-              markdown,
               summary,
             });
             setPersistedVersionsState(payload.versions);
@@ -937,7 +1049,9 @@ function AppContent() {
   };
 
   const generateHtmlFromLesson = async () => {
-    if (!latestLessonMarkdown.trim() || isLoading) {
+    const currentLessonPlan = effectiveArtifactLifecycle.lessonPlan;
+
+    if (!currentLessonPlan || isLoading) {
       return;
     }
 
@@ -945,11 +1059,12 @@ function AppContent() {
     if (projectId) {
       setIsArtifactSyncPendingState(true);
     }
-    const screenPlan = buildLessonScreenPlanFromMarkdown(latestLessonMarkdown);
+    const lessonPlanJson = JSON.stringify(currentLessonPlan);
+    const screenPlan = buildLessonScreenPlanFromLessonPlan(currentLessonPlan);
 
     await sendMessage(
       { text: "我已确认教案无误，请基于该教案生成互动大屏。" },
-      { body: withProjectContext({ mode: "html", lessonPlan: latestLessonMarkdown, screenPlan }) },
+      { body: withProjectContext({ mode: "html", lessonPlan: lessonPlanJson, screenPlan }) },
     );
   };
 
@@ -1142,6 +1257,7 @@ function AppContent() {
             <ChatPanel
               error={error}
               isLoading={isLoading}
+              lifecycle={effectiveArtifactLifecycle}
               messages={messages}
               onSubmitPrompt={(query) => void submitPrompt(query)}
               projectTitle={currentProject?.title}
@@ -1155,6 +1271,7 @@ function AppContent() {
           <ChatPanel
             error={error}
             isLoading={isLoading}
+            lifecycle={effectiveArtifactLifecycle}
             messages={messages}
             onSubmitPrompt={(query) => void submitPrompt(query)}
             projectTitle={currentProject?.title}
@@ -1172,9 +1289,6 @@ function AppContent() {
             projectId={projectId}
             onGenerateHtml={() => {
               void generateHtmlFromLesson();
-            }}
-            onLessonMarkdownChange={(markdown) => {
-              setEditedLessonMarkdown({ sourceId: latestLessonSourceId, markdown });
             }}
             onRestoreArtifactVersion={(snapshot) => {
               void handleRestoreArtifactVersion(snapshot);

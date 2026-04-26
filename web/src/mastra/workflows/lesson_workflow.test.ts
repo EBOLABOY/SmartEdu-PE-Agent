@@ -21,8 +21,8 @@ describe("lesson-workflow", () => {
 
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
     expect(result.result.generationPlan.protocolVersion).toBe("structured-v1");
-    expect(result.result.generationPlan.outputProtocol).toBe("markdown");
-    expect(result.result.generationPlan.assistantTextPolicy).toBe("mirror-markdown");
+    expect(result.result.generationPlan.outputProtocol).toBe("lesson-json");
+    expect(result.result.generationPlan.assistantTextPolicy).toBe("mirror-json-text");
   });
 
   it("会拦截未确认教案的 HTML 生成", async () => {

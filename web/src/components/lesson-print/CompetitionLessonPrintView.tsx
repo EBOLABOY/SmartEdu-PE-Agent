@@ -6,10 +6,16 @@ interface CompetitionLessonPrintViewProps {
   lesson: CompetitionLessonPlan;
 }
 
-function TextLines({ lines }: { lines: string[] }) {
+function mergeNarrativeLines(lines: string[]) {
+  const normalized = lines.map((line) => line.trim()).filter(Boolean);
+
+  return normalized.length ? [normalized.join("")] : [];
+}
+
+function NarrativeParagraphs({ lines }: { lines: string[] }) {
   return (
     <>
-      {lines.map((line, index) => (
+      {mergeNarrativeLines(lines).map((line, index) => (
         <p className="competition-print-paragraph" key={`${line}-${index}`}>
           {line}
         </p>
@@ -485,13 +491,13 @@ export default function CompetitionLessonPrintView({ lesson }: CompetitionLesson
         </header>
 
         <Section title="一、指导思想">
-          <TextLines lines={lesson.narrative.guidingThought} />
+          <NarrativeParagraphs lines={lesson.narrative.guidingThought} />
         </Section>
         <Section title="二、教材分析">
-          <TextLines lines={lesson.narrative.textbookAnalysis} />
+          <NarrativeParagraphs lines={lesson.narrative.textbookAnalysis} />
         </Section>
         <Section title="三、学情分析">
-          <TextLines lines={lesson.narrative.studentAnalysis} />
+          <NarrativeParagraphs lines={lesson.narrative.studentAnalysis} />
         </Section>
         <Section title="四、学习目标">
           <ObjectivesList lesson={lesson} />

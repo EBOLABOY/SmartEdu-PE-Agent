@@ -7,7 +7,7 @@ export const STRUCTURED_ARTIFACT_PROTOCOL_VERSION = "structured-v1" as const;
 
 export const generationModeSchema = z.enum(["lesson", "html"]);
 export type GenerationMode = z.infer<typeof generationModeSchema>;
-export const artifactContentTypeSchema = z.enum(["markdown", "html", "lesson-json"]);
+export const artifactContentTypeSchema = z.enum(["html", "lesson-json"]);
 export type ArtifactContentType = z.infer<typeof artifactContentTypeSchema>;
 
 export const projectIdSchema = z.string().uuid();
@@ -66,6 +66,35 @@ export const workflowTraceEntrySchema = z.object({
 
 export type WorkflowTraceEntry = z.infer<typeof workflowTraceEntrySchema>;
 
+export const workflowStandardsReferenceSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    title: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    citation: z.string().trim().min(1),
+    module: z.string().trim().min(1),
+    gradeBands: z.array(z.string().trim().min(1)),
+    sectionPath: z.array(z.string().trim().min(1)),
+    score: z.number(),
+  })
+  .strict();
+
+export type WorkflowStandardsReference = z.infer<typeof workflowStandardsReferenceSchema>;
+
+export const workflowStandardsSnapshotSchema = z
+  .object({
+    corpusId: z.string().trim().min(1),
+    displayName: z.string().trim().min(1),
+    sourceName: z.string().trim().min(1),
+    issuer: z.string().trim().min(1),
+    version: z.string().trim().min(1),
+    url: z.string().url(),
+    references: z.array(workflowStandardsReferenceSchema),
+  })
+  .strict();
+
+export type WorkflowStandardsSnapshot = z.infer<typeof workflowStandardsSnapshotSchema>;
+
 export const structuredArtifactDataSchema = z.object({
   protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
   stage: generationModeSchema,
@@ -90,6 +119,7 @@ export const workflowTraceDataSchema = z.object({
   requestedMarket: standardsMarketSchema,
   resolvedMarket: standardsMarketSchema,
   warnings: z.array(z.string()),
+  standards: workflowStandardsSnapshotSchema.optional(),
   trace: z.array(workflowTraceEntrySchema),
   updatedAt: z.string().datetime(),
 });
@@ -170,16 +200,11 @@ export type ArtifactVersionsResponse = z.infer<typeof artifactVersionsResponseSc
 
 export const saveLessonArtifactVersionRequestBodySchema = z
   .object({
-    markdown: z.string().trim().min(1).max(1024 * 1024).optional(),
-    lessonPlan: competitionLessonPlanSchema.optional(),
+    lessonPlan: competitionLessonPlanSchema,
     title: z.string().trim().min(1).max(120).optional(),
     summary: z.string().trim().min(1).max(500).optional(),
   })
-  .strict()
-  .refine((value) => Boolean(value.markdown || value.lessonPlan), {
-    message: "markdown 和 lessonPlan 至少需要提供一个。",
-    path: ["markdown"],
-  });
+  .strict();
 
 export type SaveLessonArtifactVersionRequestBody = z.infer<
   typeof saveLessonArtifactVersionRequestBodySchema
@@ -309,37 +334,6 @@ export const exportHtmlResponseSchema = z.object({
 });
 
 export type ExportHtmlResponse = z.infer<typeof exportHtmlResponseSchema>;
-
-export const lessonPatchTargetSchema = z
-  .object({
-    nodeId: z.string().trim().min(1).max(120),
-    nodeType: z.enum(["heading", "paragraph", "listItem"]),
-    currentText: z.string().trim().min(1).max(6000),
-    surroundingContext: z.string().trim().max(6000).optional(),
-  })
-  .strict();
-
-export type LessonPatchTarget = z.infer<typeof lessonPatchTargetSchema>;
-
-export const lessonPatchRequestBodySchema = z
-  .object({
-    instruction: z.string().trim().min(1).max(2000),
-    target: lessonPatchTargetSchema,
-    market: standardsMarketSchema.optional(),
-  })
-  .strict();
-
-export type LessonPatchRequestBody = z.infer<typeof lessonPatchRequestBodySchema>;
-
-export const lessonPatchResponseSchema = z.object({
-  patch: z.object({
-    nodeId: z.string().trim().min(1),
-    replacementText: z.string().trim().min(1).max(6000),
-    summary: z.string().trim().min(1).max(500),
-  }),
-});
-
-export type LessonPatchResponse = z.infer<typeof lessonPatchResponseSchema>;
 
 export const smartEduDataSchemas = {
   artifact: structuredArtifactDataSchema,

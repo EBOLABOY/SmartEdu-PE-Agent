@@ -45,8 +45,8 @@ export function getPersistedMessageContent(message: SmartEduUIMessage) {
 
   const extracted = extractArtifactFromMessage(message);
 
-  if (extracted.markdown.trim()) {
-    return extracted.markdown.trim();
+  if (extracted.lessonContent.trim()) {
+    return extracted.lessonContent.trim();
   }
 
   if (extracted.html.trim()) {
