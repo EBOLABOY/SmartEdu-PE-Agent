@@ -70,6 +70,12 @@ function isRotationSlide(slide: RenderableLessonSlide) {
   return /轮换|站点|循环|接力|绕|返回|依次|分区|换位/.test(source);
 }
 
+function hasTacticalSignal(slide: Pick<RenderableLessonSlide, "title" | "content" | "organization">) {
+  const source = `${slide.title} ${slide.content.join(" ")} ${slide.organization}`;
+
+  return /战术|攻防|配合|跑位|阵型|路线|传接球|掩护|突破|防守/.test(source);
+}
+
 export function resolveLessonSupportModule(slide: Pick<RenderableLessonSlide, "title" | "content" | "organization" | "boardRequired"> & {
   supportModule?: LessonSupportModule;
 }): LessonSupportModule {
@@ -79,6 +85,10 @@ export function resolveLessonSupportModule(slide: Pick<RenderableLessonSlide, "t
 
   if (isCompetitionSlide(slide as RenderableLessonSlide)) {
     return "scoreboard";
+  }
+
+  if (isRotationSlide(slide as RenderableLessonSlide) && !hasTacticalSignal(slide)) {
+    return "rotation";
   }
 
   if (slide.boardRequired) {

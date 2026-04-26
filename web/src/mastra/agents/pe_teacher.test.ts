@@ -53,7 +53,31 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("教案有几个主要环节或教学内容，就至少生成几个对应内容页");
     expect(prompt).toContain("倒计时结束后自动进入下一页");
     expect(prompt).toContain("战术板");
+    expect(prompt).toContain("data-support-module");
+    expect(prompt).toContain("tacticalBoard、scoreboard、rotation、formation");
     expect(prompt).toContain('section class="slide" data-duration="秒数"');
     expect(prompt).toContain("1 分钟 = 60 秒");
+  });
+
+  it("html 阶段会注入结构化大屏模块计划", () => {
+    const prompt = buildPeTeacherSystemPrompt(undefined, {
+      mode: "html",
+      lessonPlan: "## 十、课时计划（教案）\n| 比赛展示 | 6 分钟 |",
+      screenPlan: {
+        sections: [
+          {
+            title: "比赛展示",
+            durationSeconds: 360,
+            supportModule: "scoreboard",
+            reason: "比赛挑战页需要即时计分反馈。",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("结构化大屏模块计划");
+    expect(prompt).toContain("比赛展示：supportModule=scoreboard");
+    expect(prompt).toContain("durationSeconds=360");
+    expect(prompt).toContain("必须优先遵循其中的 supportModule");
   });
 });

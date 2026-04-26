@@ -17,6 +17,28 @@ export type StandardsMarket = z.infer<typeof standardsMarketSchema>;
 
 export const DEFAULT_STANDARDS_MARKET: StandardsMarket = "cn-compulsory-2022";
 
+export const lessonScreenSupportModuleSchema = z.enum(["tacticalBoard", "scoreboard", "rotation", "formation"]);
+export type LessonScreenSupportModule = z.infer<typeof lessonScreenSupportModuleSchema>;
+
+export const lessonScreenSectionPlanSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120),
+    durationSeconds: z.number().int().positive().max(14_400).optional(),
+    supportModule: lessonScreenSupportModuleSchema,
+    reason: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+export type LessonScreenSectionPlan = z.infer<typeof lessonScreenSectionPlanSchema>;
+
+export const lessonScreenPlanSchema = z
+  .object({
+    sections: z.array(lessonScreenSectionPlanSchema).min(1).max(24),
+  })
+  .strict();
+
+export type LessonScreenPlan = z.infer<typeof lessonScreenPlanSchema>;
+
 export const peTeacherContextSchema = z
   .object({
     grade: z.string().trim().min(1).optional(),
@@ -331,6 +353,7 @@ export const chatRequestBodySchema = z
     context: peTeacherContextSchema.optional(),
     mode: generationModeSchema.optional(),
     lessonPlan: z.string().optional(),
+    screenPlan: lessonScreenPlanSchema.optional(),
     market: standardsMarketSchema.optional(),
   })
   .strict();

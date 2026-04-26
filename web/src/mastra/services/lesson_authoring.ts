@@ -10,6 +10,7 @@ import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   type GenerationMode,
+  type LessonScreenPlan,
   type PeTeacherContext,
   type SmartEduUIMessage,
   type StructuredArtifactData,
@@ -31,6 +32,7 @@ export type LessonAuthoringRequest = {
   context?: PeTeacherContext;
   mode?: GenerationMode;
   lessonPlan?: string;
+  screenPlan?: LessonScreenPlan;
   market?: StandardsMarket;
 };
 
@@ -650,6 +652,7 @@ export async function streamLessonAuthoring(request: LessonAuthoringRequest) {
     mode,
     context: request.context,
     lessonPlan: request.lessonPlan,
+    screenPlan: request.screenPlan,
     market: request.market ?? DEFAULT_STANDARDS_MARKET,
   });
 
@@ -661,7 +664,8 @@ export async function streamLessonAuthoring(request: LessonAuthoringRequest) {
       ? [
           {
             role: "user" as const,
-            content: "请基于系统消息中的已确认教案，生成课堂学习辅助大屏 HTML。",
+            content:
+              "请基于系统消息中的已确认教案和结构化大屏模块计划，生成课堂学习辅助大屏 HTML，并在每个内容页写入 data-support-module。",
           },
         ]
       : await convertToModelMessages(request.messages);

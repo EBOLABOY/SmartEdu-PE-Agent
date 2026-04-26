@@ -1,7 +1,12 @@
 import { Agent } from "@mastra/core/agent";
 import type { AgentConfig } from "@mastra/core/agent";
 
-import { STRUCTURED_ARTIFACT_PROTOCOL_VERSION, type GenerationMode, type PeTeacherContext } from "@/lib/lesson-authoring-contract";
+import {
+  STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+  type GenerationMode,
+  type LessonScreenPlan,
+  type PeTeacherContext,
+} from "@/lib/lesson-authoring-contract";
 
 import { searchStandardsTool } from "../tools/search_standards";
 import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "./guangdong_competition_lesson_format";
@@ -33,17 +38,45 @@ Markdown 草稿字段硬约束：
 2. 必须依次包含“## 一、指导思想”到“## 十、课时计划（教案）”十个章节。
 3. “## 七、学习评价”必须输出 Markdown 表格，表头为“| 星级 | 评价方面 |”，三行星级依次为“三颗星”“二颗星”“一颗星”。
 4. “## 八、运动负荷预计”必须逐行写出“负荷等级：”“目标心率区间：”“平均心率：”“群体运动密度：”“个体运动密度：”“心率曲线节点：”“形成依据：”。心率曲线节点格式必须为“0'=90，7'=120，15'=145”这类时间分钟与心率值配对，节点数 5-8 个，且要与课时计划的运动时间和强度变化一致。
-5. “## 九、场地与器材”必须逐行写出“场地：”“器材：”。场地只写 1 条核心场地；器材只写 3-4 条关键器材并合并同类项，例如“羽毛球拍40把”“羽毛球80个”“球网4副”“标志桶32个”，不要写等待区、观察通道、任务卡、记分板、秒表、急救包等细碎清单，除非用户明确要求。
+5. “## 九、场地与器材”必须逐行写出“场地：”“器材：”。场地只写 1 条核心教学场地；器材只写 3-4 条直接支撑主教材学练的高频核心器材，并合并同类项，例如“羽毛球拍40把”“羽毛球80个”“球网4副”“标志桶32个”。禁止写急救包、任务卡、学习单、记分板、秒表、哨子、扩音器、等待区、观察通道等管理性、安全备用性或展示性物品，除非用户明确要求把它们列入器材。
 6. “## 十、课时计划（教案）”必须包含基础信息表、课时计划六列表和课后作业/教学反思表。
 7. 课时计划六列表表头必须为“| 课的结构 | 具体教学内容 | 教与学的方法 | 组织形式 | 运动时间 | 强度 |”，行内容至少包含准备部分、基本部分、结束部分。
 8. 课时计划基础信息表中的“安全保障”最多 3 条，每条不超过 34 个汉字，优先覆盖“场地检查、学生状态、挥拍/移动距离”三类风险，不要写成长段管理细则。
-9. 课时计划基础信息表中的“场地器材”最多 5 条：1 条场地 + 3-4 条关键器材，必须与“## 九、场地与器材”一致。
+9. 课时计划基础信息表中的“场地器材”最多 5 条：1 条场地 + 3-4 条核心器材，必须与“## 九、场地与器材”一致；只保留上课真正会被学生持续使用或用于组织练习的器材，不写急救包、任务卡、学习单、记分板、秒表、哨子、扩音器等非核心清单。
 10. 表格单元格内多条内容使用 <br> 分隔；不得使用代码围栏。
 `;
 
+function renderScreenPlanPrompt(screenPlan?: LessonScreenPlan) {
+  const base = `
+课堂大屏结构化模块契约：
+1. 每个内容页必须在 <section class="slide lesson-slide" ...> 上输出 data-support-module，取值只能是 tacticalBoard、scoreboard、rotation、formation。
+2. tacticalBoard 用于战术学习、攻防配合、跑位、阵型、路线、传接球、掩护、突破、防守站位等页面。
+3. scoreboard 用于比赛、竞赛、挑战、对抗、展示、计分、得分、积分等页面。
+4. rotation 用于站点轮换、循环练习、接力路线、绕返、分区换位等页面。
+5. formation 用于课堂常规、热身、放松总结、队形组织或无特殊可视化需求页面。
+6. 如果系统提供了“结构化大屏模块计划”，必须优先遵循其中的 supportModule；不得仅凭自然语言重新猜测。`;
+
+  if (!screenPlan?.sections.length) {
+    return base;
+  }
+
+  const sections = screenPlan.sections
+    .map((section, index) => {
+      const duration = section.durationSeconds ? `，durationSeconds=${section.durationSeconds}` : "";
+      const reason = section.reason ? `，理由：${section.reason}` : "";
+      return `${index + 1}. ${section.title}：supportModule=${section.supportModule}${duration}${reason}`;
+    })
+    .join("\n");
+
+  return `${base}
+
+结构化大屏模块计划：
+${sections}`;
+}
+
 export function buildPeTeacherSystemPrompt(
   context?: PeTeacherContext,
-  options?: { mode?: GenerationMode; lessonPlan?: string },
+  options?: { mode?: GenerationMode; lessonPlan?: string; screenPlan?: LessonScreenPlan },
 ) {
   const mode = options?.mode ?? "lesson";
   const modePrompt =
@@ -72,6 +105,8 @@ HTML 页面形态硬约束：
 12. 技术实现必须是单文件 HTML，内联 CSS 和少量内联 JavaScript；不得使用 fetch、XMLHttpRequest、WebSocket、EventSource、cookie、localStorage、sessionStorage、window.open、外链脚本、外链样式、外链图片或 CDN。
 13. 推荐 DOM 结构：用多个 <section class="slide" data-duration="秒数"> 表示页面；用数组或 DOM 数据驱动倒计时、切页、进度条和按钮状态。JavaScript 必须可在 iframe sandbox="allow-scripts" 环境中运行。
 14. 若教案中存在时间总量，所有内容页倒计时总和应尽量等于教案总课时；若无法完全一致，优先保持每个环节的教案原始时间，不要随意增删教学环节。
+
+${renderScreenPlanPrompt(options?.screenPlan)}
 
 已确认教案：
 ${options?.lessonPlan ?? "未提供已确认教案，请要求用户先确认教案。"}`

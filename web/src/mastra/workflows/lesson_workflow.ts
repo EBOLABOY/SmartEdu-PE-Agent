@@ -5,10 +5,12 @@ import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   generationModeSchema,
+  lessonScreenPlanSchema,
   peTeacherContextSchema,
   standardsMarketSchema,
   workflowTraceEntrySchema,
   type GenerationMode,
+  type LessonScreenPlan,
   type PeTeacherContext,
 } from "@/lib/lesson-authoring-contract";
 
@@ -21,6 +23,7 @@ export const lessonWorkflowInputSchema = z.object({
   context: peTeacherContextSchema.optional(),
   market: standardsMarketSchema.default(DEFAULT_STANDARDS_MARKET),
   lessonPlan: z.string().optional(),
+  screenPlan: lessonScreenPlanSchema.optional(),
 });
 
 export const lessonWorkflowOutputSchema = z.object({
@@ -61,6 +64,7 @@ export const lessonWorkflowOutputSchema = z.object({
 export type LessonWorkflowInput = z.infer<typeof lessonWorkflowInputSchema> & {
   context?: PeTeacherContext;
   mode: GenerationMode;
+  screenPlan?: LessonScreenPlan;
 };
 
 export type LessonWorkflowOutput = z.infer<typeof lessonWorkflowOutputSchema>;
@@ -138,6 +142,7 @@ const constructPromptStep = createStep({
       buildPeTeacherSystemPrompt(inputData.context, {
         mode: inputData.mode,
         lessonPlan: inputData.lessonPlan,
+        screenPlan: inputData.screenPlan,
       }),
       `\n目标市场：${inputData.standards.resolvedMarket}`,
       `使用语料：${inputData.standards.displayName}`,

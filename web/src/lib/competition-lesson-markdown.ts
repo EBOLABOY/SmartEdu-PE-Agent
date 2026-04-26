@@ -24,6 +24,8 @@ const PRINT_VENUE_ITEM_LIMIT = 1;
 const PRINT_VENUE_TEXT_LIMIT = 24;
 const PRINT_EQUIPMENT_ITEM_LIMIT = 4;
 const PRINT_EQUIPMENT_TEXT_LIMIT = 18;
+const NON_CORE_EQUIPMENT_PATTERN =
+  /急救|医药|药箱|任务卡|学习单|记录单|评价表|记分|计分|积分|秒表|哨子|扩音|音响|展板|白板|粉笔|笔|号码牌|队服|马甲|袖标|观察|等待|通道|分区牌/;
 
 function normalizeMarkdown(markdown: string) {
   return markdown.replace(/\r\n/g, "\n").trim();
@@ -74,7 +76,7 @@ function splitCellLines(text: string) {
 function compactPrintText(text: string, maxLength: number) {
   const compacted = stripMarkdownSyntax(text).replace(/\s+/g, "");
 
-  return compacted.length > maxLength ? `${compacted.slice(0, maxLength)}…` : compacted;
+  return compacted.length > maxLength ? compacted.slice(0, maxLength) : compacted;
 }
 
 function compactPrintList(lines: string[], maxItems: number, maxLength: number, fallback: string[]) {
@@ -95,6 +97,20 @@ function compactPrintList(lines: string[], maxItems: number, maxLength: number, 
   return compacted.length ? compacted : fallback;
 }
 
+function compactPrintEquipmentList(lines: string[], fallback: string[]) {
+  const equipmentItems = lines
+    .flatMap((line) =>
+      stripMarkdownSyntax(line)
+        .replace(/^器材[：:]\s*/, "")
+        .split(/[、，,；;]/),
+    )
+    .filter((line) => !NON_CORE_EQUIPMENT_PATTERN.test(line))
+    .map((line) => compactPrintText(line, PRINT_EQUIPMENT_TEXT_LIMIT))
+    .filter(Boolean);
+
+  return compactPrintList(equipmentItems, PRINT_EQUIPMENT_ITEM_LIMIT, PRINT_EQUIPMENT_TEXT_LIMIT, fallback);
+}
+
 function compactPrintBoundedFields(plan: CompetitionLessonPlan) {
   plan.periodPlan.safety = compactPrintList(
     plan.periodPlan.safety,
@@ -108,10 +124,8 @@ function compactPrintBoundedFields(plan: CompetitionLessonPlan) {
     PRINT_VENUE_TEXT_LIMIT,
     cloneDefaultPlan().venueEquipment.venue,
   );
-  plan.venueEquipment.equipment = compactPrintList(
+  plan.venueEquipment.equipment = compactPrintEquipmentList(
     plan.venueEquipment.equipment,
-    PRINT_EQUIPMENT_ITEM_LIMIT,
-    PRINT_EQUIPMENT_TEXT_LIMIT,
     cloneDefaultPlan().venueEquipment.equipment,
   );
 }

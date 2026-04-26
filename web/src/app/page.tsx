@@ -48,6 +48,7 @@ import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 import { competitionLessonPlanToMarkdown, markdownToCompetitionLessonPlan } from "@/lib/competition-lesson-markdown";
 import { competitionLessonPatchResponseSchema } from "@/lib/competition-lesson-patch";
 import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
+import { buildLessonScreenPlanFromMarkdown } from "@/lib/lesson-screen-plan";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -944,9 +945,11 @@ function AppContent() {
     if (projectId) {
       setIsArtifactSyncPendingState(true);
     }
+    const screenPlan = buildLessonScreenPlanFromMarkdown(latestLessonMarkdown);
+
     await sendMessage(
       { text: "我已确认教案无误，请基于该教案生成互动大屏。" },
-      { body: withProjectContext({ mode: "html", lessonPlan: latestLessonMarkdown }) },
+      { body: withProjectContext({ mode: "html", lessonPlan: latestLessonMarkdown, screenPlan }) },
     );
   };
 

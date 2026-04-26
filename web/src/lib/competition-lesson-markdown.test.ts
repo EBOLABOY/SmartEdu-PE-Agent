@@ -144,6 +144,35 @@ describe("competition-lesson-markdown", () => {
     expect(plan.venueEquipment.venue).toHaveLength(1);
     expect(plan.venueEquipment.equipment).toHaveLength(4);
     expect(plan.venueEquipment.equipment).not.toContain("急救包1个");
+    expect(plan.venueEquipment.equipment).not.toContain("分层任务卡8张");
+    expect(plan.venueEquipment.equipment).not.toContain("记分板4块");
+    expect([...plan.venueEquipment.venue, ...plan.venueEquipment.equipment].join("")).not.toContain("…");
+  });
+
+  it("会将单行场地器材长清单拆成精简器材项且不生成省略号", () => {
+    const plan = markdownToCompetitionLessonPlan(`# 投掷课
+
+## 九、场地与器材
+
+场地：学校田径场投掷区域
+器材：实心球20个、标志桶32个、体操垫20块、软式标枪20支、任务卡8张、急救包1个
+`);
+
+    expect(plan.venueEquipment.venue).toEqual(["场地：学校田径场投掷区域"]);
+    expect(plan.venueEquipment.equipment).toEqual(["实心球20个", "标志桶32个", "体操垫20块", "软式标枪20支"]);
+    expect([...plan.venueEquipment.venue, ...plan.venueEquipment.equipment].join("")).not.toContain("…");
+  });
+
+  it("会优先保留核心教学器材并过滤管理性和备用性物品", () => {
+    const plan = markdownToCompetitionLessonPlan(`# 投掷课
+
+## 九、场地与器材
+
+场地：学校田径场投掷区域
+器材：急救包1个、任务卡8张、记分板4块、秒表1个、实心球20个、标志桶32个、体操垫20块、软式标枪20支
+`);
+
+    expect(plan.venueEquipment.equipment).toEqual(["实心球20个", "标志桶32个", "体操垫20块", "软式标枪20支"]);
   });
 
   it("会把结构化教案序列化为兼容旧链路的 Markdown", () => {

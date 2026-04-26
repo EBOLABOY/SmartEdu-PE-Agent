@@ -452,6 +452,83 @@ npm test -- --run src/lib/lesson-slideshow-html.test.ts src/lib/lesson-screen-de
 npx tsc --noEmit
 ```
 
+### 9.10 已完成：P2 将 supportModule 上移到 Agent 提示词与契约
+
+完成位置：
+
+```text
+web/src/lib/lesson-authoring-contract.ts
+web/src/mastra/agents/pe_teacher.ts
+web/src/mastra/services/lesson_authoring.ts
+web/src/mastra/workflows/lesson_workflow.ts
+web/src/app/api/chat/route.ts
+web/src/lib/artifact-protocol.test.ts
+web/src/mastra/agents/pe_teacher.test.ts
+web/src/mastra/workflows/lesson_workflow.test.ts
+```
+
+完成内容：
+
+1. 新增 `lessonScreenSupportModuleSchema`，支持 `tacticalBoard`、`scoreboard`、`rotation`、`formation` 四种课堂大屏支持模块。
+2. 新增 `lessonScreenSectionPlanSchema` 与 `lessonScreenPlanSchema`，作为“教案到大屏”的结构化模块计划契约。
+3. `chatRequestBodySchema` 新增可选 `screenPlan` 字段，保持旧请求兼容，同时允许前端或上游 Agent 直接传入结构化模块计划。
+4. `LessonAuthoringRequest`、API route、`LessonWorkflowInput` 和工作流提示词构建链路均接入可选 `screenPlan`。
+5. `pe_teacher` 的 html 阶段提示词新增“课堂大屏结构化模块契约”，要求每个内容页输出 `data-support-module`，并明确四种模块的使用场景。
+6. 当系统提供 `screenPlan.sections[].supportModule` 时，提示词要求模型优先遵循结构化计划，不再只凭自然语言重新猜测。
+7. HTML 阶段 slim model message 同步提醒：必须基于结构化大屏模块计划生成 HTML，并在每个内容页写入 `data-support-module`。
+8. 新增测试覆盖契约 schema、Agent 提示词注入和 Workflow 系统提示词注入。
+
+同步检查：
+
+1. 从联系观点看，`supportModule` 已从前端渲染层上移到请求契约、工作流、系统提示词和 HTML 产物标记，形成闭环。
+2. 从发展观点看，当前仍保留前端解析器的关键词兜底；未来可逐步让规划 Agent 直接产出 `screenPlan`，减少自然语言解析规则。
+3. 从实践原则看，本次新增字段全部是可选字段，不破坏旧请求、旧教案或当前 HTML 兜底生成链路。
+4. 安全边界未变化：仍要求单文件 HTML、内联 CSS/JS、禁止网络请求、外链资源、本地存储、Cookie 和新窗口能力。
+5. 可回滚路径：移除 `screenPlan` 相关 schema、请求透传、提示词片段和测试，即可回到仅由前端解析器推断支持模块的模式。
+
+验证命令：
+
+```bash
+npm test -- --run src/mastra/agents/pe_teacher.test.ts src/mastra/workflows/lesson_workflow.test.ts src/lib/artifact-protocol.test.ts src/lib/lesson-slideshow-html.test.ts src/lib/lesson-screen-modules.test.ts
+npx tsc --noEmit
+npm test -- --run
+```
+
+### 9.11 已完成：P2 screenPlan 前端闭环与投屏按钮微调
+
+完成位置：
+
+```text
+web/src/lib/lesson-screen-plan.ts
+web/src/lib/lesson-screen-plan.test.ts
+web/src/app/page.tsx
+web/src/lib/lesson-screen-modules.ts
+web/src/components/ai/renderers/IframeSandbox.tsx
+```
+
+完成内容：
+
+1. 新增 `buildLessonScreenPlanFromMarkdown()`，把已确认教案解析出的课堂环节映射为 `LessonScreenPlan.sections`。
+2. 每个环节稳定携带 `title`、`durationSeconds`、`supportModule` 和模块选择 `reason`，使前端确认教案后可以把结构化计划传给 HTML 生成 Agent。
+3. `generateHtmlFromLesson()` 在发送 `mode: "html"` 请求时同步传入 `screenPlan`，形成“教案解析 → 请求契约 → 工作流 → Agent 提示词 → HTML 标记”的闭环。
+4. 修正旧关键词兜底中“站点轮换”容易被 `boardRequired` 误判为战术板的问题：比赛计分仍优先，明确站点轮换且不含战术信号时优先选择 `rotation`，真正攻防跑位仍选择 `tacticalBoard`。
+5. 将互动大屏预览的全屏按钮从 `size-9` 调整为 `size-11`，图标从 `size-4` 调整为 `size-5`，提升课堂触控和投屏操作可用性，同时仍放在画布覆盖层，不额外挤压 HTML 画布。
+
+同步检查：
+
+1. 从联系观点看，前端、请求 schema、后端工作流、Agent 提示词和最终 HTML 的 `data-support-module` 已围绕同一个 `screenPlan` 结构联通，不再让各层重复猜测模块。
+2. 从发展观点看，当前 `buildLessonScreenPlanFromMarkdown()` 复用既有 `extractLessonSlides()`，减少重复解析；未来可把解析器进一步抽为 `lesson-screen-parser.ts`，同时保持对外 `screenPlan` 契约不变。
+3. 从实践原则看，新增逻辑只在用户点击“确认教案生成大屏”时运行，不改变教案生成阶段，也不改变旧请求的后端兼容性。
+4. 全屏按钮仍属于平台预览层，不写入 AI 生成 HTML 本体，避免把编辑器控件污染到课堂大屏产物。
+5. 可回滚路径：删除 `lesson-screen-plan.ts` 与测试，恢复 `page.tsx` 中 HTML 请求体为仅传 `lessonPlan`，并把 `IframeSandbox.tsx` 按钮尺寸改回 `size-9`/`size-4`。
+
+验证命令：
+
+```bash
+npm test -- --run src/lib/lesson-screen-plan.test.ts src/lib/lesson-screen-modules.test.ts src/lib/lesson-slideshow-html.test.ts src/lib/sandbox-viewport.test.ts src/lib/sandbox-html.test.ts src/mastra/agents/pe_teacher.test.ts src/mastra/workflows/lesson_workflow.test.ts
+npx tsc --noEmit
+```
+
 ### 9.9 已完成：P2 支持模块策略结构化
 
 完成位置：
