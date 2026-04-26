@@ -9,7 +9,7 @@ export default function MarkdownViewer({ content }: MarkdownViewerProps) {
 
   return (
     <div className="h-full w-full overflow-y-auto bg-card p-8 text-foreground">
-      <div className="mx-auto max-w-4xl leading-relaxed">
+      <div className="competition-lesson-preview mx-auto max-w-4xl leading-relaxed">
         {normalizedContent ? (
           <MessageResponse>{normalizedContent}</MessageResponse>
         ) : (

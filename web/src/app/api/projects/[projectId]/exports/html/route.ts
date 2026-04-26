@@ -7,6 +7,7 @@ import {
   exportHtmlResponseSchema,
   projectIdSchema,
 } from "@/lib/lesson-authoring-contract";
+import { toIsoDateTime } from "@/lib/date-time";
 import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
@@ -202,7 +203,7 @@ export async function POST(
           contentType: HTML_CONTENT_TYPE,
           byteSize: row.byte_size ?? htmlBuffer.byteLength,
           checksum: row.checksum ?? checksum,
-          createdAt: row.created_at,
+          createdAt: toIsoDateTime(row.created_at, "export_files.created_at"),
         },
       }),
       {

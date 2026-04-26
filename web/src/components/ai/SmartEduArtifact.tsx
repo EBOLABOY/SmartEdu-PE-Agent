@@ -10,6 +10,7 @@ import {
   History,
   Loader2,
   MonitorPlay,
+  Printer,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
@@ -26,18 +27,23 @@ import {
   ArtifactTitle,
 } from "@/components/ai-elements/artifact";
 import type { ArtifactLifecycle, ArtifactLifecycleStatus, ArtifactSnapshot } from "@/components/ai/artifact-model";
+import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
 import LessonEditor from "@/components/ai/renderers/LessonEditor";
 import MarkdownViewer from "@/components/ai/renderers/MarkdownViewer";
+import CompetitionLessonPrintFrame, {
+  type CompetitionLessonPrintFrameHandle,
+} from "@/components/lesson-print/CompetitionLessonPrintFrame";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportHtmlResponseSchema } from "@/lib/lesson-authoring-contract";
+import { markdownToCompetitionLessonPlan } from "@/lib/competition-lesson-markdown";
 
 type ArtifactView = "lesson" | "canvas" | "versions";
+type LessonPresentation = "print" | "draft";
 
 interface SmartEduArtifactProps {
   lifecycle: ArtifactLifecycle;
@@ -77,7 +83,7 @@ const VIEW_OPTIONS: Array<{
 ];
 
 function getDefaultView(lifecycle: ArtifactLifecycle): ArtifactView {
-  return lifecycle.html.trim() ? "canvas" : "lesson";
+  return lifecycle.stage === "html" || lifecycle.html.trim() ? "canvas" : "lesson";
 }
 
 function ArtifactEmptyState({
@@ -213,13 +219,25 @@ export default function SmartEduArtifact({
   onRestoreArtifactVersion,
 }: SmartEduArtifactProps) {
   const [view, setView] = useState<ArtifactView | null>(null);
+  const [lessonPresentation, setLessonPresentation] = useState<LessonPresentation>("print");
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const printFrameRef = useRef<CompetitionLessonPrintFrameHandle>(null);
   const pendingHtmlToastRef = useRef(false);
   const activeView = view ?? getDefaultView(lifecycle);
   const html = lifecycle.html;
+  const streamingHtml = lifecycle.streamingHtml;
   const hasHtml = Boolean(html.trim());
+  const isGeneratingHtml = lifecycle.stage === "html" && lifecycle.isHtmlStreaming;
   const hasLesson = Boolean(lifecycle.markdown.trim());
+  const isStreamingLessonDraft =
+    lifecycle.stage === "lesson" &&
+    lifecycle.status === "streaming" &&
+    lifecycle.activeArtifact?.contentType === "markdown";
+  const competitionLessonPlan = useMemo(
+    () => lifecycle.lessonPlan ?? markdownToCompetitionLessonPlan(lifecycle.markdown),
+    [lifecycle.lessonPlan, lifecycle.markdown],
+  );
   const effectiveSelectedVersionId =
     selectedVersionId && lifecycle.versions.some((snapshot) => snapshot.id === selectedVersionId)
       ? selectedVersionId
@@ -336,6 +354,10 @@ export default function SmartEduArtifact({
     onGenerateHtml();
   };
 
+  const printLesson = () => {
+    printFrameRef.current?.print();
+  };
+
   const restoreSelectedVersion = () => {
     if (!selectedVersion || !onRestoreArtifactVersion) {
       return;
@@ -346,42 +368,18 @@ export default function SmartEduArtifact({
 
   return (
     <Artifact className="h-full min-w-0 flex-1 rounded-none border-0 shadow-none">
-      <ArtifactHeader className="min-h-16 shrink-0 bg-card/95 px-5 py-4 backdrop-blur">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-4 text-brand" />
-            <ArtifactTitle>体育课创作工作台</ArtifactTitle>
-            <StatusBadge label={STATUS_LABELS[lifecycle.status]} status={lifecycle.status} />
-          </div>
-          <ArtifactDescription className="truncate text-xs">
-            先生成教案，确认后自动生成课堂互动大屏，可预览和导出。
-          </ArtifactDescription>
-        </div>
-
-        <ArtifactActions className="hidden lg:flex">
-          {canGenerateHtml ? (
-            <Button onClick={generateHtml} size="sm" type="button" variant="brand">
-              <CheckCircle2 className="size-4" />
-              确认并生成大屏
-            </Button>
-          ) : null}
-          {hasHtml ? (
-            <ArtifactAction
-              disabled={isExporting}
-              icon={Download}
-              label={isExporting ? "导出中" : "导出大屏"}
-              onClick={downloadHtml}
-              tooltip={projectId ? "导出到云端并下载本地副本" : "导出本地大屏文件"}
-              type="button"
-              variant="outline"
-            />
-          ) : null}
-        </ArtifactActions>
-      </ArtifactHeader>
-
       <Tabs className="flex min-h-0 flex-1 flex-col" onValueChange={(value) => setView(value as ArtifactView)} value={activeView}>
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-card/70 px-4 py-3 backdrop-blur">
-          <TabsList>
+        <ArtifactHeader className="min-h-11 shrink-0 flex-wrap gap-2 bg-card/95 px-4 py-1.5 backdrop-blur">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Sparkles className="size-4 shrink-0 text-brand" />
+            <ArtifactTitle className="shrink-0">体育课创作工作台</ArtifactTitle>
+            <StatusBadge label={STATUS_LABELS[lifecycle.status]} status={lifecycle.status} />
+            <ArtifactDescription className="hidden truncate text-xs 2xl:block">
+              先生成教案，确认后自动生成课堂互动大屏。
+            </ArtifactDescription>
+          </div>
+
+          <TabsList className="order-3 w-full justify-start sm:order-none sm:w-auto">
             {VIEW_OPTIONS.map((option) => {
               const Icon = option.icon;
 
@@ -408,31 +406,91 @@ export default function SmartEduArtifact({
           </div>
 
           {isLoading ? (
-            <div className="inline-flex items-center gap-2 rounded-full border border-brand/20 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand">
+            <div className="hidden items-center gap-2 rounded-full border border-brand/20 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand xl:inline-flex">
               <span className="size-2 animate-pulse rounded-full bg-brand" />
               {lifecycle.stage === "html" ? "正在生成互动大屏" : "正在生成教案"}
             </div>
           ) : null}
-        </div>
 
-        <Separator />
+          <ArtifactActions className="hidden lg:flex">
+            {canGenerateHtml ? (
+              <Button className="h-9" onClick={generateHtml} size="sm" type="button" variant="brand">
+                <CheckCircle2 className="size-4" />
+                确认并生成大屏
+              </Button>
+            ) : null}
+            {hasHtml ? (
+              <ArtifactAction
+                disabled={isExporting}
+                icon={Download}
+                label={isExporting ? "导出中" : "导出大屏"}
+                onClick={downloadHtml}
+                tooltip={projectId ? "导出到云端并下载本地副本" : "导出本地大屏文件"}
+                type="button"
+                variant="outline"
+              />
+            ) : null}
+          </ArtifactActions>
+        </ArtifactHeader>
 
         <ArtifactContent className="flex min-h-0 flex-1 flex-col p-0">
           <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
-            <TabsContent className="m-0 h-full p-4 lg:p-6" value="lesson">
+            <TabsContent className="m-0 h-full p-3 lg:p-4" value="lesson">
               <div className="h-full overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
                 {hasLesson ? (
                   <div className="flex h-full flex-col">
-                    <div className="shrink-0 border-b border-border px-5 py-3">
-                      <h2 className="text-sm font-semibold text-foreground">教案预览</h2>
-                      <p className="mt-1 text-xs text-muted-foreground">请先审阅内容，确认后再生成互动大屏。</p>
+                    <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <h2 className="shrink-0 text-sm font-semibold text-foreground">
+                          {isStreamingLessonDraft ? "教案草稿生成中" : "教案预览"}
+                        </h2>
+                        <span className="hidden truncate text-xs text-muted-foreground lg:inline">
+                          {isStreamingLessonDraft
+                            ? "正在流式生成 Markdown 草稿，完成后自动切换正式打印版。"
+                            : "固定 A4 模板，修改请在左侧对话提出。"}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5">
+                          <Button
+                            className="h-7 rounded-sm px-2.5 text-xs"
+                            onClick={() => setLessonPresentation("print")}
+                            type="button"
+                            variant={lessonPresentation === "print" ? "brand" : "ghost"}
+                          >
+                            正式打印版
+                          </Button>
+                          <Button
+                            className="h-7 rounded-sm px-2.5 text-xs"
+                            onClick={() => setLessonPresentation("draft")}
+                            type="button"
+                            variant={lessonPresentation === "draft" ? "brand" : "ghost"}
+                          >
+                            草稿编辑
+                          </Button>
+                        </div>
+                        {lessonPresentation === "print" && !isStreamingLessonDraft ? (
+                          <Button className="h-8 px-2.5 text-xs" onClick={printLesson} type="button" variant="outline">
+                            <Printer className="size-3.5" />
+                            打印/另存 PDF
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="min-h-0 flex-1">
-                      <LessonEditor
-                        content={lifecycle.markdown}
-                        disabled={isLoading}
-                        onMarkdownChange={onLessonMarkdownChange}
-                      />
+                      {isStreamingLessonDraft ? (
+                        <MarkdownViewer content={lifecycle.markdown} />
+                      ) : lessonPresentation === "print" ? (
+                        <div className="h-full min-h-0 overflow-hidden bg-slate-100">
+                          <CompetitionLessonPrintFrame ref={printFrameRef} lesson={competitionLessonPlan} />
+                        </div>
+                      ) : (
+                        <LessonEditor
+                          content={lifecycle.markdown}
+                          disabled={isLoading}
+                          onMarkdownChange={onLessonMarkdownChange}
+                        />
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -441,18 +499,24 @@ export default function SmartEduArtifact({
               </div>
             </TabsContent>
 
-            <TabsContent className="m-0 h-full p-4 lg:p-6" value="canvas">
-              <div className={`h-full overflow-hidden rounded-2xl border border-border shadow-lg ${hasHtml ? "min-h-[560px] bg-primary" : "bg-card"}`}>
-                {hasHtml ? (
+            <TabsContent className="m-0 h-full p-3 lg:p-4" value="canvas">
+              <div className={`h-full overflow-hidden rounded-2xl border border-border shadow-lg ${hasHtml || isGeneratingHtml ? "min-h-[560px] bg-primary" : "bg-card"}`}>
+                {isGeneratingHtml ? (
+                  <HtmlGenerationPanel
+                    code={streamingHtml}
+                    hasPreviousPreview={hasHtml}
+                    trace={lifecycle.activeTrace}
+                  />
+                ) : hasHtml ? (
                   <div className="flex h-full flex-col">
-                    <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-primary px-5 py-3 text-primary-foreground">
+                    <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-primary px-4 py-2 text-primary-foreground">
                       <div>
                         <h2 className="text-sm font-semibold">互动大屏预览</h2>
-                        <p className="mt-1 text-xs text-primary-foreground/70">这里展示课堂投屏效果。</p>
+                        <p className="mt-0.5 text-xs text-primary-foreground/70">这里展示课堂投屏效果。</p>
                       </div>
                     </div>
                     <div className="min-h-0 flex-1">
-                      <IframeSandbox htmlContent={html} />
+                      <IframeSandbox key={lifecycle.htmlPreviewVersionId ?? html.length} htmlContent={html} />
                     </div>
                   </div>
                 ) : (
@@ -461,7 +525,7 @@ export default function SmartEduArtifact({
               </div>
             </TabsContent>
 
-            <TabsContent className="m-0 h-full p-4 lg:p-6" value="versions">
+            <TabsContent className="m-0 h-full p-3 lg:p-4" value="versions">
               <div className="grid h-full gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
                 <ScrollArea className="rounded-2xl border border-border bg-muted/50 p-4 shadow-xs">
                   <div className="mb-4">
@@ -530,6 +594,12 @@ export default function SmartEduArtifact({
                       <div className="min-h-0 flex-1">
                         {selectedVersion.stage === "lesson" ? (
                           <MarkdownViewer content={selectedVersion.content} />
+                        ) : selectedVersion.status === "streaming" ? (
+                          <HtmlGenerationPanel
+                            code={selectedVersion.content}
+                            hasPreviousPreview={hasHtml}
+                            trace={selectedVersion.trace}
+                          />
                         ) : (
                           <IframeSandbox htmlContent={selectedVersion.content} />
                         )}

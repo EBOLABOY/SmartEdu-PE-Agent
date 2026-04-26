@@ -43,9 +43,9 @@ export const lessonWorkflowOutputSchema = z.object({
   generationPlan: z.object({
     mode: generationModeSchema,
     confirmedLessonRequired: z.boolean(),
-    outputProtocol: z.enum(["markdown", "html-document"]),
+    outputProtocol: z.enum(["lesson-json", "markdown", "html-document"]),
     responseTransport: z.literal("structured-data-part"),
-    assistantTextPolicy: z.enum(["mirror-markdown", "suppress-html-text"]),
+    assistantTextPolicy: z.enum(["mirror-markdown", "suppress-json-text", "suppress-html-text"]),
     maxSteps: z.number(),
     protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
   }),
@@ -185,7 +185,7 @@ const planDeliveryStep = createStep({
           detail:
             inputData.mode === "html"
               ? "已规划 HTML 结构化 Artifact 推流，并抑制原始 HTML 文本进入会话历史。"
-              : "已规划 Markdown 教案镜像文本与结构化 Artifact 双写入链路。",
+              : "已规划 Markdown 草稿实时推流，完成后后台转换为 CompetitionLessonPlan JSON Artifact。",
         },
       ],
     };
@@ -232,7 +232,7 @@ const validateSafetyStep = createStep({
           detail:
             inputData.mode === "html"
               ? "已通过 HTML 结构化推流前置校验，并要求前端沙箱渲染。"
-              : "已通过 Markdown 教案结构化推流前置校验。",
+              : "已通过 CompetitionLessonPlan JSON 结构化推流前置校验。",
         },
       ],
     };

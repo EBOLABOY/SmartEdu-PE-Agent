@@ -3,6 +3,7 @@ import { createUIMessageStreamResponse, validateUIMessages } from "ai";
 import {
   chatRequestBodySchema,
   smartEduDataSchemas,
+  type PeTeacherContext,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
 import { createLessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
@@ -12,6 +13,56 @@ import { LessonAuthoringError, streamLessonAuthoring } from "@/mastra/services/l
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+type ProfileRow = {
+  school_name: string | null;
+  teacher_name: string | null;
+  teaching_grade: string | null;
+  teaching_level: string | null;
+};
+
+type LooseProfileClient = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  from: (table: "profiles") => any;
+};
+
+function profileToContext(profile: ProfileRow | null): PeTeacherContext {
+  return {
+    schoolName: profile?.school_name?.trim() || undefined,
+    teacherName: profile?.teacher_name?.trim() || undefined,
+    teachingGrade: profile?.teaching_grade?.trim() || undefined,
+    teachingLevel: profile?.teaching_level?.trim() || undefined,
+  };
+}
+
+async function loadUserProfileContext(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string | undefined,
+) {
+  if (!supabase || !userId) {
+    return {};
+  }
+
+  try {
+    const client = supabase as unknown as LooseProfileClient;
+    const { data, error } = await client
+      .from("profiles")
+      .select("school_name, teacher_name, teaching_grade, teaching_level")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return profileToContext((data ?? null) as ProfileRow | null);
+  } catch (error) {
+    console.warn("[chat-route] load-profile-context-failed", {
+      message: error instanceof Error ? error.message : "unknown-error",
+    });
+    return {};
+  }
+}
 
 export async function POST(request: Request) {
   let rawBody: unknown;
@@ -53,12 +104,17 @@ export async function POST(request: Request) {
   let authoringResult: Awaited<ReturnType<typeof streamLessonAuthoring>>;
 
   try {
-    const supabase = parsedBody.data.projectId ? await createSupabaseServerClient() : null;
+    const supabase = await createSupabaseServerClient();
     const {
       data: { user },
     } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
     const lessonPersistence = user ? createLessonAuthoringPersistence(supabase) : null;
     const chatPersistence = user ? createProjectChatPersistence(supabase, user.id) : null;
+    const profileContext = await loadUserProfileContext(supabase, user?.id);
+    const mergedContext = {
+      ...profileContext,
+      ...parsedBody.data.context,
+    };
 
     if (chatPersistence && parsedBody.data.projectId) {
       try {
@@ -80,7 +136,7 @@ export async function POST(request: Request) {
       chatPersistence,
       projectId: parsedBody.data.projectId,
       mode: parsedBody.data.mode,
-      context: parsedBody.data.context,
+      context: mergedContext,
       lessonPlan: parsedBody.data.lessonPlan,
       market: parsedBody.data.market,
     });

@@ -5,6 +5,7 @@ import {
   workflowTraceDataSchema,
   type PersistedArtifactVersion,
 } from "@/lib/lesson-authoring-contract";
+import { toIsoDateTime } from "@/lib/date-time";
 import type { Database } from "@/lib/supabase/database.types";
 
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
@@ -41,7 +42,7 @@ function toPersistedArtifactVersion(
     status: row.status,
     protocolVersion: row.protocol_version,
     versionNumber: row.version_number,
-    createdAt: row.created_at,
+    createdAt: toIsoDateTime(row.created_at, "artifact_versions.created_at"),
     ...(artifact ? { isCurrent: artifact.current_version_id === row.id } : {}),
     ...(row.warning_text ? { warningText: row.warning_text } : {}),
     ...(parsedTrace.success ? { trace: parsedTrace.data } : {}),

@@ -29,7 +29,7 @@ export type Database = {
         Row: {
           artifact_id: string;
           content: string;
-          content_type: "markdown" | "html";
+          content_type: "markdown" | "html" | "lesson-json";
           created_at: string;
           created_by: string | null;
           id: string;
@@ -45,7 +45,7 @@ export type Database = {
         Insert: {
           artifact_id: string;
           content: string;
-          content_type: "markdown" | "html";
+          content_type: "markdown" | "html" | "lesson-json";
           created_at?: string;
           created_by?: string | null;
           id?: string;
@@ -117,7 +117,13 @@ export type Database = {
             | "artifact.version_created"
             | "artifact.exported"
             | "artifact.restored"
-            | "generation.failed";
+            | "generation.failed"
+            | "organization.invitation_created"
+            | "organization.invitation_revoked"
+            | "organization.invitation_resent"
+            | "organization.invitation_accepted"
+            | "organization.member_role_updated"
+            | "organization.member_removed";
           actor_id: string | null;
           created_at: string;
           entity_id: string | null;
@@ -188,6 +194,37 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["organization_members"]["Insert"]>;
       };
+      organization_invitations: {
+        Row: {
+          accepted_at: string | null;
+          accepted_by: string | null;
+          created_at: string;
+          email: string;
+          expires_at: string;
+          id: string;
+          invited_by: string | null;
+          organization_id: string;
+          role: "owner" | "admin" | "teacher" | "viewer";
+          status: "pending" | "accepted" | "revoked" | "expired";
+          token_hash: string;
+          updated_at: string;
+        };
+        Insert: {
+          accepted_at?: string | null;
+          accepted_by?: string | null;
+          created_at?: string;
+          email: string;
+          expires_at?: string;
+          id?: string;
+          invited_by?: string | null;
+          organization_id: string;
+          role?: "owner" | "admin" | "teacher" | "viewer";
+          status?: "pending" | "accepted" | "revoked" | "expired";
+          token_hash: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["organization_invitations"]["Insert"]>;
+      };
       organizations: {
         Row: {
           created_at: string;
@@ -235,13 +272,39 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["projects"]["Insert"]>;
         Relationships: [];
       };
+      profiles: {
+        Row: {
+          avatar_url: string | null;
+          created_at: string;
+          display_name: string | null;
+          id: string;
+          school_name: string | null;
+          teacher_name: string | null;
+          teaching_grade: string | null;
+          teaching_level: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          avatar_url?: string | null;
+          created_at?: string;
+          display_name?: string | null;
+          id: string;
+          school_name?: string | null;
+          teacher_name?: string | null;
+          teaching_grade?: string | null;
+          teaching_level?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
       create_artifact_version: {
         Args: {
           artifact_content: string;
-          artifact_content_type: "markdown" | "html";
+          artifact_content_type: "markdown" | "html" | "lesson-json";
           artifact_protocol_version: string;
           artifact_request_id?: string | null;
           artifact_stage: "lesson" | "html";
@@ -259,6 +322,21 @@ export type Database = {
         };
         Returns: string;
       };
+      accept_organization_invitation: {
+        Args: {
+          invitation_token: string;
+        };
+        Returns: string;
+      };
+      create_organization_invitation: {
+        Args: {
+          invitation_email: string;
+          invitation_role: "owner" | "admin" | "teacher" | "viewer";
+          invitation_token_hash: string;
+          target_organization_id: string;
+        };
+        Returns: string;
+      };
       restore_artifact_version: {
         Args: {
           restore_request_id?: string | null;
@@ -266,6 +344,34 @@ export type Database = {
           target_version_id: string;
         };
         Returns: string;
+      };
+      remove_organization_member: {
+        Args: {
+          target_organization_id: string;
+          target_user_id: string;
+        };
+        Returns: void;
+      };
+      resend_organization_invitation: {
+        Args: {
+          next_token_hash: string;
+          target_invitation_id: string;
+        };
+        Returns: void;
+      };
+      revoke_organization_invitation: {
+        Args: {
+          target_invitation_id: string;
+        };
+        Returns: void;
+      };
+      update_organization_member_role: {
+        Args: {
+          next_role: "owner" | "admin" | "teacher" | "viewer";
+          target_organization_id: string;
+          target_user_id: string;
+        };
+        Returns: void;
       };
     };
     Enums: {
@@ -277,7 +383,13 @@ export type Database = {
         | "artifact.version_created"
         | "artifact.exported"
         | "artifact.restored"
-        | "generation.failed";
+        | "generation.failed"
+        | "organization.invitation_created"
+        | "organization.invitation_revoked"
+        | "organization.invitation_resent"
+        | "organization.invitation_accepted"
+        | "organization.member_role_updated"
+        | "organization.member_removed";
       member_role: "owner" | "admin" | "teacher" | "viewer";
     };
     CompositeTypes: Record<string, never>;

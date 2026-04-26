@@ -6,8 +6,15 @@ import UniqueID from "@tiptap/extension-unique-id";
 import { Edit3, Eye, Redo2, RotateCcw, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
-import { ensureLessonDocNodeIds, lessonDocToMarkdown, markdownToLessonDoc } from "@/lib/lesson-doc";
+import {
+  ensureLessonDocNodeIds,
+  lessonDocToMarkdown,
+  markdownToLessonDoc,
+} from "@/lib/lesson-doc";
+
+type EditableNodeType = "heading" | "paragraph" | "listItem";
 
 interface LessonEditorProps {
   content: string;
@@ -15,9 +22,13 @@ interface LessonEditorProps {
   onMarkdownChange?: (markdown: string) => void;
 }
 
-const EDITABLE_NODE_TYPES = ["heading", "paragraph", "listItem"];
+const EDITABLE_NODE_TYPES: EditableNodeType[] = ["heading", "paragraph", "listItem"];
 
-export default function LessonEditor({ content, disabled = false, onMarkdownChange }: LessonEditorProps) {
+export default function LessonEditor({
+  content,
+  disabled = false,
+  onMarkdownChange,
+}: LessonEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [revision, setRevision] = useState(0);
   const onMarkdownChangeRef = useRef(onMarkdownChange);
@@ -100,7 +111,9 @@ export default function LessonEditor({ content, disabled = false, onMarkdownChan
             {isEditing ? "结构化编辑模式" : "预览模式"}
           </p>
           <p className="text-xs text-muted-foreground">
-            教案已转换为 Tiptap/ProseMirror 文档，编辑记录支持撤销与重做。
+            {isEditing
+              ? "段落与列表编辑支持撤销、重做；表格版式请退出编辑后在预览中核对。"
+              : "按广东省比赛教案观感渲染标题、段落和 Markdown 表格。"}
           </p>
         </div>
 
@@ -125,7 +138,13 @@ export default function LessonEditor({ content, disabled = false, onMarkdownChan
       </div>
 
       <div className={`min-h-0 flex-1 overflow-y-auto ${isEditing ? "bg-background" : "bg-card"}`}>
-        <EditorContent editor={editor} />
+        {isEditing ? (
+          <EditorContent editor={editor} />
+        ) : (
+          <div className="competition-lesson-preview min-h-full px-8 py-7">
+            <MessageResponse>{content}</MessageResponse>
+          </div>
+        )}
       </div>
     </div>
   );

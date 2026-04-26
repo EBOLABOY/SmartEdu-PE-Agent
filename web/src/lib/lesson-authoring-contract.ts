@@ -1,10 +1,14 @@
 import type { UIMessage } from "ai";
 import { z } from "zod";
 
+import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
+
 export const STRUCTURED_ARTIFACT_PROTOCOL_VERSION = "structured-v1" as const;
 
 export const generationModeSchema = z.enum(["lesson", "html"]);
 export type GenerationMode = z.infer<typeof generationModeSchema>;
+export const artifactContentTypeSchema = z.enum(["markdown", "html", "lesson-json"]);
+export type ArtifactContentType = z.infer<typeof artifactContentTypeSchema>;
 
 export const projectIdSchema = z.string().uuid();
 
@@ -16,6 +20,10 @@ export const DEFAULT_STANDARDS_MARKET: StandardsMarket = "cn-compulsory-2022";
 export const peTeacherContextSchema = z
   .object({
     grade: z.string().trim().min(1).optional(),
+    teacherName: z.string().trim().min(1).optional(),
+    schoolName: z.string().trim().min(1).optional(),
+    teachingGrade: z.string().trim().min(1).optional(),
+    teachingLevel: z.string().trim().min(1).optional(),
     topic: z.string().trim().min(1).optional(),
     duration: z.number().int().positive().max(240).optional(),
     venue: z.string().trim().min(1).optional(),
@@ -39,7 +47,7 @@ export type WorkflowTraceEntry = z.infer<typeof workflowTraceEntrySchema>;
 export const structuredArtifactDataSchema = z.object({
   protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
   stage: generationModeSchema,
-  contentType: z.enum(["markdown", "html"]),
+  contentType: artifactContentTypeSchema,
   content: z.string(),
   isComplete: z.boolean(),
   status: z.enum(["streaming", "ready", "error"]),
@@ -78,7 +86,7 @@ export const persistedArtifactVersionSchema = z.object({
   artifactId: z.string().uuid(),
   stage: generationModeSchema,
   title: z.string().trim().min(1).optional(),
-  contentType: z.enum(["markdown", "html"]),
+  contentType: artifactContentTypeSchema,
   content: z.string(),
   status: z.enum(["streaming", "ready", "error"]),
   protocolVersion: z.string().trim().min(1),
@@ -138,6 +146,23 @@ export const artifactVersionsResponseSchema = z.object({
 
 export type ArtifactVersionsResponse = z.infer<typeof artifactVersionsResponseSchema>;
 
+export const saveLessonArtifactVersionRequestBodySchema = z
+  .object({
+    markdown: z.string().trim().min(1).max(1024 * 1024).optional(),
+    lessonPlan: competitionLessonPlanSchema.optional(),
+    title: z.string().trim().min(1).max(120).optional(),
+    summary: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.markdown || value.lessonPlan), {
+    message: "markdown 和 lessonPlan 至少需要提供一个。",
+    path: ["markdown"],
+  });
+
+export type SaveLessonArtifactVersionRequestBody = z.infer<
+  typeof saveLessonArtifactVersionRequestBodySchema
+>;
+
 export const projectDirectoryResponseSchema = z.object({
   projects: z.array(persistedProjectSummarySchema),
   persistence: persistenceStateSchema,
@@ -153,6 +178,88 @@ export const projectWorkspaceResponseSchema = z.object({
 });
 
 export type ProjectWorkspaceResponse = z.infer<typeof projectWorkspaceResponseSchema>;
+
+export const memberRoleSchema = z.enum(["owner", "admin", "teacher", "viewer"]);
+export type MemberRole = z.infer<typeof memberRoleSchema>;
+
+export const accountWorkspaceMemberSchema = z.object({
+  userId: z.string().uuid(),
+  role: memberRoleSchema,
+  createdAt: z.string().datetime(),
+  profile: z.object({
+    displayName: z.string().nullable(),
+    avatarUrl: z.string().nullable(),
+  }),
+});
+
+export type AccountWorkspaceMember = z.infer<typeof accountWorkspaceMemberSchema>;
+
+export const accountWorkspaceInvitationSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  role: memberRoleSchema,
+  status: z.enum(["pending", "accepted", "revoked", "expired"]),
+  expiresAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+});
+
+export type AccountWorkspaceInvitation = z.infer<typeof accountWorkspaceInvitationSchema>;
+
+export const accountWorkspaceSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1),
+  slug: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  currentUserRole: memberRoleSchema,
+  invitations: z.array(accountWorkspaceInvitationSchema),
+  members: z.array(accountWorkspaceMemberSchema),
+});
+
+export type AccountWorkspace = z.infer<typeof accountWorkspaceSchema>;
+
+export const accountWorkspacesResponseSchema = z.object({
+  workspaces: z.array(accountWorkspaceSchema),
+  persistence: persistenceStateSchema,
+});
+
+export type AccountWorkspacesResponse = z.infer<typeof accountWorkspacesResponseSchema>;
+
+export const updateWorkspaceRequestBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
+export const updateWorkspaceMemberRequestBodySchema = z
+  .object({
+    role: memberRoleSchema,
+  })
+  .strict();
+
+export const createWorkspaceInvitationRequestBodySchema = z
+  .object({
+    email: z.string().trim().email(),
+    role: memberRoleSchema.exclude(["owner"]).default("teacher"),
+  })
+  .strict();
+
+export const createWorkspaceInvitationResponseSchema = z.object({
+  emailSent: z.boolean(),
+  invitationUrl: z.string().url(),
+});
+
+export const workspaceInvitationActionResponseSchema = z.object({
+  emailSent: z.boolean().optional(),
+  invitationUrl: z.string().url().optional(),
+  ok: z.boolean(),
+});
+
+export const acceptWorkspaceInvitationRequestBodySchema = z
+  .object({
+    token: z.string().trim().min(16),
+  })
+  .strict();
 
 export const exportHtmlRequestBodySchema = z
   .object({
@@ -180,6 +287,37 @@ export const exportHtmlResponseSchema = z.object({
 });
 
 export type ExportHtmlResponse = z.infer<typeof exportHtmlResponseSchema>;
+
+export const lessonPatchTargetSchema = z
+  .object({
+    nodeId: z.string().trim().min(1).max(120),
+    nodeType: z.enum(["heading", "paragraph", "listItem"]),
+    currentText: z.string().trim().min(1).max(6000),
+    surroundingContext: z.string().trim().max(6000).optional(),
+  })
+  .strict();
+
+export type LessonPatchTarget = z.infer<typeof lessonPatchTargetSchema>;
+
+export const lessonPatchRequestBodySchema = z
+  .object({
+    instruction: z.string().trim().min(1).max(2000),
+    target: lessonPatchTargetSchema,
+    market: standardsMarketSchema.optional(),
+  })
+  .strict();
+
+export type LessonPatchRequestBody = z.infer<typeof lessonPatchRequestBodySchema>;
+
+export const lessonPatchResponseSchema = z.object({
+  patch: z.object({
+    nodeId: z.string().trim().min(1),
+    replacementText: z.string().trim().min(1).max(6000),
+    summary: z.string().trim().min(1).max(500),
+  }),
+});
+
+export type LessonPatchResponse = z.infer<typeof lessonPatchResponseSchema>;
 
 export const smartEduDataSchemas = {
   artifact: structuredArtifactDataSchema,

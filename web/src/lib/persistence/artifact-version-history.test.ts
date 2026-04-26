@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toPersistedArtifactVersion } from "@/lib/persistence/artifact-version-history";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import type { Database } from "@/lib/supabase/database.types";
 
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
@@ -43,6 +44,15 @@ describe("artifact-version-history", () => {
     expect(version.trace?.phase).toBe("completed");
   });
 
+  it("会把 Supabase 时间字符串规范化为前端契约需要的 UTC ISO 字符串", () => {
+    const version = toPersistedArtifactVersion({
+      ...BASE_ROW,
+      created_at: "2026-04-25T12:00:00+00:00",
+    });
+
+    expect(version.createdAt).toBe("2026-04-25T12:00:00.000Z");
+  });
+
   it("遇到非法 workflow_trace 时会安静忽略 trace", () => {
     const version = toPersistedArtifactVersion({
       ...BASE_ROW,
@@ -50,5 +60,16 @@ describe("artifact-version-history", () => {
     });
 
     expect(version.trace).toBeUndefined();
+  });
+
+  it("支持 lesson-json 内容类型", () => {
+    const version = toPersistedArtifactVersion({
+      ...BASE_ROW,
+      content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+      content_type: "lesson-json",
+    });
+
+    expect(version.contentType).toBe("lesson-json");
+    expect(version.content).toContain("操控性技能");
   });
 });

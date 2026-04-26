@@ -7,6 +7,7 @@ dist-ssr/
 **/.env
 .codex-tasks/
 paths.json
+.external/
 
 # Editor and OS noise
 .DS_Store

@@ -5,6 +5,7 @@ import {
   extractHtmlDocumentFromText,
   getStructuredArtifactPart,
 } from "@/lib/artifact-protocol";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 
 describe("artifact-protocol", () => {
@@ -97,5 +98,35 @@ describe("artifact-protocol", () => {
     expect(extracted.html).toContain("<body>OK</body>");
     expect(extracted.htmlComplete).toBe(true);
     expect(extracted.markdown).toBe("");
+  });
+
+  it("能从结构化 lesson-json data part 中派生 Markdown", () => {
+    const message: SmartEduUIMessage = {
+      id: "assistant-lesson-json",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "lesson",
+            contentType: "lesson-json",
+            content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+            isComplete: true,
+            status: "ready",
+            source: "data-part",
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      ],
+    };
+
+    const extracted = extractArtifactFromMessage(message);
+
+    expect(extracted.markdown).toContain("# 操控性技能－足球游戏");
+    expect(extracted.markdown).toContain("## 十、课时计划（教案）");
+    expect(extracted.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
+    expect(extracted.artifact?.contentType).toBe("lesson-json");
   });
 });

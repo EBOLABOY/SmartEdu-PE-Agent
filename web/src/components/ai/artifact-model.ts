@@ -1,7 +1,14 @@
 import { useMemo } from "react";
 
-import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact-protocol";
+import {
+  extractArtifactFromMessage,
+  getMessageText,
+  lessonContentToPlan,
+} from "@/lib/artifact-protocol";
+import { competitionLessonPlanToMarkdown } from "@/lib/competition-lesson-markdown";
+import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 import type {
+  ArtifactContentType,
   PersistedArtifactVersion,
   SmartEduUIMessage,
   WorkflowTraceData,
@@ -15,6 +22,8 @@ export type ArtifactSnapshot = {
   stage: ArtifactStage;
   title: string;
   content: string;
+  contentType?: ArtifactContentType;
+  lessonPlan?: CompetitionLessonPlan;
   status: ArtifactLifecycleStatus;
   version: number;
   artifactId?: string;
@@ -27,6 +36,10 @@ export type ArtifactSnapshot = {
 export type ArtifactLifecycle = {
   markdown: string;
   html: string;
+  streamingHtml: string;
+  isHtmlStreaming: boolean;
+  htmlPreviewVersionId?: string;
+  lessonPlan?: CompetitionLessonPlan;
   status: ArtifactLifecycleStatus;
   stage: ArtifactStage;
   activeArtifact?: ArtifactSnapshot;
@@ -55,7 +68,19 @@ function resolveSnapshotStatus(
 
 export { extractArtifactFromMessage, getMessageText };
 
+function lessonContentToMarkdown(content: string, contentType?: ArtifactContentType) {
+  const lessonPlan = contentType ? lessonContentToPlan(content, contentType) : undefined;
+
+  if (!lessonPlan) {
+    return content;
+  }
+
+  return competitionLessonPlanToMarkdown(lessonPlan);
+}
+
 function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): ArtifactSnapshot {
+  const lessonPlan = lessonContentToPlan(version.content, version.contentType);
+
   return {
     id: `persisted-${version.id}`,
     stage: version.stage,
@@ -64,7 +89,9 @@ function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): Artif
       (version.stage === "html"
         ? `大屏版本 ${version.versionNumber}`
         : `教案版本 ${version.versionNumber}`),
-    content: version.content,
+    content: lessonContentToMarkdown(version.content, version.contentType),
+    contentType: version.contentType,
+    lessonPlan,
     status: version.status,
     version: version.versionNumber,
     artifactId: version.artifactId,
@@ -80,6 +107,16 @@ function findLatestSnapshotByStage(
   stage: ArtifactStage,
 ) {
   const index = versions.findLastIndex((item) => item.stage === stage);
+  return index >= 0 ? versions[index] : undefined;
+}
+
+function findLatestReadySnapshotByStage(
+  versions: ArtifactSnapshot[],
+  stage: ArtifactStage,
+) {
+  const index = versions.findLastIndex(
+    (item) => item.stage === stage && item.status === "ready",
+  );
   return index >= 0 ? versions[index] : undefined;
 }
 
@@ -134,6 +171,8 @@ export function buildArtifactLifecycle(
         stage: "lesson",
         title: extracted.title ?? `教案版本 ${version}`,
         content: extracted.markdown,
+        contentType: extracted.artifact?.contentType,
+        lessonPlan: extracted.lessonPlan,
         status: resolveSnapshotStatus(extracted.status, fallbackStatus),
         version,
         trace: extracted.trace,
@@ -150,6 +189,7 @@ export function buildArtifactLifecycle(
         stage: "html",
         title: extracted.title ?? `大屏版本 ${version}`,
         content: extracted.html,
+        contentType: extracted.artifact?.contentType,
         status: resolveSnapshotStatus(extracted.status, fallbackStatus),
         version,
         trace: extracted.trace,
@@ -171,10 +211,12 @@ export function buildArtifactLifecycle(
 
   const liveLesson = findLatestSnapshotByStage(liveVersions, "lesson");
   const liveHtml = findLatestSnapshotByStage(liveVersions, "html");
+  const liveReadyHtml = findLatestReadySnapshotByStage(liveVersions, "html");
   const persistedLesson = findCurrentPersistedSnapshotByStage(persistedSnapshots, "lesson");
   const persistedHtml = findCurrentPersistedSnapshotByStage(persistedSnapshots, "html");
   const latestLesson = shouldUsePersistedAsActiveSource ? persistedLesson : liveLesson;
   const latestHtml = shouldUsePersistedAsActiveSource ? persistedHtml : liveHtml;
+  const latestReadyHtml = shouldUsePersistedAsActiveSource ? persistedHtml : liveReadyHtml;
   const liveLessonIndex = liveVersions.findLastIndex((item) => item.stage === "lesson");
   const liveHtmlIndex = liveVersions.findLastIndex((item) => item.stage === "html");
   const shouldPreferHtml = shouldUsePersistedAsActiveSource
@@ -185,7 +227,14 @@ export function buildArtifactLifecycle(
 
   return {
     markdown: latestLesson?.content ?? "",
-    html: shouldPreferHtml ? latestHtml?.content ?? "" : "",
+    html: shouldPreferHtml ? latestReadyHtml?.content ?? "" : "",
+    streamingHtml:
+      shouldPreferHtml && latestHtml?.status === "streaming" ? latestHtml.content : "",
+    isHtmlStreaming: Boolean(
+      shouldPreferHtml && latestHtml?.stage === "html" && latestHtml.status === "streaming",
+    ),
+    htmlPreviewVersionId: shouldPreferHtml ? latestReadyHtml?.id : undefined,
+    lessonPlan: latestLesson?.lessonPlan,
     status: activeArtifact?.status ?? (isStreaming ? "streaming" : "idle"),
     stage: shouldPreferHtml ? "html" : "lesson",
     activeArtifact,

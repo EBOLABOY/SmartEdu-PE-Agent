@@ -24,13 +24,17 @@ import { Message, MessageContent, MessageResponse } from "@/components/ai-elemen
 import {
   PromptInput,
   PromptInputBody,
+  PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
+  PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
 import AuthPanel from "@/components/auth/AuthPanel";
+import BrandLogo from "@/components/BrandLogo";
 import LandingPage from "@/components/LandingPage";
 import {
   artifactVersionsResponseSchema,
+  STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   type ArtifactVersionsResponse,
   projectDirectoryResponseSchema,
   projectIdSchema,
@@ -40,6 +44,10 @@ import {
   type PersistedProjectSummary,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
+import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import { competitionLessonPlanToMarkdown, markdownToCompetitionLessonPlan } from "@/lib/competition-lesson-markdown";
+import { competitionLessonPatchResponseSchema } from "@/lib/competition-lesson-patch";
+import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,6 +130,140 @@ async function requestArtifactVersionRestore(
   }
 
   return parsedPayload.data;
+}
+
+async function requestCompetitionLessonPatch(input: {
+  instruction: string;
+  lessonPlan: CompetitionLessonPlan;
+}) {
+  const response = await fetch("/api/competition-lesson-patches", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : "结构化教案局部修改失败。",
+    );
+  }
+
+  const parsedPayload = competitionLessonPatchResponseSchema.safeParse(payload);
+
+  if (!parsedPayload.success) {
+    throw new Error("结构化教案局部修改响应结构不合法。");
+  }
+
+  return parsedPayload.data;
+}
+
+async function requestSaveLessonArtifactVersion(
+  projectId: string,
+  input: {
+    lessonPlan?: CompetitionLessonPlan;
+    markdown: string;
+    summary?: string;
+  },
+): Promise<ArtifactVersionsResponse> {
+  const response = await fetch(`/api/projects/${projectId}/artifact-versions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      markdown: input.markdown,
+      lessonPlan: input.lessonPlan,
+      title: "教案 Artifact",
+      summary: input.summary,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : "保存教案版本失败。",
+    );
+  }
+
+  const parsedPayload = artifactVersionsResponseSchema.safeParse(payload);
+
+  if (!parsedPayload.success) {
+    throw new Error("保存教案版本响应结构不合法。");
+  }
+
+  return parsedPayload.data;
+}
+
+function isLikelyLessonPatchInstruction(query: string) {
+  const normalized = query.trim();
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (/生成.*大屏|互动大屏|确认.*生成|重新生成|再生成一份|新教案|换一份/.test(normalized)) {
+    return false;
+  }
+
+  return /修改|改成|改为|调整|优化|完善|替换|删掉|删除|增加|新增|补充|强化|弱化|精简|更具体|更安全|更符合/.test(
+    normalized,
+  );
+}
+
+function summarizeCompetitionLessonPatch(paths: string[]) {
+  const labels = paths.map((path) => getCompetitionLessonEditableField(path)?.label ?? path);
+
+  return Array.from(new Set(labels)).join("、");
+}
+
+function createLocalPatchMessages(input: {
+  instruction: string;
+  lessonPlan: CompetitionLessonPlan;
+  summary: string;
+}): SmartEduUIMessage[] {
+  const now = new Date().toISOString();
+  const userMessageId = `local-user-${crypto.randomUUID()}`;
+  const assistantMessageId = `local-lesson-patch-${crypto.randomUUID()}`;
+
+  return [
+    {
+      id: userMessageId,
+      role: "user",
+      parts: [{ type: "text", text: input.instruction }],
+    } as SmartEduUIMessage,
+    {
+      id: assistantMessageId,
+      role: "assistant",
+      parts: [
+        {
+          type: "text",
+          text: `已完成局部修改：${input.summary}。`,
+        },
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+            stage: "lesson",
+            contentType: "lesson-json",
+            content: JSON.stringify(input.lessonPlan),
+            isComplete: true,
+            status: "ready",
+            source: "data-part",
+            title: "教案 Artifact",
+            updatedAt: now,
+          },
+        },
+      ],
+    } as SmartEduUIMessage,
+  ];
 }
 
 function getAssistantConversationText(message: SmartEduUIMessage) {
@@ -224,27 +366,36 @@ function ChatPanel({
         <ConversationScrollButton />
       </Conversation>
 
-      <div className="border-t border-border bg-card p-4">
+      <div className="border-t border-border bg-linear-to-b from-card/80 to-muted/40 p-3">
         <PromptInput
-          className="relative rounded-xl border border-input bg-background shadow-xs transition-all focus-within:border-brand/50 focus-within:ring-1 focus-within:ring-brand/25"
+          className="relative rounded-2xl bg-background shadow-[0_12px_32px_rgba(15,23,42,0.12)] transition-all focus-within:shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
           onSubmit={(message) => {
             onSubmitPrompt(message.text);
           }}
         >
           <PromptInputBody>
             <PromptInputTextarea
-              className="min-h-20 border-none bg-transparent p-4 text-sm text-foreground outline-none placeholder-muted-foreground focus-visible:ring-0"
+              className="min-h-24 px-4 pt-4 pb-1 text-sm leading-6 text-foreground placeholder:text-muted-foreground/70"
               disabled={isLoading}
-              placeholder="继续补充指令，例如：把倒计时改成 8 分钟，并增加分组积分。"
+              placeholder="继续补充修改要求，例如：把倒计时改成 8 分钟，并增加分组积分。"
             />
           </PromptInputBody>
-          <div className="flex items-center justify-end gap-2 px-2 pb-2">
+          <PromptInputFooter className="px-3 pb-3 pt-1">
+            <PromptInputTools className="overflow-hidden">
+              <span className="shrink-0 rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-medium text-brand">
+                修改教案或大屏
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground">
+                Enter 发送，Shift + Enter 换行
+              </span>
+            </PromptInputTools>
             <PromptInputSubmit
-              className="rounded-lg bg-primary text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground"
+              className="size-9 shrink-0 rounded-xl bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground"
               onStop={stop}
+              size="icon-sm"
               status={status}
             />
-          </div>
+          </PromptInputFooter>
         </PromptInput>
       </div>
     </aside>
@@ -362,6 +513,10 @@ function AppContent() {
     const parsedProjectId = projectIdSchema.safeParse(rawProjectId);
     return parsedProjectId.success ? parsedProjectId.data : null;
   }, [searchParams]);
+  const accountMode = searchParams.get("account");
+  const inviteToken = searchParams.get("invite");
+  const accountInitialTab =
+    accountMode === "recovery" ? "security" : inviteToken ? "workspace" : "profile";
   const [hasStarted, setHasStarted] = useState(() => Boolean(projectId));
   const [lessonConfirmed, setLessonConfirmed] = useState(false);
   const [persistedVersionsState, setPersistedVersionsState] = useState<PersistedArtifactVersion[]>([]);
@@ -423,9 +578,29 @@ function AppContent() {
     editedLessonMarkdown?.sourceId === latestLessonSourceId
       ? editedLessonMarkdown.markdown
       : artifactLifecycle.markdown;
+  const hasLocalLessonEdit =
+    editedLessonMarkdown?.sourceId === latestLessonSourceId &&
+    editedLessonMarkdown.markdown.trim() !== artifactLifecycle.markdown.trim();
+  const effectiveArtifactLifecycle = useMemo(
+    () => ({
+      ...artifactLifecycle,
+      markdown: latestLessonMarkdown,
+      ...(hasLocalLessonEdit
+        ? {
+            html: "",
+            streamingHtml: "",
+            isHtmlStreaming: false,
+            htmlPreviewVersionId: undefined,
+            lessonPlan: undefined,
+            stage: "lesson" as const,
+          }
+        : {}),
+    }),
+    [artifactLifecycle, hasLocalLessonEdit, latestLessonMarkdown],
+  );
   const canGenerateHtml =
     Boolean(latestLessonMarkdown.trim()) &&
-    !artifactLifecycle.html &&
+    !effectiveArtifactLifecycle.html &&
     !isLoading &&
     !isHistoryLoading;
 
@@ -434,6 +609,14 @@ function AppContent() {
       toast.error("请求失败", { description: error.message });
     }
   }, [error]);
+
+  useEffect(() => {
+    if (accountMode === "recovery" || accountMode === "profile" || inviteToken) {
+      queueMicrotask(() => {
+        setIsAuthDialogOpen(true);
+      });
+    }
+  }, [accountMode, inviteToken]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -693,6 +876,54 @@ function AppContent() {
       return;
     }
 
+    const shouldPatchCurrentLesson =
+      Boolean(latestLessonMarkdown.trim()) && isLikelyLessonPatchInstruction(normalizedQuery);
+
+    if (shouldPatchCurrentLesson) {
+      void (async () => {
+        try {
+          const currentLessonPlan =
+            effectiveArtifactLifecycle.lessonPlan ?? markdownToCompetitionLessonPlan(latestLessonMarkdown);
+          const patchResult = await requestCompetitionLessonPatch({
+            instruction: normalizedQuery,
+            lessonPlan: currentLessonPlan,
+          });
+          const markdown = competitionLessonPlanToMarkdown(patchResult.lessonPlan);
+          const changedPaths = patchResult.patch.operations.map((operation) => operation.path);
+          const summary = `结构化字段修改：${summarizeCompetitionLessonPatch(changedPaths)}`;
+
+          setLessonConfirmed(false);
+          setEditedLessonMarkdown(null);
+          setMessages((currentMessages) => [
+            ...currentMessages,
+            ...createLocalPatchMessages({
+              instruction: normalizedQuery,
+              lessonPlan: patchResult.lessonPlan,
+              summary,
+            }),
+          ]);
+
+          if (explicitProjectId) {
+            const payload = await requestSaveLessonArtifactVersion(explicitProjectId, {
+              lessonPlan: patchResult.lessonPlan,
+              markdown,
+              summary,
+            });
+            setPersistedVersionsState(payload.versions);
+          }
+
+          toast.success("已按对话修改教案", {
+            description: `${summary}。右侧正式打印版已更新。`,
+          });
+        } catch (patchError) {
+          toast.error("教案局部修改失败", {
+            description: patchError instanceof Error ? patchError.message : "请稍后重试。",
+          });
+        }
+      })();
+      return;
+    }
+
     setHasStarted(true);
     setLessonConfirmed(false);
     if (explicitProjectId) {
@@ -765,8 +996,34 @@ function AppContent() {
     }
   };
 
+  const authDialog = (
+    <Dialog onOpenChange={setIsAuthDialogOpen} open={isAuthDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>账号与持久化</DialogTitle>
+          <DialogDescription>
+            登录后启用 Supabase 项目保存、历史恢复和版本追踪；退出后仍可使用临时会话。
+          </DialogDescription>
+        </DialogHeader>
+        <AuthPanel
+          initialTab={accountInitialTab}
+          inviteToken={inviteToken}
+          key={`${accountInitialTab}-${inviteToken ?? "no-invite"}`}
+          onAuthChanged={() => {
+            setAuthRevision((revision) => revision + 1);
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+
   if (!hasWorkspaceStarted) {
-    return <LandingPage onStart={handleStart} />;
+    return (
+      <>
+        <LandingPage onStart={handleStart} />
+        {authDialog}
+      </>
+    );
   }
 
   const handleRestoreArtifactVersion = async (snapshot: { persistedVersionId?: string; stage: "lesson" | "html"; title: string }) => {
@@ -809,11 +1066,12 @@ function AppContent() {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="mb-8 flex size-10 cursor-pointer items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground shadow-sm transition-transform hover:scale-105"
+                aria-label="返回跃课首页"
+                className="mb-8 flex size-10 cursor-pointer items-center justify-center rounded-xl text-primary-foreground shadow-sm transition-transform hover:scale-105"
                 onClick={handleResetWorkspace}
                 type="button"
               >
-                动
+                <BrandLogo className="size-10" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" sideOffset={8}>
@@ -840,7 +1098,7 @@ function AppContent() {
             icon={Settings}
             isActive={isAuthDialogOpen}
             label="账号设置"
-            onClick={() => setIsAuthDialogOpen(true)}
+            onClick={() => router.push("/account")}
           />
         </div>
       </nav>
@@ -907,7 +1165,7 @@ function AppContent() {
             canGenerateHtml={canGenerateHtml}
             isLoading={isLoading}
             isRestoringVersion={isRestoringArtifactVersionState}
-            lifecycle={artifactLifecycle}
+            lifecycle={effectiveArtifactLifecycle}
             projectId={projectId}
             onGenerateHtml={() => {
               void generateHtmlFromLesson();
@@ -922,21 +1180,7 @@ function AppContent() {
         </main>
       </motion.div>
 
-      <Dialog onOpenChange={setIsAuthDialogOpen} open={isAuthDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>账号与持久化</DialogTitle>
-            <DialogDescription>
-              登录后启用 Supabase 项目保存、历史恢复和版本追踪；退出后仍可使用临时会话。
-            </DialogDescription>
-          </DialogHeader>
-          <AuthPanel
-            onAuthChanged={() => {
-              setAuthRevision((revision) => revision + 1);
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+      {authDialog}
     </Sheet>
   );
 }

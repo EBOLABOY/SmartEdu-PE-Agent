@@ -4,6 +4,8 @@ import { toAISdkStream } from "@mastra/ai-sdk";
 import { createUIMessageStream, convertToModelMessages, type FinishReason, type UIMessage, type UIMessageChunk } from "ai";
 
 import { extractHtmlDocumentFromText } from "@/lib/artifact-protocol";
+import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
+import { markdownToCompetitionLessonPlan } from "@/lib/competition-lesson-markdown";
 import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -15,6 +17,7 @@ import {
   type WorkflowTraceData,
   type WorkflowTraceEntry,
 } from "@/lib/lesson-authoring-contract";
+import { buildLessonSlideshowHtml, isPptStyleLessonHtml } from "@/lib/lesson-slideshow-html";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-store";
 import { mastra } from "@/mastra";
@@ -196,6 +199,7 @@ function buildArtifactData(
   workflow: LessonWorkflowOutput,
   options: {
     content: string;
+    contentType?: StructuredArtifactData["contentType"];
     isComplete: boolean;
     status: StructuredArtifactData["status"];
     warningText?: string;
@@ -204,7 +208,7 @@ function buildArtifactData(
   return {
     protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
     stage: workflow.generationPlan.mode,
-    contentType: workflow.generationPlan.mode === "html" ? "html" : "markdown",
+    contentType: options.contentType ?? (workflow.generationPlan.mode === "html" ? "html" : "lesson-json"),
     content: options.content,
     isComplete: options.isComplete,
     status: options.status,
@@ -213,6 +217,43 @@ function buildArtifactData(
     ...(options.warningText ? { warningText: options.warningText } : {}),
     updatedAt: nowIsoString(),
   };
+}
+
+function stripCodeFence(text: string) {
+  const trimmed = text.trim();
+  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+
+  return match?.[1]?.trim() ?? trimmed;
+}
+
+function extractJsonObjectText(text: string) {
+  const stripped = stripCodeFence(text);
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+
+  if (start < 0 || end <= start) {
+    return stripped;
+  }
+
+  return stripped.slice(start, end + 1);
+}
+
+function buildLessonJsonArtifactContent(rawText: string) {
+  try {
+    const parsed = competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(rawText)));
+
+    return {
+      content: JSON.stringify(parsed),
+      warningText: undefined,
+    };
+  } catch {
+    const fallbackPlan = markdownToCompetitionLessonPlan(rawText);
+
+    return {
+      content: JSON.stringify(fallbackPlan),
+      warningText: "模型返回的是 Markdown 草稿，系统已在完成后转换为结构化 CompetitionLessonPlan 教案。",
+    };
+  }
 }
 
 function buildHtmlExtractionWarning(leadingText: string, trailingText: string) {
@@ -229,10 +270,15 @@ function buildHtmlExtractionWarning(leadingText: string, trailingText: string) {
   return warnings.join(" ");
 }
 
+function joinWarnings(...warnings: Array<string | undefined>) {
+  return warnings.filter(Boolean).join(" ");
+}
+
 function createStructuredAuthoringStream({
   mode,
   originalMessages,
   chatPersistence,
+  lessonPlan,
   persistence,
   projectId,
   requestId,
@@ -242,6 +288,7 @@ function createStructuredAuthoringStream({
   mode: GenerationMode;
   originalMessages: SmartEduUIMessage[];
   chatPersistence?: ProjectChatPersistence | null;
+  lessonPlan?: string;
   persistence?: LessonAuthoringPersistence | null;
   projectId?: string;
   requestId: string;
@@ -339,7 +386,7 @@ function createStructuredAuthoringStream({
         createTraceEntry(
           "agent-stream-started",
           "running",
-          mode === "html" ? "已开始生成互动大屏 HTML 文档流。" : "已开始生成 Markdown 教案流。",
+            mode === "html" ? "已开始生成互动大屏 HTML 文档流。" : "已开始流式生成 Markdown 教案草稿。",
         ),
       );
       writeTrace("generation");
@@ -356,7 +403,7 @@ function createStructuredAuthoringStream({
 
           switch (part.type) {
             case "text-start": {
-              if (mode === "lesson") {
+              if (mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-markdown") {
                 writer.write({
                   type: "text-start",
                   id: part.id,
@@ -370,19 +417,22 @@ function createStructuredAuthoringStream({
               rawText += part.delta;
 
               if (mode === "lesson") {
-                writer.write({
-                  type: "text-delta",
-                  id: part.id,
-                  delta: part.delta,
-                  ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-                });
-                writeArtifact(
-                  buildArtifactData(workflow, {
-                    content: rawText,
-                    isComplete: false,
-                    status: "streaming",
-                  }),
-                );
+                if (workflow.generationPlan.assistantTextPolicy === "mirror-markdown") {
+                  writer.write({
+                    type: "text-delta",
+                    id: part.id,
+                    delta: part.delta,
+                    ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
+                  });
+                  writeArtifact(
+                    buildArtifactData(workflow, {
+                      content: rawText,
+                      contentType: "markdown",
+                      isComplete: false,
+                      status: "streaming",
+                    }),
+                  );
+                }
                 break;
               }
 
@@ -402,7 +452,7 @@ function createStructuredAuthoringStream({
             }
 
             case "text-end": {
-              if (mode === "lesson") {
+              if (mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-markdown") {
                 writer.write({
                   type: "text-end",
                   id: part.id,
@@ -478,10 +528,10 @@ function createStructuredAuthoringStream({
 
             case "finish": {
               if (mode === "lesson") {
-                const markdown = rawText.trim();
+                const lessonText = rawText.trim();
 
-                if (!markdown) {
-                  const errorText = "模型未返回可用的 Markdown 教案内容。";
+                if (!lessonText) {
+                  const errorText = "模型未返回可用的 Markdown 教案草稿内容。";
 
                   runtimeTrace.push(createTraceEntry("validate-lesson-output", "failed", errorText));
                   writeTrace("failed");
@@ -490,10 +540,13 @@ function createStructuredAuthoringStream({
                   return;
                 }
 
+                const lessonJson = buildLessonJsonArtifactContent(lessonText);
                 const artifact = buildArtifactData(workflow, {
-                    content: markdown,
+                    content: lessonJson.content,
+                    contentType: "lesson-json",
                     isComplete: true,
                     status: "ready",
+                    warningText: lessonJson.warningText,
                   });
 
                 writeArtifact(artifact);
@@ -511,11 +564,28 @@ function createStructuredAuthoringStream({
                   return;
                 }
 
+                const extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
+                const shouldUseFallback = !isPptStyleLessonHtml(extraction.html);
+                const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : extraction.html;
+                const fallbackWarning = shouldUseFallback
+                  ? "模型 HTML 未满足课堂学习辅助大屏结构，系统已按已确认教案生成多页倒计时学习辅助大屏兜底版本。"
+                  : undefined;
+
+                if (shouldUseFallback) {
+                  runtimeTrace.push(
+                    createTraceEntry(
+                      "html-slideshow-fallback",
+                      "success",
+                      "已将非 PPT 结构 HTML 替换为多页课堂倒计时课件。",
+                    ),
+                  );
+                }
+
                 const artifact = buildArtifactData(workflow, {
-                    content: extraction.html,
+                    content: finalHtml,
                     isComplete: true,
                     status: "ready",
-                    warningText: buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText) || undefined,
+                    warningText: joinWarnings(extractedWarning, fallbackWarning) || undefined,
                   });
 
                 writeArtifact(artifact);
@@ -526,7 +596,7 @@ function createStructuredAuthoringStream({
                 createTraceEntry(
                   "generation-finished",
                   "success",
-                  mode === "html" ? "HTML Artifact 已完成结构化封装。" : "Markdown 教案已完成结构化封装。",
+                  mode === "html" ? "HTML Artifact 已完成结构化封装。" : "Markdown 草稿已转换为 CompetitionLessonPlan JSON 教案。",
                 ),
               );
               writeTrace("completed");
@@ -591,7 +661,7 @@ export async function streamLessonAuthoring(request: LessonAuthoringRequest) {
       ? [
           {
             role: "user" as const,
-            content: "请基于系统消息中的已确认教案，生成互动大屏 HTML。",
+            content: "请基于系统消息中的已确认教案，生成课堂学习辅助大屏 HTML。",
           },
         ]
       : await convertToModelMessages(request.messages);
@@ -622,6 +692,7 @@ export async function streamLessonAuthoring(request: LessonAuthoringRequest) {
     stream: createStructuredAuthoringStream({
       originalMessages: request.messages,
       chatPersistence: request.chatPersistence,
+      lessonPlan: request.lessonPlan,
       mode,
       persistence: request.persistence,
       projectId: request.projectId,

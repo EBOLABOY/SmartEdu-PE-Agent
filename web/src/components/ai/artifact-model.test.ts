@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildArtifactLifecycle } from "@/components/ai/artifact-model";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import type {
   PersistedArtifactVersion,
   SmartEduUIMessage,
@@ -122,6 +123,91 @@ describe("artifact-model", () => {
     expect(lifecycle.versions[0]?.id).toBe("assistant-lesson-lesson");
   });
 
+  it("会把流式 HTML 保留为源码流但不提交到 iframe 预览", () => {
+    const messages = [
+      {
+        id: "assistant-html-ready",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-artifact",
+            id: "artifact",
+            data: {
+              protocolVersion: "structured-v1",
+              stage: "html",
+              contentType: "html",
+              content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>旧大屏</h1></body></html>",
+              isComplete: true,
+              status: "ready",
+              source: "data-part",
+              updatedAt: "2026-04-25T12:05:00.000Z",
+            },
+          },
+        ],
+      },
+      {
+        id: "assistant-html-streaming",
+        role: "assistant",
+        parts: [
+          {
+            type: "data-artifact",
+            id: "artifact",
+            data: {
+              protocolVersion: "structured-v1",
+              stage: "html",
+              contentType: "html",
+              content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>新版生成中",
+              isComplete: false,
+              status: "streaming",
+              source: "data-part",
+              updatedAt: "2026-04-25T12:06:00.000Z",
+            },
+          },
+        ],
+      },
+    ] as SmartEduUIMessage[];
+
+    const lifecycle = buildArtifactLifecycle(messages, "streaming", true, []);
+
+    expect(lifecycle.stage).toBe("html");
+    expect(lifecycle.status).toBe("streaming");
+    expect(lifecycle.html).toContain("<h1>旧大屏</h1>");
+    expect(lifecycle.streamingHtml).toContain("新版生成中");
+    expect(lifecycle.isHtmlStreaming).toBe(true);
+    expect(lifecycle.htmlPreviewVersionId).toBe("assistant-html-ready-html");
+  });
+
+  it("首次生成 HTML 时只展示源码流，完成前不提交预览", () => {
+    const assistantMessage = {
+      id: "assistant-html-streaming",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "html",
+            contentType: "html",
+            content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>生成中",
+            isComplete: false,
+            status: "streaming",
+            source: "data-part",
+            updatedAt: "2026-04-25T12:06:00.000Z",
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([assistantMessage], "streaming", true, []);
+
+    expect(lifecycle.stage).toBe("html");
+    expect(lifecycle.html).toBe("");
+    expect(lifecycle.streamingHtml).toContain("生成中");
+    expect(lifecycle.isHtmlStreaming).toBe(true);
+    expect(lifecycle.htmlPreviewVersionId).toBeUndefined();
+  });
+
   it("会在恢复到包含 html 的历史消息时直接展示互动大屏", () => {
     const historyMessages = [
       {
@@ -227,5 +313,21 @@ describe("artifact-model", () => {
     expect(lifecycle.markdown).toBe("");
     expect(lifecycle.html).toBe("");
     expect(lifecycle.status).toBe("streaming");
+  });
+
+  it("会把持久化 lesson-json 派生为 Markdown 供旧视图消费", () => {
+    const lifecycle = buildArtifactLifecycle([], "ready", false, [
+      {
+        ...PERSISTED_VERSIONS[0],
+        contentType: "lesson-json",
+        content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+      },
+    ]);
+
+    expect(lifecycle.markdown).toContain("# 操控性技能－足球游戏");
+    expect(lifecycle.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
+    expect(lifecycle.versions[0]?.content).toContain("## 十、课时计划（教案）");
+    expect(lifecycle.versions[0]?.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
+    expect(lifecycle.versions[0]?.contentType).toBe("lesson-json");
   });
 });

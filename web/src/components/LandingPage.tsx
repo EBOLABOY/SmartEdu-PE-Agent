@@ -1,10 +1,12 @@
 "use client";
 
-import { UserCircle } from "lucide-react";
 import { motion } from "motion/react";
 import React, { useState } from "react";
 
+import BrandLogo from "@/components/BrandLogo";
+import AuthNavActions from "@/components/layout/AuthNavActions";
 import { Button } from "@/components/ui/button";
+import { BRAND_TAGLINE } from "@/lib/brand";
 
 interface LandingPageProps {
   onStart: (query: string) => void;
@@ -65,17 +67,12 @@ export default function LandingPage({ onStart }: LandingPageProps) {
         transition={{ duration: 0.24 }}
       >
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-lg font-black text-primary-foreground shadow-sm">
-            动
-          </div>
+          <BrandLogo className="h-12 w-auto" priority variant="horizontal" />
           <div>
-            <div className="text-lg font-black tracking-tight">动屏智创</div>
-            <div className="hidden text-xs text-muted-foreground sm:block">体育教案与互动大屏智能工作台</div>
+            <div className="hidden text-xs text-muted-foreground sm:block">{BRAND_TAGLINE}</div>
           </div>
         </div>
-        <Button variant="ghost" size="icon-sm" type="button">
-          <UserCircle aria-hidden size={20} strokeWidth={2} />
-        </Button>
+        <AuthNavActions accountLabel="打开账号后台" accountMode="icon" />
       </motion.nav>
 
       <motion.main

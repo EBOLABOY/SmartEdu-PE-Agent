@@ -264,4 +264,485 @@
   .lesson-editor-content[contenteditable="true"] {
     @apply cursor-text;
   }
+
+  .competition-lesson-preview {
+    @apply mx-auto max-w-4xl text-foreground;
+    font-family: "FangSong", "SimSun", serif;
+    font-size: 14pt;
+    line-height: 2.2;
+  }
+
+  .competition-lesson-preview h1 {
+    @apply mb-4 mt-0 text-center font-bold text-foreground;
+    font-family: "SimSun", serif;
+    font-size: 18pt;
+    line-height: 1.8;
+  }
+
+  .competition-lesson-preview h2 {
+    @apply mb-3 mt-7 font-bold text-foreground;
+    font-family: "SimHei", "SimSun", sans-serif;
+    font-size: 14pt;
+    line-height: 1.8;
+  }
+
+  .competition-lesson-preview h3 {
+    @apply mb-2 mt-5 font-bold text-foreground;
+    font-family: "SimHei", "SimSun", sans-serif;
+    font-size: 12pt;
+    line-height: 1.8;
+  }
+
+  .competition-lesson-preview p {
+    @apply my-2 whitespace-pre-wrap;
+    text-indent: 2em;
+  }
+
+  .competition-lesson-preview h1 + p,
+  .competition-lesson-preview h1 + p + p {
+    @apply text-center;
+    font-family: "FangSong", "SimSun", serif;
+    font-size: 12pt;
+    line-height: 1.8;
+    text-indent: 0;
+  }
+
+  .competition-lesson-preview ul,
+  .competition-lesson-preview ol {
+    @apply my-3 pl-8;
+  }
+
+  .competition-lesson-preview li {
+    @apply my-1;
+  }
+
+  .competition-lesson-preview table {
+    @apply my-5 w-full border-collapse text-foreground;
+    table-layout: fixed;
+    font-family: "SimSun", serif;
+    font-size: 10pt;
+    line-height: 1.45;
+  }
+
+  .competition-lesson-preview th,
+  .competition-lesson-preview td {
+    @apply border border-foreground/80 px-2 py-2 align-middle;
+    word-break: break-word;
+  }
+
+  .competition-lesson-preview th {
+    @apply bg-muted/40 text-center font-semibold;
+  }
+
+  .competition-lesson-preview td:first-child,
+  .competition-lesson-preview th:first-child {
+    @apply text-center;
+    width: 12%;
+  }
+
+  .competition-lesson-preview blockquote {
+    @apply my-4 border-l-4 border-brand/40 bg-brand/5 py-2 pl-4 text-muted-foreground;
+  }
+
+  .competition-lesson-preview hr {
+    @apply my-8 border-border;
+  }
+
+  .competition-print-root {
+    --competition-print-ink: #111;
+    --competition-print-border: #111;
+    --competition-print-paper: #fff;
+    --competition-print-page-width: 210mm;
+    --competition-print-page-min-height: 297mm;
+    --competition-print-page-padding-y: 12mm;
+    --competition-print-page-padding-x: 14mm;
+    @apply mx-auto text-black;
+    width: min(var(--competition-print-page-width), 100%);
+    color: var(--competition-print-ink);
+    font-family: "SimSun", "Songti SC", "Microsoft YaHei", sans-serif;
+  }
+
+  .competition-print-page {
+    box-sizing: border-box;
+    width: var(--competition-print-page-width);
+    max-width: 100%;
+    min-height: var(--competition-print-page-min-height);
+    margin: 0 auto 24px;
+    padding: var(--competition-print-page-padding-y) var(--competition-print-page-padding-x);
+    background: var(--competition-print-paper);
+    box-shadow: 0 4px 6px rgb(0 0 0 / 10%);
+  }
+
+  .competition-print-header {
+    margin-bottom: 35px;
+  }
+
+  .competition-print-header h2 {
+    margin: 0 0 10px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.6;
+    letter-spacing: 2px;
+  }
+
+  .competition-print-subtitle-level {
+    margin-bottom: 15px;
+    text-align: right;
+    font-size: 16px;
+    line-height: 1.6;
+    text-indent: 0;
+  }
+
+  .competition-print-subtitle-teacher {
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .competition-print-subtitle-teacher span {
+    margin: 0 15px;
+  }
+
+  .competition-print-section {
+    margin-top: 25px;
+  }
+
+  .competition-print-section-title {
+    margin: 0 0 10px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.6;
+  }
+
+  .competition-print-paragraph,
+  .competition-print-numbered p {
+    margin: 0 0 10px;
+    text-align: justify;
+    font-size: 14px;
+    line-height: 1.6;
+    text-indent: 2em;
+  }
+
+  .competition-print-numbered p {
+    text-indent: 0;
+  }
+
+  .competition-print-flow {
+    margin: 20px 0;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.6;
+    text-indent: 0;
+  }
+
+  .competition-print-table {
+    width: 100%;
+    margin: 15px 0 25px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    color: var(--competition-print-ink);
+    font-family: "SimSun", "Songti SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .competition-print-table th,
+  .competition-print-table td {
+    border: 1px solid var(--competition-print-border);
+    padding: 8px;
+    vertical-align: top;
+    word-wrap: break-word;
+  }
+
+  .competition-print-table th {
+    text-align: center;
+    font-weight: 400;
+  }
+
+  .competition-print-eval-table th {
+    padding: 12px;
+  }
+
+  .competition-print-eval-level-col {
+    width: 13%;
+  }
+
+  .competition-print-eval-table td {
+    padding: 15px 18px;
+    vertical-align: middle;
+    line-height: 2.2;
+  }
+
+  .competition-print-eval-table th:first-child,
+  .competition-print-eval-table td:first-child {
+    width: 13%;
+    padding-right: 14px;
+    padding-left: 14px;
+    white-space: nowrap;
+  }
+
+  .competition-print-eval-level-cell {
+    position: relative;
+    text-align: center;
+    vertical-align: middle !important;
+  }
+
+  .competition-print-eval-level-text {
+    position: relative;
+    z-index: 1;
+    display: inline-block;
+    min-width: 4.25em;
+    background: var(--competition-print-paper);
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    text-align: center;
+  }
+
+  .competition-print-eval-table td:last-child {
+    text-align: justify;
+  }
+
+  .competition-print-lesson-table td {
+    padding: 8px;
+  }
+
+  .competition-print-center {
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .competition-print-col-title {
+    background-color: #fafafa;
+    text-align: center;
+    vertical-align: middle !important;
+    font-weight: 700;
+  }
+
+  .competition-print-compact-line,
+  .competition-print-organization-note {
+    margin: 0 0 4px;
+    line-height: 1.6;
+    text-indent: 0;
+  }
+
+  .competition-print-method-label {
+    margin: 0 0 4px;
+    font-weight: 700;
+    line-height: 1.6;
+    text-indent: 0;
+  }
+
+  .competition-print-row-title,
+  .competition-print-vertical-cell {
+    vertical-align: middle !important;
+    font-weight: 700;
+    line-height: 1.15;
+  }
+
+  .competition-print-row-title span,
+  .competition-print-vertical-cell span {
+    display: block;
+  }
+
+  .competition-print-diagram-box {
+    margin-bottom: 15px;
+    text-align: center;
+  }
+
+  .competition-print-diagram-title {
+    margin-bottom: 4px;
+    color: #333;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .competition-print-formation-grid {
+    margin-bottom: 10px;
+    line-height: 1.1;
+  }
+
+  .competition-print-dot-student {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin: 2px 4px;
+    border-radius: 50%;
+    background-color: #4a90e2;
+  }
+
+  .competition-print-dot-student-sm {
+    position: absolute;
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #fff;
+    box-shadow: 1px 1px 2px rgb(0 0 0 / 40%);
+  }
+
+  .competition-print-dot-teacher {
+    position: relative;
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background-color: #f5a623;
+  }
+
+  .competition-print-dot-teacher::before,
+  .competition-print-dot-teacher::after {
+    position: absolute;
+    top: 4px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #fff;
+    content: "";
+  }
+
+  .competition-print-dot-teacher::before {
+    left: 3px;
+  }
+
+  .competition-print-dot-teacher::after {
+    right: 3px;
+  }
+
+  .competition-print-dot-teacher-smile {
+    position: absolute;
+    bottom: 3px;
+    left: 4px;
+    width: 8px;
+    height: 4px;
+    border-bottom: 2px solid #fff;
+    border-radius: 0 0 10px 10px;
+  }
+
+  .competition-print-field-box {
+    position: relative;
+    box-sizing: border-box;
+    width: 95%;
+    margin: 0 auto;
+    border: 2px solid #fff;
+    outline: 1px solid #ccc;
+    background-color: #6fb96f;
+  }
+
+  .competition-print-field-line {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid rgb(255 255 255 / 70%);
+  }
+
+  .competition-print-field-center {
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: 2px solid rgb(255 255 255 / 70%);
+    transform: translateX(-50%);
+  }
+
+  .competition-print-field-circle {
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    border: 2px solid rgb(255 255 255 / 70%);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .competition-print-field-penalty-left {
+    top: 20%;
+    bottom: 20%;
+    left: 0;
+    width: 15px;
+    border-left: none;
+  }
+
+  .competition-print-field-penalty-right {
+    top: 20%;
+    right: 0;
+    bottom: 20%;
+    width: 15px;
+    border-right: none;
+  }
+
+  .competition-print-load-cell {
+    padding: 0 !important;
+  }
+
+  .competition-print-load-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+  }
+
+  .competition-print-load-chart {
+    position: relative;
+    flex: 0 0 65%;
+    height: 110px;
+  }
+
+  .competition-print-load-chart svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .competition-print-load-stats {
+    flex: 0 0 32%;
+    border-left: 1px dashed #ccc;
+    padding-left: 15px;
+    text-align: center;
+  }
+
+  .competition-print-stat-value {
+    margin-bottom: 2px;
+    color: #d32f2f;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .competition-print-stat-label {
+    margin-bottom: 10px;
+    color: #666;
+    font-size: 12px;
+  }
+
+  .competition-print-density-badges {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .competition-print-density-badge {
+    display: inline-block;
+    width: fit-content;
+    border-radius: 4px;
+    background-color: #e3f2fd;
+    color: #1976d2;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .competition-print-density-badge-individual {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+  }
+
+  .competition-print-reflection-title {
+    height: 45px;
+  }
+
+  .competition-print-reflection {
+    min-height: 45px;
+  }
 }

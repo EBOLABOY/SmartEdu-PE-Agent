@@ -11,6 +11,7 @@ import {
   type PersistedProjectSummary,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
+import { toIsoDateTime } from "@/lib/date-time";
 import type { Database } from "@/lib/supabase/database.types";
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
@@ -26,8 +27,8 @@ function toPersistedProjectSummary(row: ProjectRow): PersistedProjectSummary {
     id: row.id,
     title: row.title,
     market: row.market,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: toIsoDateTime(row.created_at, "projects.created_at"),
+    updatedAt: toIsoDateTime(row.updated_at, "projects.updated_at"),
     ...(row.description ? { description: row.description } : {}),
   });
 }
@@ -35,8 +36,8 @@ function toPersistedProjectSummary(row: ProjectRow): PersistedProjectSummary {
 function toPersistedConversation(row: ConversationRow): PersistedConversation {
   return persistedConversationSchema.parse({
     id: row.id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: toIsoDateTime(row.created_at, "conversations.created_at"),
+    updatedAt: toIsoDateTime(row.updated_at, "conversations.updated_at"),
     ...(row.title ? { title: row.title } : {}),
   });
 }
@@ -58,7 +59,7 @@ async function toPersistedProjectMessage(
     uiMessageId: row.ui_message_id,
     role: row.role,
     content: row.content,
-    createdAt: row.created_at,
+    createdAt: toIsoDateTime(row.created_at, "messages.created_at"),
     uiMessage: parsedMessage.data[0],
   });
 }

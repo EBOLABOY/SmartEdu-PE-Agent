@@ -1,11 +1,17 @@
 import { isDataUIPart, type UIMessage } from "ai";
 
 import type {
+  ArtifactContentType,
   GenerationMode,
   SmartEduUIMessage,
   StructuredArtifactData,
   WorkflowTraceData,
 } from "@/lib/lesson-authoring-contract";
+import {
+  competitionLessonPlanSchema,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
+import { competitionLessonPlanToMarkdown } from "@/lib/competition-lesson-markdown";
 
 export type ExtractedArtifact = {
   stage?: GenerationMode;
@@ -18,6 +24,7 @@ export type ExtractedArtifact = {
   warningText?: string;
   protocolVersion?: string;
   artifact?: StructuredArtifactData;
+  lessonPlan?: CompetitionLessonPlan;
   trace?: WorkflowTraceData;
 };
 
@@ -27,6 +34,31 @@ const EMPTY_EXTRACTED_ARTIFACT: ExtractedArtifact = {
   htmlComplete: false,
   source: "none",
 };
+
+export function lessonContentToPlan(
+  content: string,
+  contentType: ArtifactContentType,
+): CompetitionLessonPlan | undefined {
+  try {
+    return contentType === "lesson-json"
+      ? competitionLessonPlanSchema.parse(JSON.parse(content))
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function lessonContentToMarkdown(
+  content: string,
+  contentType: ArtifactContentType,
+  lessonPlan?: CompetitionLessonPlan,
+) {
+  if (contentType !== "lesson-json") {
+    return content;
+  }
+
+  return lessonPlan ? competitionLessonPlanToMarkdown(lessonPlan) : content;
+}
 
 export function getMessageText(message: Pick<UIMessage, "parts">) {
   return message.parts
@@ -102,9 +134,21 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
   const structuredArtifact = getStructuredArtifactPart(message);
 
   if (structuredArtifact) {
+    const lessonPlan =
+      structuredArtifact.stage === "lesson"
+        ? lessonContentToPlan(structuredArtifact.content, structuredArtifact.contentType)
+        : undefined;
+
     return {
       stage: structuredArtifact.stage,
-      markdown: structuredArtifact.stage === "lesson" ? structuredArtifact.content : "",
+      markdown:
+        structuredArtifact.stage === "lesson"
+          ? lessonContentToMarkdown(
+              structuredArtifact.content,
+              structuredArtifact.contentType,
+              lessonPlan,
+            )
+          : "",
       html: structuredArtifact.stage === "html" ? structuredArtifact.content : "",
       htmlComplete:
         structuredArtifact.stage === "html" ? structuredArtifact.isComplete : structuredArtifact.status === "ready",
@@ -114,6 +158,7 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
       warningText: structuredArtifact.warningText,
       protocolVersion: structuredArtifact.protocolVersion,
       artifact: structuredArtifact,
+      lessonPlan,
       trace: getStructuredTracePart(message),
     };
   }

@@ -115,35 +115,35 @@ export function markdownToLessonDoc(markdown: string): JSONContent {
   };
 }
 
-function textFromNode(node: JSONContent): string {
+export function lessonDocTextFromNode(node: JSONContent): string {
   if (node.type === "text") {
     return node.text ?? "";
   }
 
-  return node.content?.map(textFromNode).join(node.type === "hardBreak" ? "\n" : "") ?? "";
+  return node.content?.map(lessonDocTextFromNode).join(node.type === "hardBreak" ? "\n" : "") ?? "";
 }
 
 function serializeNode(node: JSONContent): string {
   if (node.type === "heading") {
     const level = Number(node.attrs?.level ?? 1);
-    return `${"#".repeat(Math.max(1, Math.min(level, 6)))} ${textFromNode(node).trim()}`;
+    return `${"#".repeat(Math.max(1, Math.min(level, 6)))} ${lessonDocTextFromNode(node).trim()}`;
   }
 
   if (node.type === "paragraph") {
-    return textFromNode(node).trim();
+    return lessonDocTextFromNode(node).trim();
   }
 
   if (node.type === "bulletList") {
     return (
       node.content
-        ?.map((item) => `- ${textFromNode(item).trim()}`)
+        ?.map((item) => `- ${lessonDocTextFromNode(item).trim()}`)
         .filter((line) => line.trim() !== "-")
         .join("\n") ?? ""
     );
   }
 
   if (node.type === "orderedList") {
-    return node.content?.map((item, index) => `${index + 1}. ${textFromNode(item).trim()}`).join("\n") ?? "";
+    return node.content?.map((item, index) => `${index + 1}. ${lessonDocTextFromNode(item).trim()}`).join("\n") ?? "";
   }
 
   if (node.type === "blockquote") {
@@ -154,7 +154,7 @@ function serializeNode(node: JSONContent): string {
     return "---";
   }
 
-  return textFromNode(node).trim();
+  return lessonDocTextFromNode(node).trim();
 }
 
 export function lessonDocToMarkdown(doc: JSONContent): string {
