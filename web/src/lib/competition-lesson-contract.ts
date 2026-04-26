@@ -5,6 +5,33 @@ const nonEmptyStringArray = z.array(nonEmptyString).min(1);
 
 export const competitionLessonEvaluationLevelSchema = z.enum(["三颗星", "二颗星", "一颗星"]);
 
+export function normalizeCompetitionLessonTime(value: unknown, fallback = "8分钟") {
+  const raw = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+  const compact = raw.replace(/\s+/g, "").replace(/[，,。；;、]+$/g, "");
+
+  if (!compact) {
+    return fallback;
+  }
+
+  const singleMinute = /^(约|大约)?(\d+(?:\.\d+)?)(?:分钟|分|min(?:ute)?s?|['’′`])?$/i.exec(compact);
+
+  if (singleMinute) {
+    return `${singleMinute[1] ?? ""}${singleMinute[2]}分钟`;
+  }
+
+  const rangeMinute = /^(约|大约)?(\d+(?:\.\d+)?)(?:[-~－—至到](\d+(?:\.\d+)?))(?:分钟|分|min(?:ute)?s?|['’′`])?$/i.exec(
+    compact,
+  );
+
+  if (rangeMinute) {
+    return `${rangeMinute[1] ?? ""}${rangeMinute[2]}-${rangeMinute[3]}分钟`;
+  }
+
+  return compact.replace(/min(?:ute)?s?$/i, "分钟").replace(/分$/g, "分钟");
+}
+
+const lessonTimeString = z.preprocess((value) => normalizeCompetitionLessonTime(value), nonEmptyString);
+
 export const competitionLessonLoadChartPointSchema = z
   .object({
     timeMinute: z.number().min(0).max(240),
@@ -43,7 +70,7 @@ export const competitionLessonPlanRowSchema = z
       students: nonEmptyStringArray,
     }),
     organization: nonEmptyStringArray,
-    time: nonEmptyString,
+    time: lessonTimeString,
     intensity: nonEmptyString,
   })
   .strict();

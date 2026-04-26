@@ -1,6 +1,7 @@
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
   competitionLessonPlanSchema,
+  normalizeCompetitionLessonTime,
   type CompetitionLessonLoadChartPoint,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
@@ -280,7 +281,7 @@ function extractPeriodPlan(section: string, plan: CompetitionLessonPlan) {
           students: students.length ? students : plan.periodPlan.rows[0]?.methods.students ?? ["学生按要求参与练习。"],
         },
         organization: splitCellLines(row[3]),
-        time: row[4] || "8分钟",
+        time: normalizeCompetitionLessonTime(row[4]),
         intensity: row[5] || "中等",
       };
     });

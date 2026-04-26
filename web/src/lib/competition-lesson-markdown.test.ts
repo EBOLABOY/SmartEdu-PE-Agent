@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN, competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
+import {
+  DEFAULT_COMPETITION_LESSON_PLAN,
+  competitionLessonPlanSchema,
+  normalizeCompetitionLessonTime,
+} from "@/lib/competition-lesson-contract";
 import {
   competitionLessonPlanToMarkdown,
   markdownToCompetitionLessonPlan,
@@ -113,6 +117,48 @@ describe("competition-lesson-markdown", () => {
     expect(plan.periodPlan.rows[1]?.methods.teacher).toContain("示范动作");
     expect(plan.periodPlan.rows[1]?.methods.students).toContain("互评练习");
     expect(plan.periodPlan.homework).toContain("对墙挥拍20次");
+  });
+
+  it("会把课时计划运动时间统一规范为中文分钟单位", () => {
+    const plan = markdownToCompetitionLessonPlan(`# 投掷实心球
+
+## 十、课时计划（教案）
+
+| 课的结构 | 具体教学内容 | 教与学的方法 | 组织形式 | 运动时间 | 强度 |
+| --- | --- | --- | --- | --- | --- |
+| 准备部分 | 课堂常规 | 教师：<br>讲解要求<br>学生：<br>认真听讲 | 四列横队 | 2’ | 低 |
+| 基本部分 | 分组投掷 | 教师：<br>巡回指导<br>学生：<br>分组练习 | 分组轮换 | 28, | 中高 |
+| 结束部分 | 放松总结 | 教师：<br>总结评价<br>学生：<br>放松拉伸 | 集中队形 | 5min | 小 |
+`);
+
+    expect(plan.periodPlan.rows.map((row) => row.time)).toEqual(["2分钟", "28分钟", "5分钟"]);
+    expect(competitionLessonPlanToMarkdown(plan)).toContain("| 准备部分 | 课堂常规 | 教师：<br>讲解要求<br>学生：<br>认真听讲 | 四列横队 | 2分钟 | 低 |");
+  });
+
+  it("会在结构化 JSON 契约层规范化运动时间，避免绕过 Markdown 解析", () => {
+    const parsed = competitionLessonPlanSchema.parse({
+      ...DEFAULT_COMPETITION_LESSON_PLAN,
+      periodPlan: {
+        ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan,
+        rows: [
+          {
+            ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows[0],
+            time: "2'",
+          },
+          {
+            ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows[1],
+            time: "10-12’",
+          },
+          {
+            ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows[2],
+            time: "3,",
+          },
+        ],
+      },
+    });
+
+    expect(parsed.periodPlan.rows.map((row) => row.time)).toEqual(["2分钟", "10-12分钟", "3分钟"]);
+    expect(normalizeCompetitionLessonTime("约8分")).toBe("约8分钟");
   });
 
   it("会压缩安全保障和场地器材，避免正式打印表格被长清单撑开", () => {

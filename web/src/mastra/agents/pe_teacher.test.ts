@@ -18,6 +18,8 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("只输出 Markdown 正文");
     expect(prompt).toContain("| 星级 | 评价方面 |");
     expect(prompt).toContain("| 课的结构 | 具体教学内容 | 教与学的方法 | 组织形式 | 运动时间 | 强度 |");
+    expect(prompt).toContain("运动时间”列必须统一使用“X分钟”或“X-Y分钟”格式");
+    expect(prompt).toContain("禁止使用 2’、2'、2min、2, 或纯数字");
     expect(prompt).not.toContain("请确认教案是否无误，确认后我再生成互动大屏");
   });
 
