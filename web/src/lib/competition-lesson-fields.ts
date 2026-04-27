@@ -8,6 +8,10 @@ export type CompetitionLessonEditableField = {
   read: (lesson: CompetitionLessonPlan) => string;
 };
 
+function readTextBlock(lines: string[]) {
+  return lines.map((line) => line.trim()).filter(Boolean).join("；");
+}
+
 export const COMPETITION_LESSON_EDITABLE_FIELDS: CompetitionLessonEditableField[] = [
   {
     group: "基础信息",
@@ -26,37 +30,37 @@ export const COMPETITION_LESSON_EDITABLE_FIELDS: CompetitionLessonEditableField[
   {
     group: "学习目标",
     label: "运动能力目标",
-    path: "/learningObjectives/sportAbility",
+    path: "/learningObjectives/sportAbility/0",
     description: "改写学生动作技能、体能或运动认知目标。",
-    read: (lesson) => lesson.learningObjectives.sportAbility,
+    read: (lesson) => readTextBlock(lesson.learningObjectives.sportAbility),
   },
   {
     group: "学习目标",
     label: "健康行为目标",
-    path: "/learningObjectives/healthBehavior",
+    path: "/learningObjectives/healthBehavior/0",
     description: "改写安全意识、规则意识、运动习惯目标。",
-    read: (lesson) => lesson.learningObjectives.healthBehavior,
+    read: (lesson) => readTextBlock(lesson.learningObjectives.healthBehavior),
   },
   {
     group: "学习目标",
     label: "体育品德目标",
-    path: "/learningObjectives/sportMorality",
+    path: "/learningObjectives/sportMorality/0",
     description: "改写合作、挑战、纪律、尊重等品德目标。",
-    read: (lesson) => lesson.learningObjectives.sportMorality,
+    read: (lesson) => readTextBlock(lesson.learningObjectives.sportMorality),
   },
   {
     group: "教学重难点",
     label: "学生学习重难点",
-    path: "/keyDifficultPoints/studentLearning",
+    path: "/keyDifficultPoints/studentLearning/0",
     description: "改写学生学习视角下的关键动作或学习障碍。",
-    read: (lesson) => lesson.keyDifficultPoints.studentLearning,
+    read: (lesson) => readTextBlock(lesson.keyDifficultPoints.studentLearning),
   },
   {
     group: "教学重难点",
     label: "教学内容重难点",
-    path: "/keyDifficultPoints/teachingContent",
+    path: "/keyDifficultPoints/teachingContent/0",
     description: "改写教学内容本身的技术重点和难点。",
-    read: (lesson) => lesson.keyDifficultPoints.teachingContent,
+    read: (lesson) => readTextBlock(lesson.keyDifficultPoints.teachingContent),
   },
   {
     group: "评价",

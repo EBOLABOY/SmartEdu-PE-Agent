@@ -82,7 +82,47 @@ async function readAll(stream: ReadableStream<UIMessageChunk>) {
   }
 }
 
+async function readFirstChunks(stream: ReadableStream<UIMessageChunk>, count: number) {
+  const reader = stream.getReader();
+  const chunks: UIMessageChunk[] = [];
+
+  try {
+    while (chunks.length < count) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      chunks.push(value);
+    }
+
+    return chunks;
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
 describe("structured authoring stream adapter", () => {
+  it("浼氬湪妯″瀷棣栦釜 text delta 鍓嶅厛杈撳嚭 workflow trace锛屼緵宸︿晶瀹炴椂灞曠ず", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-trace-before-text",
+      workflow: baseWorkflow,
+      stream: new ReadableStream<UIMessageChunk>(),
+    });
+
+    const chunks = await readFirstChunks(stream, 3);
+    const tracePhases = chunks
+      .map(getTraceData)
+      .filter((trace): trace is WorkflowTraceData => Boolean(trace))
+      .map((trace) => trace.phase);
+
+    expect(tracePhases).toEqual(expect.arrayContaining(["generation"]));
+    expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(false);
+  });
+
   it("lesson JSON 流会实时输出 streaming lesson-json artifact", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
@@ -116,14 +156,12 @@ describe("structured authoring stream adapter", () => {
     );
   });
 
-  it("lesson JSON 流在结构化校验失败时会先调用修复 skill，成功后输出 lesson-json artifact", async () => {
-    const repairLessonJson = vi.fn().mockResolvedValue(createConcreteLessonPlan());
+  it("lesson JSON 流在结构化校验失败时会直接报错，不再自动调用修复模型", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
       originalMessages: [],
-      requestId: "request-repair",
+      requestId: "request-invalid-json",
       workflow: baseWorkflow,
-      repairLessonJson,
       stream: createChunkStream([
         { type: "text-start", id: "text-1" },
         { type: "text-delta", id: "text-1", delta: "{\"title\":\"羽毛球正手发球\"" },
@@ -133,22 +171,19 @@ describe("structured authoring stream adapter", () => {
     });
 
     const chunks = await readAll(stream);
-    const finalArtifact = chunks
+    const artifacts = chunks
       .filter((chunk) => chunk.type === "data-artifact")
-      .map(getArtifactData)
-      .at(-1);
+      .map(getArtifactData);
 
-    expect(repairLessonJson).toHaveBeenCalledWith(
-      expect.objectContaining({
-        draftText: expect.stringContaining("羽毛球正手发球"),
-      }),
+    expect(artifacts.some((artifact) => artifact?.status === "ready")).toBe(false);
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: expect.stringContaining("已停止自动修复"),
+        }),
+      ]),
     );
-    expect(finalArtifact).toMatchObject({
-      contentType: "lesson-json",
-      status: "ready",
-      isComplete: true,
-      warningText: expect.stringContaining("自动调用结构化修复"),
-    });
   });
 
   it("lesson 文本流收到合法 CompetitionLessonPlan JSON 时会输出 final lesson-json artifact", async () => {
@@ -244,6 +279,77 @@ describe("structured authoring stream adapter", () => {
         }),
         expect.objectContaining({ type: "reasoning-end", id: "reasoning-1" }),
       ]),
+    );
+  });
+
+  it("会透传 AI SDK 原生 step 与 tool chunks，避免把工具调用伪造成自定义 trace", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-tools",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        { type: "start-step" },
+        {
+          type: "tool-input-start",
+          toolCallId: "call-1",
+          toolName: "searchStandards",
+          title: "检索课标",
+        },
+        {
+          type: "tool-input-delta",
+          toolCallId: "call-1",
+          inputTextDelta: "{\"query\":\"篮球\"}",
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "call-1",
+          toolName: "searchStandards",
+          input: { query: "篮球" },
+          title: "检索课标",
+        },
+        {
+          type: "tool-output-available",
+          toolCallId: "call-1",
+          output: { count: 6 },
+        },
+        { type: "finish-step" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const traceChunks = chunks
+      .map(getTraceData)
+      .filter((trace): trace is WorkflowTraceData => Boolean(trace));
+
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "start-step" }),
+        expect.objectContaining({
+          type: "tool-input-start",
+          toolCallId: "call-1",
+          toolName: "searchStandards",
+        }),
+        expect.objectContaining({
+          type: "tool-input-delta",
+          toolCallId: "call-1",
+          inputTextDelta: "{\"query\":\"篮球\"}",
+        }),
+        expect.objectContaining({
+          type: "tool-input-available",
+          toolCallId: "call-1",
+          input: { query: "篮球" },
+        }),
+        expect.objectContaining({
+          type: "tool-output-available",
+          toolCallId: "call-1",
+          output: { count: 6 },
+        }),
+        expect.objectContaining({ type: "finish-step" }),
+      ]),
+    );
+    expect(traceChunks.flatMap((trace) => trace.trace.map((entry) => entry.step))).not.toEqual(
+      expect.arrayContaining(["agent-tool-call", "agent-tool-result", "agent-tool-error"]),
     );
   });
 

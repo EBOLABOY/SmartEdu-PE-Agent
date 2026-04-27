@@ -114,7 +114,7 @@
   --accent-foreground: 0.21 0.006 285.885;
 
   --destructive: 0.577 0.245 27.325;
-  --destructive-foreground: 0.577 0.245 27.325;
+  --destructive-foreground: 0.985 0.002 247.839;
 
   --border: 0.92 0.004 286.032;
   --input: 0.92 0.004 286.032;
@@ -148,47 +148,47 @@
  * .dark — 暗色主题
  * ============================================================================ */
 .dark {
-  --background: 0.141 0.005 285.823;
-  --foreground: 0.985 0.002 247.839;
+  --background: 0.075 0.008 160;
+  --foreground: 0.94 0.008 160;
 
-  --card: 0.141 0.005 285.823;
-  --card-foreground: 0.985 0.002 247.839;
+  --card: 0.12 0.008 160;
+  --card-foreground: 0.94 0.008 160;
 
-  --popover: 0.141 0.005 285.823;
-  --popover-foreground: 0.985 0.002 247.839;
+  --popover: 0.12 0.008 160;
+  --popover-foreground: 0.94 0.008 160;
 
-  --primary: 0.985 0.002 247.839;
-  --primary-foreground: 0.21 0.006 285.885;
+  --primary: 0.9 0.012 160;
+  --primary-foreground: 0.09 0.012 160;
 
-  --secondary: 0.274 0.006 286.033;
-  --secondary-foreground: 0.985 0.002 247.839;
+  --secondary: 0.18 0.01 160;
+  --secondary-foreground: 0.9 0.012 160;
 
-  --muted: 0.274 0.006 286.033;
-  --muted-foreground: 0.705 0.015 286.067;
+  --muted: 0.17 0.01 160;
+  --muted-foreground: 0.72 0.022 160;
 
-  --accent: 0.274 0.006 286.033;
-  --accent-foreground: 0.985 0.002 247.839;
+  --accent: 0.22 0.035 158;
+  --accent-foreground: 0.93 0.012 160;
 
   --destructive: 0.396 0.141 25.723;
-  --destructive-foreground: 0.637 0.237 25.331;
+  --destructive-foreground: 0.94 0.01 25;
 
-  --border: 0.274 0.006 286.033;
-  --input: 0.274 0.006 286.033;
-  --ring: 0.442 0.017 285.786;
+  --border: 0.31 0.018 95;
+  --input: 0.31 0.018 95;
+  --ring: 0.72 0.18 157.571;
 
   /* 品牌色 — emerald dark */
-  --brand: 0.648 0.2 157.571;
-  --brand-foreground: 0.15 0.03 157.571;
+  --brand: 0.76 0.19 157.571;
+  --brand-foreground: 0.09 0.024 157.571;
 
   /* 侧边栏 */
-  --sidebar: 0.17 0.005 285.823;
-  --sidebar-foreground: 0.985 0.002 247.839;
-  --sidebar-primary: 0.985 0.002 247.839;
-  --sidebar-primary-foreground: 0.21 0.006 285.885;
-  --sidebar-accent: 0.274 0.006 286.033;
-  --sidebar-accent-foreground: 0.985 0.002 247.839;
-  --sidebar-border: 0.274 0.006 286.033;
-  --sidebar-ring: 0.442 0.017 285.786;
+  --sidebar: 0.095 0.008 160;
+  --sidebar-foreground: 0.94 0.008 160;
+  --sidebar-primary: 0.76 0.19 157.571;
+  --sidebar-primary-foreground: 0.09 0.024 157.571;
+  --sidebar-accent: 0.18 0.018 158;
+  --sidebar-accent-foreground: 0.94 0.008 160;
+  --sidebar-border: 0.28 0.016 95;
+  --sidebar-ring: 0.72 0.18 157.571;
 
   /* Chart */
   --chart-1: 0.488 0.243 264.376;
@@ -213,6 +213,11 @@
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  .dark ::selection {
+    background: oklch(var(--brand) / 0.28);
+    color: oklch(var(--foreground));
   }
 }
 
@@ -250,7 +255,7 @@
   }
 
   .lesson-editor-content blockquote {
-    @apply my-4 border-l-4 border-brand/40 bg-brand/5 py-2 pl-4 text-muted-foreground;
+    @apply my-4 rounded-2xl border border-brand/20 bg-brand/5 px-4 py-3 text-muted-foreground;
   }
 
   .lesson-editor-content hr {
@@ -341,7 +346,7 @@
   }
 
   .competition-lesson-preview blockquote {
-    @apply my-4 border-l-4 border-brand/40 bg-brand/5 py-2 pl-4 text-muted-foreground;
+    @apply my-4 rounded-2xl border border-brand/20 bg-brand/5 px-4 py-3 text-muted-foreground;
   }
 
   .competition-lesson-preview hr {

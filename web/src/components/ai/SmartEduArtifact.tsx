@@ -27,6 +27,12 @@ import {
   ArtifactTitle,
 } from "@/components/ai-elements/artifact";
 import type { ArtifactLifecycle, ArtifactLifecycleStatus, ArtifactSnapshot } from "@/components/ai/artifact-model";
+import {
+  getArtifactDefaultView,
+  getHtmlArtifactDisplayState,
+  getLessonArtifactDisplayState,
+  type ArtifactView,
+} from "@/components/ai/artifact-view-state";
 import ArtifactTextViewer from "@/components/ai/renderers/ArtifactTextViewer";
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
@@ -35,19 +41,19 @@ import CompetitionLessonPrintFrame, {
 } from "@/components/lesson-print/CompetitionLessonPrintFrame";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SelectableSurface, StateNotice, StateSurface } from "@/components/ui/state-surface";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { exportHtmlResponseSchema } from "@/lib/lesson-authoring-contract";
-
-type ArtifactView = "lesson" | "canvas" | "versions";
 
 interface SmartEduArtifactProps {
   lifecycle: ArtifactLifecycle;
   canGenerateHtml: boolean;
+  isHtmlGenerationPending?: boolean;
   isLoading: boolean;
   isRestoringVersion?: boolean;
   projectId?: string | null;
+  showDesktopGenerateAction?: boolean;
   onGenerateHtml: () => void;
   onRestoreArtifactVersion?: (snapshot: ArtifactSnapshot) => Promise<void> | void;
 }
@@ -78,40 +84,20 @@ const VIEW_OPTIONS: Array<{
   { value: "versions", label: "版本", icon: History },
 ];
 
-function getDefaultView(lifecycle: ArtifactLifecycle): ArtifactView {
-  return lifecycle.stage === "html" || lifecycle.html.trim() ? "canvas" : "lesson";
-}
-
-function ArtifactEmptyState({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`flex h-full items-center justify-center rounded-2xl border border-dashed border-border bg-muted/50 p-8 text-center text-sm text-muted-foreground ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
 function LessonStartGuide() {
   return (
-    <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,#f8fafc,transparent_62%)] p-6">
-      <div className="w-full max-w-2xl rounded-3xl border border-border bg-background p-8 text-center shadow-sm">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-brand/10 text-brand">
+    <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(0,217,146,0.10),transparent_62%)] p-6">
+      <div className="w-full max-w-2xl rounded-3xl border border-border/80 bg-card/90 p-8 text-center shadow-[0_20px_70px_-58px_rgba(0,217,146,0.55)]">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-brand/25 bg-brand/10 text-brand">
           <Sparkles className="size-6" />
         </div>
         <h2 className="mt-5 text-xl font-semibold text-foreground">开始创建体育课</h2>
         <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
           在左侧输入课程主题，AI 会先生成可审阅教案。确认教案后，再生成适合课堂投屏的互动大屏。
         </p>
-        <div className="mt-6 rounded-2xl border border-dashed border-border bg-muted/50 px-4 py-3 text-left text-sm text-muted-foreground">
+        <StateSurface className="mt-6 text-left" density="compact" tone="brand">
           示例：三年级篮球运球接力，40 人，20 个篮球，半个篮球场，课堂时长 40 分钟。
-        </div>
+        </StateSurface>
       </div>
     </div>
   );
@@ -119,9 +105,11 @@ function LessonStartGuide() {
 
 function CanvasPendingGuide({ hasLesson }: { hasLesson: boolean }) {
   return (
-    <div className="flex h-full items-center justify-center bg-muted/30 p-6">
-      <div className="w-full max-w-xl rounded-3xl border border-border bg-background p-7 text-center shadow-sm">
-        <MonitorPlay className="mx-auto size-10 text-muted-foreground" />
+    <div className="flex h-full items-center justify-center bg-background/50 p-6">
+      <div className="w-full max-w-xl rounded-3xl border border-border/80 bg-card/90 p-7 text-center shadow-[0_20px_70px_-60px_rgba(0,217,146,0.45)]">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl border border-border/80 bg-background/70 text-muted-foreground">
+          <MonitorPlay className="size-5" />
+        </div>
         <h2 className="mt-4 text-lg font-semibold text-foreground">互动大屏尚未生成</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           {hasLesson
@@ -178,38 +166,34 @@ function VersionItem({
   onSelect: () => void;
 }) {
   return (
-    <button className="block w-full text-left" onClick={onSelect} type="button">
-      <Card
-        className={`gap-0 py-0 shadow-xs transition-colors ${
-          isSelected ? "border-brand bg-brand/5" : "hover:border-brand/25"
-        }`}
-      >
-        <CardContent className="space-y-3 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h3 className="truncate text-sm font-medium text-foreground">{snapshot.title}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {snapshot.stage === "lesson" ? "教案" : "互动大屏"} · v{snapshot.version}
-              </p>
-            </div>
-            <StatusBadge label={STATUS_LABELS[snapshot.status]} status={snapshot.status} />
+    <SelectableSurface active={isSelected} onClick={onSelect}>
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-medium text-foreground">{snapshot.title}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {snapshot.stage === "lesson" ? "教案" : "互动大屏"} · v{snapshot.version}
+            </p>
           </div>
-          <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-            <span>{formatSnapshotTime(snapshot)}</span>
-            {snapshot.isCurrent ? <Badge variant="success">当前版本</Badge> : null}
-          </div>
-        </CardContent>
-      </Card>
-    </button>
+          <StatusBadge label={STATUS_LABELS[snapshot.status]} status={snapshot.status} />
+        </div>
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span>{formatSnapshotTime(snapshot)}</span>
+          {snapshot.isCurrent ? <Badge variant="success">当前版本</Badge> : null}
+        </div>
+      </div>
+    </SelectableSurface>
   );
 }
 
 export default function SmartEduArtifact({
   lifecycle,
   canGenerateHtml,
+  isHtmlGenerationPending = false,
   isLoading,
   isRestoringVersion = false,
   projectId,
+  showDesktopGenerateAction = true,
   onGenerateHtml,
   onRestoreArtifactVersion,
 }: SmartEduArtifactProps) {
@@ -217,17 +201,12 @@ export default function SmartEduArtifact({
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const printFrameRef = useRef<CompetitionLessonPrintFrameHandle>(null);
-  const activeView = view ?? getDefaultView(lifecycle);
+  const activeView = view ?? getArtifactDefaultView(lifecycle, isHtmlGenerationPending);
   const html = lifecycle.html;
   const streamingHtml = lifecycle.streamingHtml;
-  const hasHtml = Boolean(html.trim());
-  const isGeneratingHtml = lifecycle.stage === "html" && lifecycle.isHtmlStreaming;
-  const hasLesson = Boolean(lifecycle.lessonPlan || lifecycle.lessonContent.trim());
-  const isStreamingLessonJson =
-    lifecycle.stage === "lesson" &&
-    lifecycle.status === "streaming" &&
-    lifecycle.activeArtifact?.contentType === "lesson-json" &&
-    !lifecycle.lessonPlan;
+  const htmlDisplay = getHtmlArtifactDisplayState(lifecycle, isHtmlGenerationPending);
+  const hasHtml = htmlDisplay.hasHtml;
+  const lessonDisplay = getLessonArtifactDisplayState(lifecycle);
   const competitionLessonPlan = lifecycle.lessonPlan;
   const effectiveSelectedVersionId =
     selectedVersionId && lifecycle.versions.some((snapshot) => snapshot.id === selectedVersionId)
@@ -324,6 +303,7 @@ export default function SmartEduArtifact({
   };
 
   const generateHtml = () => {
+    setView("canvas");
     onGenerateHtml();
   };
 
@@ -340,11 +320,11 @@ export default function SmartEduArtifact({
   };
 
   return (
-    <Artifact className="h-full min-w-0 flex-1 rounded-none border-0 shadow-none">
+    <Artifact className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none">
       <Tabs className="flex min-h-0 flex-1 flex-col" onValueChange={(value) => setView(value as ArtifactView)} value={activeView}>
-        <ArtifactHeader className="min-h-11 shrink-0 flex-wrap gap-2 bg-card/95 px-4 py-1.5 backdrop-blur">
+        <ArtifactHeader className="min-h-14 shrink-0 flex-wrap gap-2 border-b border-border/70 bg-card/90 px-4 py-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Sparkles className="size-4 shrink-0 text-brand" />
+            <Sparkles className="size-4 shrink-0 text-brand drop-shadow-[0_0_8px_rgba(0,217,146,0.75)]" />
             <ArtifactTitle className="shrink-0">体育课创作工作台</ArtifactTitle>
             <StatusBadge label={STATUS_LABELS[lifecycle.status]} status={lifecycle.status} />
             <ArtifactDescription className="hidden truncate text-xs 2xl:block">
@@ -352,7 +332,7 @@ export default function SmartEduArtifact({
             </ArtifactDescription>
           </div>
 
-          <TabsList className="order-3 w-full justify-start sm:order-none sm:w-auto">
+          <TabsList className="order-3 w-full justify-start border border-border/70 bg-background/70 sm:order-none sm:w-auto">
             {VIEW_OPTIONS.map((option) => {
               const Icon = option.icon;
 
@@ -379,14 +359,14 @@ export default function SmartEduArtifact({
           </div>
 
           {isLoading ? (
-            <div className="hidden items-center gap-2 rounded-full border border-brand/20 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand xl:inline-flex">
+            <div className="hidden items-center gap-2 rounded-full border border-brand/25 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand xl:inline-flex">
               <span className="size-2 animate-pulse rounded-full bg-brand" />
               {lifecycle.stage === "html" ? "正在生成互动大屏" : "正在生成教案"}
             </div>
           ) : null}
 
           <ArtifactActions className="hidden lg:flex">
-            {canGenerateHtml ? (
+            {showDesktopGenerateAction && canGenerateHtml ? (
               <Button className="h-9" onClick={generateHtml} size="sm" type="button" variant="brand">
                 <CheckCircle2 className="size-4" />
                 确认并生成大屏
@@ -406,25 +386,25 @@ export default function SmartEduArtifact({
           </ArtifactActions>
         </ArtifactHeader>
 
-        <ArtifactContent className="flex min-h-0 flex-1 flex-col p-0">
+        <ArtifactContent className="flex min-h-0 flex-1 flex-col bg-transparent p-0">
           <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
             <TabsContent className="m-0 h-full p-3 lg:p-4" value="lesson">
-              <div className="h-full overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
-                {hasLesson ? (
+              <div className="h-full overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)]">
+                {lessonDisplay.shouldShowWorkspace ? (
                   <div className="flex h-full flex-col">
-                    <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
+                    <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/75 bg-background/35 px-3 py-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <h2 className="shrink-0 text-sm font-semibold text-foreground">
-                          {isStreamingLessonJson ? "教案结构化生成中" : "教案预览"}
+                          {lessonDisplay.isStreamActive ? "教案 JSON 流" : "教案预览"}
                         </h2>
                         <span className="hidden truncate text-xs text-muted-foreground lg:inline">
-                          {isStreamingLessonJson
-                              ? "正在流式生成 CompetitionLessonPlan JSON，校验通过后自动切换正式打印版。"
-                              : "固定 A4 模板，修改请在左侧对话提出。"}
+                          {lessonDisplay.isStreamActive
+                            ? "正在流式生成 CompetitionLessonPlan JSON，校验通过后自动切换正式打印版。"
+                            : "固定 A4 模板，修改请在左侧对话提出。"}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {competitionLessonPlan && !isStreamingLessonJson ? (
+                        {lessonDisplay.shouldShowPrintFrame ? (
                           <Button className="h-8 px-2.5 text-xs" onClick={printLesson} type="button" variant="outline">
                             <Printer className="size-3.5" />
                             打印/另存 PDF
@@ -433,10 +413,19 @@ export default function SmartEduArtifact({
                       </div>
                     </div>
                     <div className="min-h-0 flex-1">
-                      {isStreamingLessonJson || !competitionLessonPlan ? (
-                        <ArtifactTextViewer content={lifecycle.lessonContent} />
+                      {!competitionLessonPlan || !lessonDisplay.shouldShowPrintFrame ? (
+                        <ArtifactTextViewer
+                          content={lifecycle.lessonContent}
+                          emptyDescription={
+                            lessonDisplay.isStreamActive
+                              ? "请求已提交，右侧保持在教案 JSON 流视图；收到模型第一段内容后会直接追加到这里。"
+                              : undefined
+                          }
+                          emptyTitle={lessonDisplay.isStreamActive ? "等待 JSON 首包" : undefined}
+                          isStreaming={lessonDisplay.isStreamActive}
+                        />
                       ) : (
-                        <div className="h-full min-h-0 overflow-hidden bg-slate-100">
+                        <div className="h-full min-h-0 overflow-hidden bg-muted">
                           <CompetitionLessonPrintFrame ref={printFrameRef} lesson={competitionLessonPlan} />
                         </div>
                       )}
@@ -449,8 +438,8 @@ export default function SmartEduArtifact({
             </TabsContent>
 
             <TabsContent className="m-0 h-full p-3 lg:p-4" value="canvas">
-              <div className={`h-full overflow-hidden rounded-2xl border border-border shadow-lg ${hasHtml || isGeneratingHtml ? "min-h-[560px] bg-primary" : "bg-card"}`}>
-                {isGeneratingHtml ? (
+              <div className={`h-full overflow-hidden rounded-2xl border border-border/80 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)] ${hasHtml || htmlDisplay.shouldShowGenerationPanel ? "min-h-[560px] bg-background" : "bg-card/90"}`}>
+                {htmlDisplay.shouldShowGenerationPanel ? (
                   <HtmlGenerationPanel
                     code={streamingHtml}
                     hasPreviousPreview={hasHtml}
@@ -458,10 +447,10 @@ export default function SmartEduArtifact({
                   />
                 ) : hasHtml ? (
                   <div className="flex h-full flex-col">
-                    <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-primary px-4 py-2 text-primary-foreground">
+                    <div className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card px-4 py-2 text-foreground">
                       <div>
                         <h2 className="text-sm font-semibold">互动大屏预览</h2>
-                        <p className="mt-0.5 text-xs text-primary-foreground/70">这里展示课堂投屏效果。</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">这里展示课堂投屏效果。</p>
                       </div>
                     </div>
                     <div className="min-h-0 flex-1">
@@ -469,14 +458,14 @@ export default function SmartEduArtifact({
                     </div>
                   </div>
                 ) : (
-                  <CanvasPendingGuide hasLesson={hasLesson} />
+                  <CanvasPendingGuide hasLesson={lessonDisplay.hasLesson} />
                 )}
               </div>
             </TabsContent>
 
             <TabsContent className="m-0 h-full p-3 lg:p-4" value="versions">
               <div className="grid h-full gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-                <ScrollArea className="rounded-2xl border border-border bg-muted/50 p-4 shadow-xs">
+                <ScrollArea className="rounded-2xl border border-border/80 bg-card/75 p-4 shadow-xs">
                   <div className="mb-4">
                     <h2 className="text-sm font-semibold text-foreground">版本记录</h2>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -494,17 +483,19 @@ export default function SmartEduArtifact({
                         />
                       ))
                     ) : (
-                      <ArtifactEmptyState>
-                        暂无版本。每次教案或互动大屏生成都会在这里形成快照。
-                      </ArtifactEmptyState>
+                      <StateNotice
+                        description="每次教案或互动大屏生成都会在这里形成快照。"
+                        layout="center"
+                        title="暂无版本"
+                      />
                     )}
                   </div>
                 </ScrollArea>
 
-                <div className="min-h-0 overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+                <div className="min-h-0 overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-xs">
                   {selectedVersion ? (
                     <div className="flex h-full flex-col">
-                      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-border px-5 py-4">
+                      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-border/75 bg-background/35 px-5 py-4">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h2 className="truncate text-sm font-semibold text-foreground">
@@ -555,9 +546,12 @@ export default function SmartEduArtifact({
                       </div>
                     </div>
                   ) : (
-                    <ArtifactEmptyState className="m-4">
-                      选择一个版本以查看详细内容。
-                    </ArtifactEmptyState>
+                    <StateNotice
+                      className="m-4 flex h-[calc(100%-2rem)] items-center justify-center"
+                      description="选择一个版本以查看详细内容。"
+                      layout="center"
+                      title="等待选择版本"
+                    />
                   )}
                 </div>
               </div>

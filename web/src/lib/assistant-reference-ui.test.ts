@@ -92,5 +92,14 @@ describe("assistant-reference-ui", () => {
         isLoading: false,
       }),
     ).toContain("六年级 羽毛球 正手发球 40分钟");
+
+    expect(
+      getAssistantSuggestions({
+        canGenerateHtml: false,
+        hasHtml: true,
+        hasLessonPlan: true,
+        isLoading: false,
+      }),
+    ).toEqual([]);
   });
 });

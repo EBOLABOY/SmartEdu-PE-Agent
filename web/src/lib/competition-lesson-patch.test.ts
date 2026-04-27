@@ -13,15 +13,15 @@ describe("competition-lesson-patch", () => {
       operations: [
         {
           op: "replace",
-          path: "/learningObjectives/sportAbility",
+          path: "/learningObjectives/sportAbility/0",
           value: "能在游戏中稳定控制足球方向，并根据同伴位置调整运球速度。",
           reason: "强化运动能力目标的可观察性。",
         },
       ],
     });
 
-    expect(next.learningObjectives.sportAbility).toContain("稳定控制足球方向");
-    expect(original.learningObjectives.sportAbility).not.toContain("稳定控制足球方向");
+    expect(next.learningObjectives.sportAbility[0]).toContain("稳定控制足球方向");
+    expect(original.learningObjectives.sportAbility[0]).not.toContain("稳定控制足球方向");
   });
 
   it("支持向数组字段追加内容", () => {

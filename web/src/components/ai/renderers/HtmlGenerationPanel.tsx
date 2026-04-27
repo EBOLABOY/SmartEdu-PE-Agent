@@ -1,8 +1,9 @@
 "use client";
 
 import { Code2, Loader2 } from "lucide-react";
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useMemo } from "react";
 
+import { AutoScrollArea } from "@/components/ai-elements/auto-scroll";
 import type { WorkflowTraceData } from "@/lib/lesson-authoring-contract";
 
 interface HtmlGenerationPanelProps {
@@ -23,19 +24,9 @@ export default function HtmlGenerationPanel({
   trace,
   hasPreviousPreview = false,
 }: HtmlGenerationPanelProps) {
-  const codeRef = useRef<HTMLPreElement>(null);
+  const displayCode = code || "<!-- 正在建立生成通道，HTML 源码会在这里流式出现。 -->";
   const lineCount = useMemo(() => (code ? code.split(/\r?\n/).length : 0), [code]);
   const currentStep = getCurrentStep(trace);
-
-  useEffect(() => {
-    const element = codeRef.current;
-
-    if (!element) {
-      return;
-    }
-
-    element.scrollTop = element.scrollHeight;
-  }, [code]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-slate-950 text-slate-100">
@@ -79,15 +70,15 @@ export default function HtmlGenerationPanel({
       </div>
 
       <div className="min-h-0 flex-1 p-4">
-        <pre
-          ref={codeRef}
-          className="h-full overflow-auto rounded-2xl border border-white/10 bg-black/55 p-4 text-[12px] leading-5 text-emerald-100 shadow-inner"
+        <AutoScrollArea
+          className="h-full rounded-2xl border border-white/10 bg-slate-950/70 text-[12px] leading-5 text-emerald-100 shadow-inner"
+          contentClassName="min-h-full p-4"
+          scrollClassName="overflow-auto rounded-2xl"
         >
-          <code>
-            {code ||
-              "<!-- 正在建立生成通道，HTML 源码会在这里流式出现。 -->"}
-          </code>
-        </pre>
+          <pre className="m-0 min-w-max font-mono">
+            <code>{displayCode}</code>
+          </pre>
+        </AutoScrollArea>
       </div>
     </div>
   );

@@ -123,6 +123,62 @@ describe("artifact-model", () => {
     expect(lifecycle.versions[0]?.id).toBe("assistant-lesson-lesson");
   });
 
+  it("流式 lesson-json 只要主体 schema 合法就提前暴露 lessonPlan", () => {
+    const assistantMessage = {
+      id: "assistant-lesson-fenced",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "lesson",
+            contentType: "lesson-json",
+            content: `下面是结构化教案 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
+            isComplete: false,
+            status: "streaming",
+            source: "data-part",
+            updatedAt: "2026-04-25T12:10:00.000Z",
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([assistantMessage], "streaming", false, []);
+
+    expect(lifecycle.status).toBe("streaming");
+    expect(lifecycle.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
+    expect(lifecycle.activeArtifact?.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
+  });
+
+  it("data-artifact 尚未到达时会回退展示 assistant text JSON 流", () => {
+    const assistantMessage = {
+      id: "assistant-lesson-text-stream",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-1",
+          data: createTrace("live-text-stream", "lesson"),
+        },
+        {
+          type: "text",
+          text: "{\"title\":\"武术课\",\"meta\":",
+          state: "streaming",
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([assistantMessage], "streaming", false, []);
+
+    expect(lifecycle.status).toBe("streaming");
+    expect(lifecycle.stage).toBe("lesson");
+    expect(lifecycle.lessonContent).toContain("\"武术课\"");
+    expect(lifecycle.activeArtifact?.id).toBe("assistant-lesson-text-stream-lesson-text-stream");
+    expect(lifecycle.activeArtifact?.contentType).toBe("lesson-json");
+  });
+
   it("会把流式 HTML 保留为源码流但不提交到 iframe 预览", () => {
     const messages = [
       {

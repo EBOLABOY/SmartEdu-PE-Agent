@@ -49,7 +49,7 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("任教年级：四年级");
     expect(prompt).toContain("水平：水平二");
     expect(prompt).toContain("teacher.school 和 teacher.name 必须同步填写");
-    expect(prompt).toContain("副标题必须采用“—水平X·X年级”格式");
+    expect(prompt).toContain("副标题必须采用“——水平X·X年级”格式");
     expect(prompt).toContain("基础信息表中的年级与水平必须同步填写");
   });
 

@@ -42,11 +42,6 @@ type ProfileRow = {
   id: string;
 };
 
-type LooseQueryClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-};
-
 export async function GET() {
   if (!hasSupabasePublicEnv()) {
     return Response.json(
@@ -110,8 +105,7 @@ export async function GET() {
   }
 
   try {
-    const client = supabase as unknown as LooseQueryClient;
-    const { data: membershipRows, error: membershipError } = await client
+    const { data: membershipRows, error: membershipError } = await supabase
       .from("organization_members")
       .select("organization_id, user_id, role, created_at");
 
@@ -140,7 +134,7 @@ export async function GET() {
       );
     }
 
-    const { data: organizationRows, error: organizationError } = await client
+    const { data: organizationRows, error: organizationError } = await supabase
       .from("organizations")
       .select("id, name, slug, created_at, updated_at")
       .in("id", organizationIds)
@@ -150,7 +144,7 @@ export async function GET() {
       throw organizationError;
     }
 
-    const { data: profileRows, error: profileError } = await client
+    const { data: profileRows, error: profileError } = await supabase
       .from("profiles")
       .select("id, display_name, avatar_url")
       .in("id", userIds);
@@ -159,7 +153,7 @@ export async function GET() {
       throw profileError;
     }
 
-    const { data: invitationRows, error: invitationError } = await client
+    const { data: invitationRows, error: invitationError } = await supabase
       .from("organization_invitations")
       .select("id, organization_id, email, role, status, expires_at, created_at")
       .in("organization_id", organizationIds)

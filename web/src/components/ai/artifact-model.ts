@@ -152,6 +152,7 @@ export function buildArtifactLifecycle(
   assistantMessages.forEach((message, index) => {
     const extracted = extractArtifactFromMessage(message);
     const messageId = "id" in message ? String(message.id) : `assistant-${index}`;
+    const isLatestAssistantMessage = index === assistantMessages.length - 1;
 
     if (extracted.trace) {
       latestTrace = extracted.trace;
@@ -173,6 +174,35 @@ export function buildArtifactLifecycle(
         version,
         trace: extracted.trace,
       });
+    }
+
+    if (
+      !extracted.lessonContent &&
+      !extracted.html &&
+      isStreaming &&
+      isLatestAssistantMessage &&
+      extracted.trace?.mode !== "html"
+    ) {
+      const streamedText = getMessageText(message).trim();
+      const streamedLessonPlan = streamedText
+        ? lessonContentToPlan(streamedText, "lesson-json")
+        : undefined;
+
+      if (streamedText) {
+        const version = liveVersions.filter((item) => item.stage === "lesson").length + 1;
+
+        liveVersions.push({
+          id: `${messageId}-lesson-text-stream`,
+          stage: "lesson",
+          title: `教案版本 ${version}`,
+          content: streamedText,
+          contentType: "lesson-json",
+          lessonPlan: streamedLessonPlan,
+          status: "streaming",
+          version,
+          trace: extracted.trace,
+        });
+      }
     }
 
     if (extracted.html) {

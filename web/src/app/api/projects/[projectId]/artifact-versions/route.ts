@@ -4,6 +4,11 @@ import {
   saveLessonArtifactVersionRequestBodySchema,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
 } from "@/lib/lesson-authoring-contract";
+import {
+  ARTIFACT_JSON_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
 import { listArtifactVersionsByProject } from "@/lib/persistence/artifact-version-history";
 import { saveArtifactVersionWithSupabase } from "@/lib/persistence/lesson-authoring-store";
 import {
@@ -134,9 +139,9 @@ export async function POST(
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: ARTIFACT_JSON_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = saveLessonArtifactVersionRequestBodySchema.safeParse(rawBody);

@@ -12,6 +12,10 @@ function mergeNarrativeLines(lines: string[]) {
   return normalized.length ? [normalized.join("")] : [];
 }
 
+function joinTextBlock(lines: string[]) {
+  return lines.map((line) => line.trim()).filter(Boolean).join("；");
+}
+
 function NarrativeParagraphs({ lines }: { lines: string[] }) {
   return (
     <>
@@ -59,13 +63,13 @@ function ObjectivesList({ lesson }: CompetitionLessonPrintViewProps) {
   return (
     <div className="competition-print-numbered">
       <p>
-        1. <strong>运动能力</strong>：{lesson.learningObjectives.sportAbility}
+        1. <strong>运动能力</strong>：{joinTextBlock(lesson.learningObjectives.sportAbility)}
       </p>
       <p>
-        2. <strong>健康行为</strong>：{lesson.learningObjectives.healthBehavior}
+        2. <strong>健康行为</strong>：{joinTextBlock(lesson.learningObjectives.healthBehavior)}
       </p>
       <p>
-        3. <strong>体育品德</strong>：{lesson.learningObjectives.sportMorality}
+        3. <strong>体育品德</strong>：{joinTextBlock(lesson.learningObjectives.sportMorality)}
       </p>
     </div>
   );
@@ -75,16 +79,16 @@ function KeyPointList({ lesson }: CompetitionLessonPrintViewProps) {
   return (
     <div className="competition-print-numbered">
       <p>
-        1. <strong>学生学习</strong>：{lesson.keyDifficultPoints.studentLearning}
+        1. <strong>学生学习</strong>：{joinTextBlock(lesson.keyDifficultPoints.studentLearning)}
       </p>
       <p>
-        2. <strong>教学内容</strong>：{lesson.keyDifficultPoints.teachingContent}
+        2. <strong>教学内容</strong>：{joinTextBlock(lesson.keyDifficultPoints.teachingContent)}
       </p>
       <p>
-        3. <strong>教学组织</strong>：{lesson.keyDifficultPoints.teachingOrganization}
+        3. <strong>教学组织</strong>：{joinTextBlock(lesson.keyDifficultPoints.teachingOrganization)}
       </p>
       <p>
-        4. <strong>教学方法</strong>：{lesson.keyDifficultPoints.teachingMethod}
+        4. <strong>教学方法</strong>：{joinTextBlock(lesson.keyDifficultPoints.teachingMethod)}
       </p>
     </div>
   );
@@ -431,7 +435,9 @@ function LessonPlanTable({ lesson }: CompetitionLessonPrintViewProps) {
         </tr>
         <tr>
           <td className="competition-print-col-title">主要<br />学习<br />内容</td>
-          <td colSpan={7}>{lesson.periodPlan.mainContent}</td>
+          <td colSpan={7}>
+            <CompactLines lines={lesson.periodPlan.mainContent} />
+          </td>
         </tr>
         <tr>
           <td className="competition-print-col-title">安全<br />保障</td>
@@ -469,7 +475,7 @@ function LessonPlanTable({ lesson }: CompetitionLessonPrintViewProps) {
         <tr>
           <td className="competition-print-col-title competition-print-reflection-title">教学<br />反思</td>
           <td className="competition-print-reflection" colSpan={7}>
-            {lesson.periodPlan.reflection || " "}
+            {lesson.periodPlan.reflection.length ? <CompactLines lines={lesson.periodPlan.reflection} /> : " "}
           </td>
         </tr>
       </tbody>
@@ -516,7 +522,7 @@ export default function CompetitionLessonPrintView({ lesson }: CompetitionLesson
             根据学生身心、教材特点，运动负荷{lesson.loadEstimate.loadLevel}，目标心率区间：
             {lesson.loadEstimate.targetHeartRateRange}，群体运动密度：
             {lesson.loadEstimate.groupDensity}，个体运动密度：{lesson.loadEstimate.individualDensity}；平均心率：
-            {lesson.loadEstimate.averageHeartRate}。{lesson.loadEstimate.rationale || ""}
+            {lesson.loadEstimate.averageHeartRate}。{joinTextBlock(lesson.loadEstimate.rationale)}
           </p>
         </Section>
         <Section title="九、课时计划(教案)">

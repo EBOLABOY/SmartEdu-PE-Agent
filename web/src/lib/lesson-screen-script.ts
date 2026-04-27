@@ -41,7 +41,8 @@ export function renderLessonScreenScript(slideData: LessonScreenScriptSlide[]) {
         timer.textContent = formatTime(slideIndex === current ? remaining : durationOf(slideIndex));
       });
       const duration = durationOf(current);
-      progressBar.style.width = duration > 0 ? ((duration - remaining) / duration * 100) + "%" : "0%";
+      const progressRatio = duration > 0 ? (duration - remaining) / duration : 0;
+      progressBar.style.transform = "scaleX(" + Math.max(0, Math.min(progressRatio, 1)) + ")";
       pageIndicator.textContent = current === 0 ? "准备开始" : current + " / " + (slides.length - 1);
       toggleButton.textContent = paused ? "继续" : "暂停";
     }

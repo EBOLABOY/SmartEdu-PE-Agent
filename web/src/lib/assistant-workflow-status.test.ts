@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 
-import { buildAssistantProcessState } from "./assistant-process-events";
+import { buildAssistantWorkflowState } from "./assistant-workflow-status";
 
-describe("assistant-process-events", () => {
-  it("会把 workflow trace 转换为人类可读的过程事件", () => {
+describe("assistant-workflow-status", () => {
+  it("会把 workflow trace 转换为轻量业务状态，并忽略 AI SDK 已接管的工具轨迹", () => {
     const message = {
       id: "assistant-1",
       role: "assistant",
@@ -40,19 +40,15 @@ describe("assistant-process-events", () => {
       ],
     } as SmartEduUIMessage;
 
-    const state = buildAssistantProcessState(message);
+    const state = buildAssistantWorkflowState(message);
 
     expect(state.isStreaming).toBe(true);
-    expect(state.events).toEqual([
+    expect(state.title).toBe("生成结构化教案");
+    expect(state.status).toBe("active");
+    expect(state.details).toEqual([
       expect.objectContaining({
-        kind: "workflow",
         status: "complete",
         title: "检索课程标准",
-      }),
-      expect.objectContaining({
-        kind: "tool",
-        status: "active",
-        title: "调用工具",
       }),
     ]);
   });
@@ -69,9 +65,46 @@ describe("assistant-process-events", () => {
       ],
     } as SmartEduUIMessage;
 
-    const state = buildAssistantProcessState(message);
+    const state = buildAssistantWorkflowState(message);
 
     expect(state.hasReasoning).toBe(true);
     expect(state.reasoningText).toContain("先分析年级");
+  });
+
+  it("会把 blocked 作为需要注意的业务状态，而不是失败", () => {
+    const message = {
+      id: "assistant-3",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-1",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-1",
+            mode: "html",
+            phase: "completed",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: ["持久化失败"],
+            updatedAt: "2026-04-26T00:00:00.000Z",
+            trace: [
+              {
+                step: "persist-artifact-version",
+                status: "blocked",
+                detail: "Artifact 持久化失败，但主生成结果已保留。",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+
+    expect(state.status).toBe("blocked");
+    expect(state.badge).toBe("需注意");
+    expect(state.warnings).toEqual(["持久化失败"]);
   });
 });

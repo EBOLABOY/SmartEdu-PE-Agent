@@ -9,6 +9,7 @@ import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
+import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 export const runtime = "nodejs";
 
@@ -16,15 +17,6 @@ type InvitationRow = {
   email: string;
   organization_id: string;
   role: "admin" | "teacher" | "viewer";
-};
-
-type LooseQueryClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: Error | null }>;
 };
 
 function buildInviteUrls(request: Request, token: string) {
@@ -80,11 +72,11 @@ function parseInvitationParams(params: { organizationId: string; invitationId: s
 }
 
 async function loadInvitation(
-  client: LooseQueryClient,
+  supabase: SmartEduSupabaseClient,
   organizationId: string,
   invitationId: string,
 ) {
-  const { data, error } = await client
+  const { data, error } = await supabase
     .from("organization_invitations")
     .select("organization_id, email, role")
     .eq("organization_id", organizationId)
@@ -119,8 +111,7 @@ export async function DELETE(
   }
 
   try {
-    const client = auth.supabase as unknown as LooseQueryClient;
-    const { error } = await client.rpc("revoke_organization_invitation", {
+    const { error } = await auth.supabase.rpc("revoke_organization_invitation", {
       target_invitation_id: parsedParams.invitationId,
     });
 
@@ -167,13 +158,12 @@ export async function POST(
   const { appInviteUrl, callbackUrl } = buildInviteUrls(request, token);
 
   try {
-    const client = auth.supabase as unknown as LooseQueryClient;
     const invitation = await loadInvitation(
-      client,
+      auth.supabase,
       parsedParams.organizationId,
       parsedParams.invitationId,
     );
-    const { error } = await client.rpc("resend_organization_invitation", {
+    const { error } = await auth.supabase.rpc("resend_organization_invitation", {
       next_token_hash: tokenHash,
       target_invitation_id: parsedParams.invitationId,
     });

@@ -1,5 +1,4 @@
 import { safeValidateUIMessages } from "ai";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   persistedConversationSchema,
@@ -13,14 +12,11 @@ import {
 } from "@/lib/lesson-authoring-contract";
 import { toIsoDateTime } from "@/lib/date-time";
 import type { Database } from "@/lib/supabase/database.types";
+import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
 type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
-type LooseQueryClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-};
 
 function toPersistedProjectSummary(row: ProjectRow): PersistedProjectSummary {
   return persistedProjectSummarySchema.parse({
@@ -64,9 +60,8 @@ async function toPersistedProjectMessage(
   });
 }
 
-export async function listProjectsForUser(supabase: SupabaseClient<Database>) {
-  const client = supabase as unknown as LooseQueryClient;
-  const { data, error } = await client
+export async function listProjectsForUser(supabase: SmartEduSupabaseClient) {
+  const { data, error } = await supabase
     .from("projects")
     .select("*")
     .is("archived_at", null)
@@ -80,11 +75,10 @@ export async function listProjectsForUser(supabase: SupabaseClient<Database>) {
 }
 
 export async function getProjectWorkspaceHistory(
-  supabase: SupabaseClient<Database>,
+  supabase: SmartEduSupabaseClient,
   projectId: string,
 ) {
-  const client = supabase as unknown as LooseQueryClient;
-  const { data: project, error: projectError } = await client
+  const { data: project, error: projectError } = await supabase
     .from("projects")
     .select("*")
     .eq("id", projectId)
@@ -95,7 +89,7 @@ export async function getProjectWorkspaceHistory(
   }
 
   const persistedProject = toPersistedProjectSummary(project as ProjectRow);
-  const { data: conversations, error: conversationsError } = await client
+  const { data: conversations, error: conversationsError } = await supabase
     .from("conversations")
     .select("*")
     .eq("project_id", projectId)
@@ -116,7 +110,7 @@ export async function getProjectWorkspaceHistory(
     };
   }
 
-  const { data: messageRows, error: messageRowsError } = await client
+  const { data: messageRows, error: messageRowsError } = await supabase
     .from("messages")
     .select("*")
     .eq("conversation_id", latestConversation.id)

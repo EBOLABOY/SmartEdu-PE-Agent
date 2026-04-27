@@ -1,7 +1,12 @@
 import type { MastraModelOutput } from "@mastra/core/stream";
-import { convertToModelMessages } from "ai";
+import { Output, convertToModelMessages, streamText, stepCountIs, type UIMessageChunk } from "ai";
 
+import {
+  competitionLessonPlanSchema,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import { createChatModel } from "@/mastra/models";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
@@ -21,7 +26,22 @@ export type AgentStreamRunner = (
   options: AgentStreamOptions,
 ) => Promise<MastraModelOutput<unknown>>;
 
-const MAX_AGENT_STREAM_ATTEMPTS = 5;
+export type LessonStructuredGenerator = (options: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}) => Promise<CompetitionLessonPlan>;
+
+export type LessonStructuredStreamer = (options: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}) => Promise<ReadableStream<UIMessageChunk>>;
+
+const DEFAULT_LESSON_MODEL_ID = "gpt-4.1-mini";
+const MAX_MODEL_OPERATION_ATTEMPTS = 5;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,7 +64,7 @@ function getRetryDelayMs(attempt: number) {
   return Math.min(baseDelayMs + jitterMs, 8_000);
 }
 
-function isRetryableAgentStreamError(error: unknown) {
+function isRetryableModelOperationError(error: unknown) {
   const statusCode = getErrorStatusCode(error);
   const message = error instanceof Error ? error.message : String(error);
 
@@ -55,7 +75,7 @@ function isRetryableAgentStreamError(error: unknown) {
   return /No available channels|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network|timeout/i.test(message);
 }
 
-export async function runAgentStreamWithRetry<T>(
+export async function runModelOperationWithRetry<T>(
   operation: () => Promise<T>,
   context: {
     mode: GenerationMode;
@@ -64,23 +84,23 @@ export async function runAgentStreamWithRetry<T>(
 ) {
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_AGENT_STREAM_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_MODEL_OPERATION_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       lastError = error;
 
-      if (attempt >= MAX_AGENT_STREAM_ATTEMPTS || !isRetryableAgentStreamError(error)) {
+      if (attempt >= MAX_MODEL_OPERATION_ATTEMPTS || !isRetryableModelOperationError(error)) {
         throw error;
       }
 
       const delayMs = getRetryDelayMs(attempt);
-      console.warn("[lesson-authoring] retrying agent stream", {
+      console.warn("[lesson-authoring] retrying model operation", {
         requestId: context.requestId,
         mode: context.mode,
         attempt,
         nextAttempt: attempt + 1,
-        maxAttempts: MAX_AGENT_STREAM_ATTEMPTS,
+        maxAttempts: MAX_MODEL_OPERATION_ATTEMPTS,
         delayMs,
         statusCode: getErrorStatusCode(error),
         error: error instanceof Error ? error.message : String(error),
@@ -92,32 +112,86 @@ export async function runAgentStreamWithRetry<T>(
   throw lastError;
 }
 
-function buildAgentStreamOptions(workflow: LessonWorkflowOutput): AgentStreamOptions {
-  return {
-    system: workflow.system,
-    maxSteps: workflow.generationPlan.maxSteps,
+function getLessonModelId(modelId?: string) {
+  return modelId ?? process.env.AI_LESSON_MODEL ?? process.env.AI_MODEL ?? DEFAULT_LESSON_MODEL_ID;
+}
+
+async function streamCompetitionLessonPlan({
+  maxSteps,
+  messages,
+  modelId,
+  system,
+}: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}) {
+  const result = streamText({
+    model: createChatModel(modelId),
+    messages,
+    output: Output.object({
+      name: "CompetitionLessonPlan",
+      description: "A complete Guangdong competition PE lesson plan JSON object.",
+      schema: competitionLessonPlanSchema,
+    }),
     providerOptions: {
       openai: {
         store: true,
       },
     },
-  };
+    stopWhen: stepCountIs(maxSteps),
+    system,
+  });
+
+  return result.toUIMessageStream<SmartEduUIMessage>({
+    sendStart: false,
+    sendFinish: true,
+  });
 }
 
 export async function runLessonGenerationSkill(input: {
   messages: SmartEduUIMessage[];
+  modelId?: string;
   requestId: string;
+  structuredStream?: LessonStructuredStreamer;
+  structuredGenerate?: LessonStructuredGenerator;
   workflow: LessonWorkflowOutput;
-  agentStream: AgentStreamRunner;
 }) {
   const modelMessages = await convertToModelMessages(input.messages);
-  const result = await runAgentStreamWithRetry(
-    () => input.agentStream(modelMessages, buildAgentStreamOptions(input.workflow)),
+  const streamer =
+    input.structuredStream ??
+    (input.structuredGenerate
+      ? async (options: Parameters<LessonStructuredStreamer>[0]) => {
+          const lessonPlan = await input.structuredGenerate!(options);
+          const content = JSON.stringify(competitionLessonPlanSchema.parse(lessonPlan));
+
+          return new ReadableStream<UIMessageChunk>({
+            start(controller) {
+              const id = "lesson-json";
+
+              controller.enqueue({ type: "text-start", id });
+              controller.enqueue({ type: "text-delta", id, delta: content });
+              controller.enqueue({ type: "text-end", id });
+              controller.enqueue({ type: "finish", finishReason: "stop" });
+              controller.close();
+            },
+          });
+        }
+      : streamCompetitionLessonPlan);
+  const stream = await runModelOperationWithRetry(
+    () =>
+      streamer({
+        maxSteps: input.workflow.generationPlan.maxSteps,
+        messages: modelMessages,
+        modelId: getLessonModelId(input.modelId),
+        system: input.workflow.system,
+      }),
     { mode: "lesson", requestId: input.requestId },
   );
 
   return {
-    result,
     modelMessageCount: modelMessages.length,
+    stream,
   };
 }

@@ -3,16 +3,16 @@ import {
   updateWorkspaceRequestBodySchema,
 } from "@/lib/lesson-authoring-contract";
 import {
+  SMALL_JSON_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
+import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-type LooseQueryClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-};
 
 export async function PATCH(
   request: Request,
@@ -47,9 +47,9 @@ export async function PATCH(
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: SMALL_JSON_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = updateWorkspaceRequestBodySchema.safeParse(rawBody);
@@ -65,8 +65,7 @@ export async function PATCH(
   }
 
   try {
-    const client = supabase as unknown as LooseQueryClient;
-    const { error } = await client
+    const { error } = await supabase
       .from("organizations")
       .update({ name: parsedBody.data.name })
       .eq("id", parsedOrganizationId.data);

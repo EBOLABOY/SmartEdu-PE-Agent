@@ -1,16 +1,9 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact-protocol";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
-import type { Database, Json } from "@/lib/supabase/database.types";
+import type { Json } from "@/lib/supabase/database.types";
+import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 const MAX_CONVERSATION_TITLE_LENGTH = 80;
-type LooseQueryClient = {
-  // Supabase's generated client is stricter than our hand-maintained minimal types.
-  // The database still enforces table shape through migrations, constraints, and RLS.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-};
 
 export type ProjectChatPersistence = {
   saveMessages: (input: {
@@ -74,12 +67,11 @@ export function deriveConversationTitle(messages: SmartEduUIMessage[]) {
 
 async function resolveConversationId(input: {
   projectId: string;
-  supabase: SupabaseClient<Database>;
+  supabase: SmartEduSupabaseClient;
   title?: string;
   userId: string;
 }) {
-  const client = input.supabase as unknown as LooseQueryClient;
-  const { data, error } = await client
+  const { data, error } = await input.supabase
     .from("conversations")
     .select("*")
     .eq("project_id", input.projectId)
@@ -94,7 +86,7 @@ async function resolveConversationId(input: {
 
   if (existingConversation) {
     const nextTitle = existingConversation.title ?? input.title ?? null;
-    const { error: updateError } = await client
+    const { error: updateError } = await input.supabase
       .from("conversations")
       .update({ title: nextTitle })
       .eq("id", existingConversation.id);
@@ -109,7 +101,7 @@ async function resolveConversationId(input: {
     };
   }
 
-  const { data: insertedConversation, error: insertError } = await client
+  const { data: insertedConversation, error: insertError } = await input.supabase
     .from("conversations")
     .insert({
       created_by: input.userId,
@@ -130,7 +122,7 @@ async function resolveConversationId(input: {
 }
 
 export function createProjectChatPersistence(
-  supabase: SupabaseClient<Database> | null,
+  supabase: SmartEduSupabaseClient | null,
   userId?: string,
 ): ProjectChatPersistence | null {
   if (!supabase || !userId) {
@@ -152,8 +144,7 @@ export function createProjectChatPersistence(
       });
 
       const uiMessageIds = messages.map((message) => message.id);
-      const client = supabase as unknown as LooseQueryClient;
-      const { data: existingRows, error: existingRowsError } = await client
+      const { data: existingRows, error: existingRowsError } = await supabase
         .from("messages")
         .select("ui_message_id")
         .eq("project_id", projectId)
@@ -178,7 +169,7 @@ export function createProjectChatPersistence(
         ui_message_id: message.id,
       }));
 
-      const { error: upsertError } = await client.from("messages").upsert(rows, {
+      const { error: upsertError } = await supabase.from("messages").upsert(rows, {
         onConflict: "project_id,ui_message_id",
       });
 
@@ -190,7 +181,7 @@ export function createProjectChatPersistence(
         return;
       }
 
-      const { error: touchConversationError } = await client
+      const { error: touchConversationError } = await supabase
         .from("conversations")
         .update({ title: conversation.title })
         .eq("id", conversation.id);

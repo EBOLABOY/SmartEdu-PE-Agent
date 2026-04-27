@@ -18,7 +18,7 @@ export const competitionLessonPatchOperationSchema = z
       .trim()
       .min(1)
       .max(240)
-      .regex(/^\//, "path 必须是 JSON Pointer 格式，例如 /learningObjectives/sportAbility。"),
+      .regex(/^\//, "path 必须是 JSON Pointer 格式，例如 /learningObjectives/sportAbility/0。"),
     value: z.unknown().optional(),
     reason: z.string().trim().min(1).max(500),
   })

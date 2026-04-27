@@ -108,7 +108,7 @@ export function renderLessonScreenStyles(spec: LessonScreenDesignSpec) {
     .controls button { border: 0; border-radius: 999px; padding: 16px 24px; color: #e0f2fe; background: #ffffff1a; font-size: 22px; font-weight: 800; cursor: pointer; }
     .controls button.primary { color: #052e16; background: #bef264; }
     .progress-wrap { position: absolute; left: 78px; right: 78px; bottom: 18px; z-index: 4; height: 7px; overflow: hidden; border-radius: 99px; background: #ffffff22; }
-    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #bef264, #38bdf8); transition: width .2s linear; }
+    .progress-bar { width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #bef264, #38bdf8); transform: scaleX(0); transform-origin: left center; transition: transform .2s linear; }
     .page-indicator { min-width: 138px; color: #dbeafe; font-size: 22px; font-weight: 900; text-align: center; }
   </style>`;
 }

@@ -1,14 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 import type { StructuredArtifactData, WorkflowTraceData } from "@/lib/lesson-authoring-contract";
-import type { Database, Json } from "@/lib/supabase/database.types";
-
-type RpcClient = {
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data?: unknown; error: { code?: string; message: string } | null }>;
-};
+import type { Json } from "@/lib/supabase/database.types";
+import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 export type LessonAuthoringPersistence = {
   saveArtifactVersion: (input: {
@@ -24,7 +16,7 @@ function toJson(value: unknown): Json {
 }
 
 export async function saveArtifactVersionWithSupabase(
-  supabase: SupabaseClient<Database, "public">,
+  supabase: SmartEduSupabaseClient,
   {
     artifact,
     projectId,
@@ -37,8 +29,7 @@ export async function saveArtifactVersionWithSupabase(
     trace?: WorkflowTraceData;
   },
 ) {
-  const client = supabase as unknown as RpcClient;
-  const { error } = await client.rpc("create_artifact_version", {
+  const { error } = await supabase.rpc("create_artifact_version", {
     target_project_id: projectId,
     artifact_stage: artifact.stage,
     artifact_title: artifact.title ?? (artifact.stage === "html" ? "互动大屏 Artifact" : "教案 Artifact"),
@@ -57,7 +48,7 @@ export async function saveArtifactVersionWithSupabase(
 }
 
 export function createLessonAuthoringPersistence(
-  supabase: SupabaseClient<Database, "public"> | null,
+  supabase: SmartEduSupabaseClient | null,
 ): LessonAuthoringPersistence | null {
   if (!supabase) {
     return null;

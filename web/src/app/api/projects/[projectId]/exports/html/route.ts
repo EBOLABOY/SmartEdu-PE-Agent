@@ -1,27 +1,28 @@
 import { createHash } from "node:crypto";
 
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 import {
   exportHtmlRequestBodySchema,
   exportHtmlResponseSchema,
   projectIdSchema,
 } from "@/lib/lesson-authoring-contract";
+import { EXPORT_HTML_REQUEST_MAX_BYTES, jsonRequestErrorResponse, readJsonRequest } from "@/lib/api/request";
 import { toIsoDateTime } from "@/lib/date-time";
+import {
+  ProjectAuthorizationError,
+  requireProjectWriteAccess,
+} from "@/lib/persistence/project-authorization";
 import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
+import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 export const runtime = "nodejs";
 
 const HTML_CONTENT_TYPE = "text/html;charset=utf-8" as const;
 const R2_PROVIDER = "cloudflare-r2" as const;
-
-type LooseQueryClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-};
 
 type ExportFileRow = {
   artifact_version_id: string | null;
@@ -35,6 +36,16 @@ type ExportFileRow = {
   project_id: string;
   provider: typeof R2_PROVIDER;
 };
+
+class ExportHtmlRouteError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ExportHtmlRouteError";
+  }
+}
 
 function getR2Config() {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -75,6 +86,59 @@ function buildObjectKey(projectId: string, filename: string) {
   return `projects/${projectId}/exports/${datePath}/${crypto.randomUUID()}-${filename}`;
 }
 
+async function assertArtifactVersionBelongsToProject({
+  artifactVersionId,
+  projectId,
+  supabase,
+}: {
+  artifactVersionId: string | undefined;
+  projectId: string;
+  supabase: SmartEduSupabaseClient;
+}) {
+  if (!artifactVersionId) {
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("artifact_versions")
+    .select("id")
+    .eq("id", artifactVersionId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new ExportHtmlRouteError("目标 Artifact 版本不存在或不属于当前项目。", 404);
+  }
+}
+
+async function removeUploadedObject({
+  bucket,
+  objectKey,
+  s3,
+}: {
+  bucket: string;
+  objectKey: string;
+  s3: S3Client;
+}) {
+  try {
+    await s3.send(
+      new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: objectKey,
+      }),
+    );
+  } catch (error) {
+    console.warn("[export-html] cleanup-uploaded-object-failed", {
+      message: error instanceof Error ? error.message : "unknown-error",
+      objectKey,
+    });
+  }
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ projectId: string }> },
@@ -96,18 +160,6 @@ export async function POST(
     return Response.json({ error: "当前环境未启用 Supabase。" }, { status: 503 });
   }
 
-  const r2Config = getR2Config();
-
-  if (!r2Config) {
-    return Response.json(
-      {
-        error:
-          "当前环境未配置 Cloudflare R2 写入凭证，已保留本地导出兜底。",
-      },
-      { status: 503 },
-    );
-  }
-
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
@@ -126,9 +178,9 @@ export async function POST(
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: EXPORT_HTML_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = exportHtmlRequestBodySchema.safeParse(rawBody);
@@ -143,21 +195,42 @@ export async function POST(
     );
   }
 
-  const htmlBuffer = Buffer.from(parsedBody.data.html, "utf8");
-  const checksum = createHash("sha256").update(htmlBuffer).digest("hex");
-  const filename = sanitizeFilename(parsedBody.data.filename);
-  const objectKey = buildObjectKey(parsedProjectId.data, filename);
+  const r2Config = getR2Config();
+
+  if (!r2Config) {
+    return Response.json(
+      {
+        error:
+          "当前环境未配置 Cloudflare R2 写入凭证，已保留本地导出兜底。",
+      },
+      { status: 503 },
+    );
+  }
+
+  const s3 = new S3Client({
+    credentials: {
+      accessKeyId: r2Config.accessKeyId,
+      secretAccessKey: r2Config.secretAccessKey,
+    },
+    endpoint: r2Config.endpoint,
+    forcePathStyle: true,
+    region: "auto",
+  });
+  let uploadedObjectKey: string | null = null;
 
   try {
-    const s3 = new S3Client({
-      credentials: {
-        accessKeyId: r2Config.accessKeyId,
-        secretAccessKey: r2Config.secretAccessKey,
-      },
-      endpoint: r2Config.endpoint,
-      forcePathStyle: true,
-      region: "auto",
+    await requireProjectWriteAccess(supabase, parsedProjectId.data);
+
+    await assertArtifactVersionBelongsToProject({
+      artifactVersionId: parsedBody.data.artifactVersionId,
+      projectId: parsedProjectId.data,
+      supabase,
     });
+
+    const htmlBuffer = Buffer.from(parsedBody.data.html, "utf8");
+    const checksum = createHash("sha256").update(htmlBuffer).digest("hex");
+    const filename = sanitizeFilename(parsedBody.data.filename);
+    const objectKey = buildObjectKey(parsedProjectId.data, filename);
 
     await s3.send(
       new PutObjectCommand({
@@ -167,9 +240,9 @@ export async function POST(
         Key: objectKey,
       }),
     );
+    uploadedObjectKey = objectKey;
 
-    const client = supabase as unknown as LooseQueryClient;
-    const { data: exportFile, error: exportFileError } = await client
+    const { data: exportFile, error: exportFileError } = await supabase
       .from("export_files")
       .insert({
         artifact_version_id: parsedBody.data.artifactVersionId ?? null,
@@ -214,11 +287,24 @@ export async function POST(
       },
     );
   } catch (error) {
+    if (uploadedObjectKey) {
+      await removeUploadedObject({
+        bucket: r2Config.bucket,
+        objectKey: uploadedObjectKey,
+        s3,
+      });
+    }
+
+    const status =
+      error instanceof ProjectAuthorizationError || error instanceof ExportHtmlRouteError
+        ? error.status
+        : 500;
+
     return Response.json(
       {
         error: error instanceof Error ? error.message : "云端导出大屏失败。",
       },
-      { status: 500 },
+      { status },
     );
   }
 }

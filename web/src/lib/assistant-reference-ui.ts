@@ -32,12 +32,6 @@ const LESSON_READY_SUGGESTIONS = [
   "把练习密度调整得更高一些",
 ];
 
-const HTML_READY_SUGGESTIONS = [
-  "把大屏倒计时改成 8 分钟",
-  "增加分组积分反馈",
-  "优化课堂结束总结页",
-];
-
 const PATCH_SUGGESTIONS = [
   "补充器材不足时的替代方案",
   "增加学生互评标准",
@@ -93,7 +87,7 @@ export function getAssistantSuggestions(context: AssistantSuggestionContext) {
   }
 
   if (context.hasHtml) {
-    return HTML_READY_SUGGESTIONS;
+    return [];
   }
 
   if (context.canGenerateHtml) {

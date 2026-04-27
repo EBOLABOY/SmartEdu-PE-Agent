@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { MastraModelOutput } from "@mastra/core/stream";
 import { toAISdkStream } from "@mastra/ai-sdk";
-import type { UIMessage } from "ai";
+import type { UIMessage, UIMessageChunk } from "ai";
 
 import {
   DEFAULT_STANDARDS_MARKET,
@@ -19,7 +19,6 @@ import {
   createStructuredAuthoringStreamAdapter,
   runHtmlScreenGenerationSkill,
   runLessonGenerationSkill,
-  runLessonJsonRepairSkill,
   type AgentStreamRunner,
 } from "@/mastra/skills";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
@@ -119,21 +118,32 @@ export async function streamLessonAuthoring(request: LessonAuthoringRequest) {
   const agent = mastra.getAgent("peTeacherAgent");
   const agentStream: AgentStreamRunner = async (messages, options) =>
     (await agent.stream(messages, options)) as MastraModelOutput<unknown>;
-  const generationResult =
-    mode === "html"
-      ? await runHtmlScreenGenerationSkill({
-          requestId,
-          workflow,
-          lessonPlanLength: request.lessonPlan?.length ?? 0,
-          originalMessageCount: request.messages.length,
-          agentStream,
-        })
-      : await runLessonGenerationSkill({
-          messages: request.messages,
-          requestId,
-          workflow,
-          agentStream,
-        });
+  let generationStream: ReadableStream<UIMessageChunk>;
+
+  if (mode === "html") {
+    const htmlGeneration = await runHtmlScreenGenerationSkill({
+      requestId,
+      workflow,
+      lessonPlanLength: request.lessonPlan?.length ?? 0,
+      originalMessageCount: request.messages.length,
+      agentStream,
+    });
+
+    generationStream = toAISdkStream(htmlGeneration.result, {
+      from: "agent",
+      version: "v6",
+      sendStart: false,
+      sendFinish: true,
+    });
+  } else {
+    const lessonGeneration = await runLessonGenerationSkill({
+      messages: request.messages,
+      requestId,
+      workflow,
+    });
+
+    generationStream = lessonGeneration.stream;
+  }
 
   return {
     stream: createStructuredAuthoringStreamAdapter({
@@ -143,18 +153,9 @@ export async function streamLessonAuthoring(request: LessonAuthoringRequest) {
       mode,
       persistence: request.persistence,
       projectId: request.projectId,
-      repairLessonJson: (input) =>
-        runLessonJsonRepairSkill(input, {
-          modelId: process.env.AI_REPAIR_MODEL ?? process.env.AI_MODEL ?? "gpt-4.1-mini",
-        }),
       requestId,
       workflow,
-      stream: toAISdkStream(generationResult.result, {
-        from: "agent",
-        version: "v6",
-        sendStart: false,
-        sendFinish: true,
-      }),
+      stream: generationStream,
     }),
     workflow,
     requestId,

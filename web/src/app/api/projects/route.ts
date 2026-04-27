@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import {
+  PROJECT_CREATE_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
+import {
   DEFAULT_STANDARDS_MARKET,
   projectDirectoryResponseSchema,
   projectWorkspaceResponseSchema,
@@ -19,16 +24,6 @@ export const runtime = "nodejs";
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ExistingProjectOrganization = Pick<ProjectRow, "organization_id">;
-type RpcClient = {
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: string | null; error: Error | null }>;
-};
-type LooseQueryClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: string) => any;
-};
 
 const createProjectBodySchema = z
   .object({
@@ -148,9 +143,9 @@ export async function POST(request: Request) {
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: PROJECT_CREATE_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = createProjectBodySchema.safeParse(rawBody);
@@ -166,8 +161,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const client = supabase as unknown as LooseQueryClient;
-    const { data: existingProjects, error: existingProjectsError } = await client
+    const { data: existingProjects, error: existingProjectsError } = await supabase
       .from("projects")
       .select("organization_id")
       .eq("owner_id", user.id)
@@ -182,8 +176,7 @@ export async function POST(request: Request) {
       (existingProjects as ExistingProjectOrganization[] | null | undefined)?.[0]?.organization_id ?? null;
 
     if (!organizationId) {
-      const rpcClient = supabase as unknown as RpcClient;
-      const { data: newOrganizationId, error: newOrganizationError } = await rpcClient.rpc(
+      const { data: newOrganizationId, error: newOrganizationError } = await supabase.rpc(
         "create_personal_workspace",
         {
           workspace_name: "个人工作区",
@@ -197,7 +190,7 @@ export async function POST(request: Request) {
       organizationId = newOrganizationId;
     }
 
-    const { data: project, error: projectError } = await client
+    const { data: project, error: projectError } = await supabase
       .from("projects")
       .insert({
         organization_id: organizationId,

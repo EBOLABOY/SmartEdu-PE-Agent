@@ -1,5 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 import {
   persistedArtifactVersionSchema,
   workflowTraceDataSchema,
@@ -7,24 +5,10 @@ import {
 } from "@/lib/lesson-authoring-contract";
 import { toIsoDateTime } from "@/lib/date-time";
 import type { Database } from "@/lib/supabase/database.types";
+import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
-type ArtifactQueryClient = {
-  from: (table: "artifact_versions" | "artifacts") => {
-    select: (columns: string) => {
-      eq: (
-        column: string,
-        value: string,
-      ) => {
-        order?: (
-          column: string,
-          options: { ascending: boolean },
-        ) => Promise<{ data: ArtifactVersionRow[] | null; error: Error | null }>;
-      } & Promise<{ data: ArtifactRow[] | null; error: Error | null }>;
-    };
-  };
-};
 
 function toPersistedArtifactVersion(
   row: ArtifactVersionRow,
@@ -50,18 +34,17 @@ function toPersistedArtifactVersion(
 }
 
 export async function listArtifactVersionsByProject(
-  supabase: SupabaseClient<Database>,
+  supabase: SmartEduSupabaseClient,
   projectId: string,
 ) {
-  const client = supabase as unknown as ArtifactQueryClient;
   const [{ data: versionRows, error: versionRowsError }, { data: artifactRows, error: artifactRowsError }] =
     await Promise.all([
-      client
+      supabase
         .from("artifact_versions")
         .select("*")
         .eq("project_id", projectId)
-        .order!("created_at", { ascending: true }),
-      client.from("artifacts").select("*").eq("project_id", projectId),
+        .order("created_at", { ascending: true }),
+      supabase.from("artifacts").select("*").eq("project_id", projectId),
     ]);
 
   if (versionRowsError) {

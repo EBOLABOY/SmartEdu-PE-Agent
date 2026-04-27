@@ -46,16 +46,17 @@ CompetitionLessonPlan JSON 字段硬约束：
 1. 根对象必须只包含 title、subtitle、teacher、meta、narrative、learningObjectives、keyDifficultPoints、flowSummary、evaluation、loadEstimate、venueEquipment、periodPlan。
 2. teacher 必须包含 school、name；如果用户未提供，使用“未提供学校”“未提供教师”，不得使用 XXX、示例学校或示例教师。
 3. meta 必须包含 topic、lessonNo、studentCount，可包含 grade、level；字段内容必须来自用户需求或合理补全。
-4. narrative.guidingThought、narrative.textbookAnalysis、narrative.studentAnalysis 必须是非空字符串数组，但每项必须是语义完整的自然段；通常每个字段只写 1 项，禁止把“健康第一”“教育理念，落实”等短语拆成多个数组项。
-5. learningObjectives 必须包含 sportAbility、healthBehavior、sportMorality 三维目标。
-6. keyDifficultPoints 必须包含 studentLearning、teachingContent、teachingOrganization、teachingMethod 四类分析。
-7. evaluation 必须正好三项，level 依次为“三颗星”“二颗星”“一颗星”，description 写评价方面。
-8. loadEstimate 必须包含 loadLevel、targetHeartRateRange、averageHeartRate、groupDensity、individualDensity、chartPoints、rationale；chartPoints 为 5-8 个对象，每个对象包含 timeMinute、heartRate、label。
-9. venueEquipment.venue 只写 1 条核心教学场地；venueEquipment.equipment 只写 3-4 条直接支撑主教材学练的高频核心器材，并合并同类项，例如“羽毛球拍40把”“羽毛球80个”“球网4副”“标志桶32个”。禁止写急救包、任务卡、学习单、记分板、秒表、哨子、扩音器、等待区、观察通道等管理性、安全备用性或展示性物品，除非用户明确要求。
-10. periodPlan 必须包含 mainContent、safety、rows、homework、reflection；safety 最多 3 条，每条不超过 34 个汉字。
-11. periodPlan.rows 至少包含准备部分、基本部分、结束部分；每行 structure 只能是这三者之一，content、methods.teacher、methods.students、organization 均为非空字符串数组。
-12. periodPlan.rows 的 time 必须统一使用“X分钟”或“X-Y分钟”格式，例如“2分钟”“8分钟”“10-12分钟”；禁止使用 2’、2'、2min、2, 或纯数字。
-13. 只输出 JSON 对象本体；不要输出代码围栏、注释、Markdown 表格、HTML、XML 或 artifact 标签。`,
+4. 正文块字段统一使用非空字符串数组，禁止输出单个字符串。每个数组项必须是语义完整的自然句或自然段，不要把短语拆成碎片。
+5. narrative.guidingThought、narrative.textbookAnalysis、narrative.studentAnalysis 必须是非空字符串数组；通常每个字段只写 1 项。
+6. learningObjectives 必须包含 sportAbility、healthBehavior、sportMorality 三维目标；这三个字段都必须是非空字符串数组。
+7. keyDifficultPoints 必须包含 studentLearning、teachingContent、teachingOrganization、teachingMethod 四类分析；这四个字段都必须是非空字符串数组。
+8. evaluation 必须正好三项，level 依次为“三颗星”“二颗星”“一颗星”，description 写评价方面。
+9. loadEstimate 必须包含 loadLevel、targetHeartRateRange、averageHeartRate、groupDensity、individualDensity、chartPoints、rationale；rationale 必须是非空字符串数组；chartPoints 为 5-8 个对象，每个对象包含 timeMinute、heartRate、label。
+10. venueEquipment.venue 必须是非空字符串数组且只写 1 条核心教学场地；venueEquipment.equipment 必须是非空字符串数组且只写 3-4 条直接支撑主教材学练的高频核心器材，并合并同类项，例如“羽毛球拍40把”“羽毛球80个”“球网4副”“标志桶32个”。禁止写急救包、任务卡、学习单、记分板、秒表、哨子、扩音器、等待区、观察通道等管理性、安全备用性或展示性物品，除非用户明确要求。
+11. periodPlan 必须包含 mainContent、safety、rows、homework、reflection；mainContent、safety、homework、reflection 都必须是非空字符串数组；safety 最多 3 条，每条不超过 34 个汉字。
+12. periodPlan.rows 至少包含准备部分、基本部分、结束部分；每行 structure 只能是这三者之一，content、methods.teacher、methods.students、organization 均为非空字符串数组。
+13. periodPlan.rows 的 time 必须统一使用“X分钟”或“X-Y分钟”格式，例如“2分钟”“8分钟”“10-12分钟”；禁止使用 2’、2'、2min、2, 或纯数字。
+14. 只输出 JSON 对象本体；不要输出代码围栏、注释、Markdown 表格、HTML、XML 或 artifact 标签。`,
 };
 
 function renderScreenPlanPrompt(screenPlan?: LessonScreenPlan) {
@@ -152,7 +153,7 @@ ${contextLines.join("\n")}
 
 用户资料填充要求：
 1. 如果提供了学校名称和教师姓名，JSON 的 teacher.school 和 teacher.name 必须同步填写。
-2. 如果提供了水平和任教年级，副标题必须采用“—水平X·X年级”格式；基础信息表中的年级与水平必须同步填写。
+2. 如果提供了水平和任教年级，副标题必须采用“——水平X·X年级”格式；基础信息表中的年级与水平必须同步填写。
 3. 如果当前课堂上下文中的年级与用户资料任教年级冲突，以本次用户明确输入的年级为准，但仍保留教师姓名和学校名称。`;
 }
 

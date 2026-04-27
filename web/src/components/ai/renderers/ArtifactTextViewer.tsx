@@ -1,26 +1,50 @@
+"use client";
+
+import { AutoScrollArea } from "@/components/ai-elements/auto-scroll";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { StateNotice } from "@/components/ui/state-surface";
 
 interface ArtifactTextViewerProps {
   content: string;
+  emptyDescription?: string;
+  emptyTitle?: string;
+  isStreaming?: boolean;
 }
 
-export default function ArtifactTextViewer({ content }: ArtifactTextViewerProps) {
+export default function ArtifactTextViewer({
+  content,
+  emptyDescription,
+  emptyTitle,
+  isStreaming = false,
+}: ArtifactTextViewerProps) {
   const normalizedContent = content.trim();
+  const resolvedEmptyTitle =
+    emptyTitle ?? (isStreaming ? "等待 JSON 首包" : "等待教案生成");
+  const resolvedEmptyDescription =
+    emptyDescription ??
+    (isStreaming
+      ? "请求已进入模型流。收到第一段 JSON 后，这里会直接追加显示，不再切换到生成动画。"
+      : "请输入课程主题，系统会先生成可审阅的结构化教案；确认教案无误后，再生成互动大屏。");
 
   return (
-    <div className="h-full w-full overflow-y-auto bg-card p-8 text-foreground">
+    <AutoScrollArea
+      className="h-full w-full bg-card text-foreground"
+      contentClassName="p-8"
+      scrollClassName="overflow-y-auto"
+    >
       <div className="competition-lesson-preview mx-auto max-w-4xl leading-relaxed">
         {normalizedContent ? (
           <MessageResponse>{normalizedContent}</MessageResponse>
         ) : (
-          <div className="flex min-h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/50 text-center">
-            <p className="text-base font-medium text-foreground">等待教案生成</p>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              请输入课程主题，系统会先生成可审阅的结构化教案；确认教案无误后，再生成互动大屏。
-            </p>
-          </div>
+          <StateNotice
+            className="flex min-h-[420px] items-center justify-center"
+            description={resolvedEmptyDescription}
+            layout="center"
+            title={resolvedEmptyTitle}
+            tone={isStreaming ? "brand" : "neutral"}
+          />
         )}
       </div>
-    </div>
+    </AutoScrollArea>
   );
 }

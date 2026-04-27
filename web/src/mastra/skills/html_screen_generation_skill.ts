@@ -3,7 +3,7 @@ import { convertToModelMessages } from "ai";
 
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
-import { runAgentStreamWithRetry, type AgentStreamRunner } from "./lesson_generation_skill";
+import { runModelOperationWithRetry, type AgentStreamRunner } from "./lesson_generation_skill";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
 
@@ -25,7 +25,7 @@ export async function runHtmlScreenGenerationSkill(input: {
   agentStream: AgentStreamRunner;
 }): Promise<{ result: MastraModelOutput<unknown>; modelMessageCount: number }> {
   const modelMessages = buildHtmlModelMessages();
-  const result = await runAgentStreamWithRetry(
+  const result = await runModelOperationWithRetry(
     () =>
       input.agentStream(modelMessages, {
         system: input.workflow.system,

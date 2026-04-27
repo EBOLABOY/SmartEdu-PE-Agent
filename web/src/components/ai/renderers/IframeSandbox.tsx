@@ -1,7 +1,7 @@
 "use client";
 
 import { Info, Maximize2, Minimize2, ShieldAlert } from "lucide-react";
-import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { analyzeSandboxHtml, injectSandboxCsp } from "@/lib/sandbox-html";
 import {
@@ -15,28 +15,19 @@ interface IframeSandboxProps {
   htmlContent: string;
 }
 
-type SandboxViewport = {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  frameStyle: CSSProperties;
-  isFullscreen: boolean;
-  toggleFullscreen: () => Promise<void>;
-};
-
-function useSandboxViewport(): SandboxViewport {
-  const containerRef = useRef<HTMLDivElement>(null);
+function useSandboxViewport() {
+  const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
-    const container = containerRef.current;
-
-    if (!container) {
+    if (!containerElement) {
       return;
     }
 
     const updateViewport = () => {
-      const { width, height } = container.getBoundingClientRect();
-      const fullscreen = document.fullscreenElement === container;
+      const { width, height } = containerElement.getBoundingClientRect();
+      const fullscreen = document.fullscreenElement === containerElement;
 
       setIsFullscreen(fullscreen);
       setScale(calculateSandboxScale({ width, height }, fullscreen ? "cover" : "contain"));
@@ -44,41 +35,39 @@ function useSandboxViewport(): SandboxViewport {
 
     updateViewport();
     const observer = new ResizeObserver(updateViewport);
-    observer.observe(container);
+    observer.observe(containerElement);
     document.addEventListener("fullscreenchange", updateViewport);
 
     return () => {
       observer.disconnect();
       document.removeEventListener("fullscreenchange", updateViewport);
     };
-  }, []);
+  }, [containerElement]);
 
   const toggleFullscreen = async () => {
-    const container = containerRef.current;
-
-    if (!container) {
+    if (!containerElement) {
       return;
     }
 
-    if (document.fullscreenElement === container) {
+    if (document.fullscreenElement === containerElement) {
       await document.exitFullscreen();
       return;
     }
 
-    await container.requestFullscreen();
+    await containerElement.requestFullscreen();
   };
 
-  return {
-    containerRef,
-    frameStyle: buildSandboxFrameStyle(scale),
+  return [
+    setContainerElement,
+    buildSandboxFrameStyle(scale),
     isFullscreen,
     toggleFullscreen,
-  };
+  ] as const;
 }
 
 function BlockedSandboxState({ blockedReasons }: { blockedReasons: string[] }) {
   return (
-    <div className="flex h-full w-full items-center justify-center bg-black p-6">
+    <div className="flex h-full w-full items-center justify-center bg-slate-950 p-6">
       <div className="max-w-xl rounded-2xl border border-destructive/40 bg-background/95 p-6 text-left shadow-xl">
         <div className="flex items-center gap-3">
           <ShieldAlert className="size-5 text-destructive" />
@@ -158,7 +147,7 @@ function SandboxChrome({
 
       {warnings[0] ? (
         <div
-          className="absolute bottom-4 left-4 inline-flex size-7 items-center justify-center rounded-full border border-white/15 bg-black/25 text-white/55 shadow-md backdrop-blur"
+          className="absolute bottom-4 left-4 inline-flex size-7 items-center justify-center rounded-full border border-white/15 bg-slate-950/40 text-white/55 shadow-md backdrop-blur"
           title={warnings[0]}
         >
           <Info className="size-3.5" />
@@ -169,7 +158,7 @@ function SandboxChrome({
 }
 
 export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
-  const viewport = useSandboxViewport();
+  const [setViewportElement, frameStyle, isFullscreen, toggleFullscreen] = useSandboxViewport();
   const securityReport = useMemo(() => analyzeSandboxHtml(htmlContent), [htmlContent]);
   const sandboxedHtml = useMemo(
     () => (securityReport.blockedReasons.length === 0 ? injectSandboxCsp(htmlContent) : ""),
@@ -181,12 +170,12 @@ export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
   }
 
   return (
-    <div ref={viewport.containerRef} className="relative h-full w-full overflow-hidden bg-black">
-      <SandboxFrame frameStyle={viewport.frameStyle} htmlContent={sandboxedHtml} />
+    <div ref={setViewportElement} className="relative h-full w-full overflow-hidden bg-slate-950">
+      <SandboxFrame frameStyle={frameStyle} htmlContent={sandboxedHtml} />
       <SandboxChrome
-        frameStyle={viewport.frameStyle}
-        isFullscreen={viewport.isFullscreen}
-        onToggleFullscreen={viewport.toggleFullscreen}
+        frameStyle={frameStyle}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={toggleFullscreen}
         warnings={securityReport.warnings}
       />
       <span className="sr-only">

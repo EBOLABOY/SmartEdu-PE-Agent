@@ -1,6 +1,6 @@
 import { createUIMessageStream, type FinishReason, type UIMessageChunk } from "ai";
 
-import { extractHtmlDocumentFromText } from "@/lib/artifact-protocol";
+import { extractHtmlDocumentFromText, extractJsonObjectText } from "@/lib/artifact-protocol";
 import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -14,8 +14,6 @@ import { buildLessonSlideshowHtml, isPptStyleLessonHtml } from "@/lib/lesson-sli
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-store";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
-
-import type { LessonJsonRepairSkill } from "./lesson_json_repair_skill";
 
 function nowIsoString() {
   return new Date().toISOString();
@@ -92,33 +90,11 @@ function buildArtifactData(
   };
 }
 
-function stripCodeFence(text: string) {
-  const trimmed = text.trim();
-  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
-
-  return match?.[1]?.trim() ?? trimmed;
-}
-
-function extractJsonObjectText(text: string) {
-  const stripped = stripCodeFence(text);
-  const start = stripped.indexOf("{");
-  const end = stripped.lastIndexOf("}");
-
-  if (start < 0 || end <= start) {
-    return stripped;
-  }
-
-  return stripped.slice(start, end + 1);
-}
-
 function containsDefaultPlaceholder(value: unknown) {
   return JSON.stringify(value).includes("\"XXX\"");
 }
 
-async function buildLessonJsonArtifactContent(
-  rawText: string,
-  repairLessonJson?: LessonJsonRepairSkill,
-) {
+function buildLessonJsonArtifactContent(rawText: string) {
   try {
     const parsed = competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(rawText)));
 
@@ -133,31 +109,11 @@ async function buildLessonJsonArtifactContent(
       warningText: undefined,
     };
   } catch (error) {
-    if (!repairLessonJson) {
-      throw new Error(
-        `模型未返回合法 CompetitionLessonPlan JSON，且未配置自动修复 skill：${
-          error instanceof Error ? error.message : "unknown-error"
-        }`,
-      );
-    }
-
-    const repaired = await repairLessonJson({
-      draftText: rawText,
-      issue: `模型直接 JSON 输出未通过 schema 校验：${
+    throw new Error(
+      `模型未返回合法 CompetitionLessonPlan JSON，已停止自动修复。请查看字段错误后重新生成：${
         error instanceof Error ? error.message : "unknown-error"
       }`,
-    });
-
-    if (containsDefaultPlaceholder(repaired)) {
-      throw new Error("结构化修复结果仍包含默认占位符 XXX，已拒绝写入正式教案。");
-    }
-
-    return {
-      content: JSON.stringify(repaired),
-      contentType: "lesson-json" as const,
-      detail: "模型 JSON 草稿校验失败，已通过结构化修复生成 CompetitionLessonPlan JSON。",
-      warningText: "模型首次 JSON 草稿未通过校验，系统已自动调用结构化修复生成正式 JSON。",
-    };
+    );
   }
 }
 
@@ -184,7 +140,6 @@ export function createStructuredAuthoringStreamAdapter({
   originalMessages,
   chatPersistence,
   lessonPlan,
-  repairLessonJson,
   persistence,
   projectId,
   requestId,
@@ -195,7 +150,6 @@ export function createStructuredAuthoringStreamAdapter({
   originalMessages: SmartEduUIMessage[];
   chatPersistence?: ProjectChatPersistence | null;
   lessonPlan?: string;
-  repairLessonJson?: LessonJsonRepairSkill;
   persistence?: LessonAuthoringPersistence | null;
   projectId?: string;
   requestId: string;
@@ -406,6 +360,7 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "start-step": {
+              writer.write(part);
               runtimeTrace.push(
                 createTraceEntry("agent-step-start", "running", "模型进入新一步推理或工具执行阶段。"),
               );
@@ -414,6 +369,7 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "finish-step": {
+              writer.write(part);
               runtimeTrace.push(
                 createTraceEntry("agent-step-finish", "success", "模型当前步骤已完成并回写到 UI 流。"),
               );
@@ -421,27 +377,43 @@ export function createStructuredAuthoringStreamAdapter({
               break;
             }
 
+            case "tool-input-start": {
+              writer.write(part);
+              break;
+            }
+
+            case "tool-input-delta": {
+              writer.write(part);
+              break;
+            }
+
             case "tool-input-available": {
-              runtimeTrace.push(
-                createTraceEntry("agent-tool-call", "running", `触发工具 ${part.toolName}。`),
-              );
-              writeTrace("generation");
+              writer.write(part);
+              break;
+            }
+
+            case "tool-input-error": {
+              writer.write(part);
+              break;
+            }
+
+            case "tool-approval-request": {
+              writer.write(part);
               break;
             }
 
             case "tool-output-available": {
-              runtimeTrace.push(
-                createTraceEntry("agent-tool-result", "success", `工具 ${part.toolCallId} 已返回结果。`),
-              );
-              writeTrace("generation");
+              writer.write(part);
               break;
             }
 
             case "tool-output-error": {
-              runtimeTrace.push(
-                createTraceEntry("agent-tool-error", "failed", `工具 ${part.toolCallId} 执行失败：${part.errorText}`),
-              );
-              writeTrace("generation");
+              writer.write(part);
+              break;
+            }
+
+            case "tool-output-denied": {
+              writer.write(part);
               break;
             }
 
@@ -479,7 +451,7 @@ export function createStructuredAuthoringStreamAdapter({
                   return;
                 }
 
-                const lessonJson = await buildLessonJsonArtifactContent(lessonText, repairLessonJson);
+                const lessonJson = buildLessonJsonArtifactContent(lessonText);
                 const artifact = buildArtifactData(workflow, {
                   content: lessonJson.content,
                   contentType: lessonJson.contentType,
@@ -487,12 +459,6 @@ export function createStructuredAuthoringStreamAdapter({
                   status: "ready",
                   warningText: lessonJson.warningText,
                 });
-
-                if (lessonJson.warningText) {
-                  runtimeTrace.push(
-                    createTraceEntry("repair-lesson-json-artifact", "success", lessonJson.detail),
-                  );
-                }
 
                 writeArtifact(artifact);
                 await persistArtifact(artifact);

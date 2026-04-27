@@ -3,6 +3,8 @@ import { z } from "zod";
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString).min(1);
 
+export const competitionLessonTextBlockSchema = nonEmptyStringArray;
+
 export const competitionLessonEvaluationLevelSchema = z.enum(["三颗星", "二颗星", "一颗星"]);
 
 export function normalizeCompetitionLessonTime(value: unknown, fallback = "8分钟") {
@@ -57,19 +59,19 @@ export const competitionLessonLoadEstimateSchema = z
     groupDensity: nonEmptyString,
     individualDensity: nonEmptyString,
     chartPoints: z.array(competitionLessonLoadChartPointSchema).min(2).max(12).default(defaultLoadChartPoints),
-    rationale: z.string().trim().optional(),
+    rationale: competitionLessonTextBlockSchema,
   })
   .strict();
 
 export const competitionLessonPlanRowSchema = z
   .object({
     structure: z.enum(["准备部分", "基本部分", "结束部分"]),
-    content: nonEmptyStringArray,
+    content: competitionLessonTextBlockSchema,
     methods: z.object({
-      teacher: nonEmptyStringArray,
-      students: nonEmptyStringArray,
+      teacher: competitionLessonTextBlockSchema,
+      students: competitionLessonTextBlockSchema,
     }),
-    organization: nonEmptyStringArray,
+    organization: competitionLessonTextBlockSchema,
     time: lessonTimeString,
     intensity: nonEmptyString,
   })
@@ -96,27 +98,27 @@ export const competitionLessonPlanSchema = z
       .strict(),
     narrative: z
       .object({
-        guidingThought: nonEmptyStringArray,
-        textbookAnalysis: nonEmptyStringArray,
-        studentAnalysis: nonEmptyStringArray,
+        guidingThought: competitionLessonTextBlockSchema,
+        textbookAnalysis: competitionLessonTextBlockSchema,
+        studentAnalysis: competitionLessonTextBlockSchema,
       })
       .strict(),
     learningObjectives: z
       .object({
-        sportAbility: nonEmptyString,
-        healthBehavior: nonEmptyString,
-        sportMorality: nonEmptyString,
+        sportAbility: competitionLessonTextBlockSchema,
+        healthBehavior: competitionLessonTextBlockSchema,
+        sportMorality: competitionLessonTextBlockSchema,
       })
       .strict(),
     keyDifficultPoints: z
       .object({
-        studentLearning: nonEmptyString,
-        teachingContent: nonEmptyString,
-        teachingOrganization: nonEmptyString,
-        teachingMethod: nonEmptyString,
+        studentLearning: competitionLessonTextBlockSchema,
+        teachingContent: competitionLessonTextBlockSchema,
+        teachingOrganization: competitionLessonTextBlockSchema,
+        teachingMethod: competitionLessonTextBlockSchema,
       })
       .strict(),
-    flowSummary: nonEmptyStringArray,
+    flowSummary: competitionLessonTextBlockSchema,
     evaluation: z
       .array(
         z
@@ -130,17 +132,17 @@ export const competitionLessonPlanSchema = z
     loadEstimate: competitionLessonLoadEstimateSchema,
     venueEquipment: z
       .object({
-        venue: nonEmptyStringArray,
-        equipment: nonEmptyStringArray,
+        venue: competitionLessonTextBlockSchema,
+        equipment: competitionLessonTextBlockSchema,
       })
       .strict(),
     periodPlan: z
       .object({
-        mainContent: nonEmptyString,
-        safety: nonEmptyStringArray,
+        mainContent: competitionLessonTextBlockSchema,
+        safety: competitionLessonTextBlockSchema,
         rows: z.array(competitionLessonPlanRowSchema).min(3),
-        homework: nonEmptyStringArray,
-        reflection: z.string().optional(),
+        homework: competitionLessonTextBlockSchema,
+        reflection: competitionLessonTextBlockSchema,
       })
       .strict(),
   })
@@ -171,15 +173,15 @@ export const DEFAULT_COMPETITION_LESSON_PLAN: CompetitionLessonPlan = {
     studentAnalysis: ["XXX"],
   },
   learningObjectives: {
-    sportAbility: "XXX",
-    healthBehavior: "XXX",
-    sportMorality: "XXX",
+    sportAbility: ["XXX"],
+    healthBehavior: ["XXX"],
+    sportMorality: ["XXX"],
   },
   keyDifficultPoints: {
-    studentLearning: "XXX",
-    teachingContent: "XXX",
-    teachingOrganization: "XXX",
-    teachingMethod: "XXX",
+    studentLearning: ["XXX"],
+    teachingContent: ["XXX"],
+    teachingOrganization: ["XXX"],
+    teachingMethod: ["XXX"],
   },
   flowSummary: ["XXX"],
   evaluation: [
@@ -203,14 +205,14 @@ export const DEFAULT_COMPETITION_LESSON_PLAN: CompetitionLessonPlan = {
     groupDensity: "XXX",
     individualDensity: "XXX",
     chartPoints: defaultLoadChartPoints,
-    rationale: "XXX",
+    rationale: ["XXX"],
   },
   venueEquipment: {
     venue: ["XXX"],
     equipment: ["XXX"],
   },
   periodPlan: {
-    mainContent: "XXX",
+    mainContent: ["XXX"],
     safety: ["XXX"],
     rows: [
       {
@@ -248,6 +250,6 @@ export const DEFAULT_COMPETITION_LESSON_PLAN: CompetitionLessonPlan = {
       },
     ],
     homework: ["XXX", "XXX"],
-    reflection: "",
+    reflection: ["XXX"],
   },
 };

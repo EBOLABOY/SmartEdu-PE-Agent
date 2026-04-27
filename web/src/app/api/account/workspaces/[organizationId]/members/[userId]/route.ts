@@ -3,18 +3,16 @@ import {
   updateWorkspaceMemberRequestBodySchema,
 } from "@/lib/lesson-authoring-contract";
 import {
+  SMALL_JSON_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
+import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-type RpcClient = {
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: Error | null }>;
-};
 
 async function requireSupabaseUser() {
   if (!hasSupabasePublicEnv()) {
@@ -73,9 +71,9 @@ export async function PATCH(
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: SMALL_JSON_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = updateWorkspaceMemberRequestBodySchema.safeParse(rawBody);
@@ -91,8 +89,7 @@ export async function PATCH(
   }
 
   try {
-    const client = auth.supabase as unknown as RpcClient;
-    const { error } = await client.rpc("update_organization_member_role", {
+    const { error } = await auth.supabase.rpc("update_organization_member_role", {
       next_role: parsedBody.data.role,
       target_organization_id: parsedParams.organizationId,
       target_user_id: parsedParams.userId,
@@ -138,8 +135,7 @@ export async function DELETE(
   }
 
   try {
-    const client = auth.supabase as unknown as RpcClient;
-    const { error } = await client.rpc("remove_organization_member", {
+    const { error } = await auth.supabase.rpc("remove_organization_member", {
       target_organization_id: parsedParams.organizationId,
       target_user_id: parsedParams.userId,
     });

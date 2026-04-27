@@ -3,42 +3,43 @@ import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 
 import type { Database } from "./database.types";
+import { getSupabaseAdminConfig, getSupabasePublicConfig } from "./env";
 
 export function hasSupabasePublicEnv() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return Boolean(getSupabasePublicConfig());
 }
 
 export function hasSupabaseServiceRoleEnv() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return Boolean(getSupabaseAdminConfig());
 }
 
 export function createSupabaseAdminClient() {
-  if (!hasSupabaseServiceRoleEnv()) {
+  const config = getSupabaseAdminConfig();
+
+  if (!config) {
     return null;
   }
 
-  return createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
+  return createClient<Database>(config.url, config.secretKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
     },
-  );
+  });
 }
 
 export async function createSupabaseServerClient() {
-  if (!hasSupabasePublicEnv()) {
+  const config = getSupabasePublicConfig();
+
+  if (!config) {
     return null;
   }
 
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    config.url,
+    config.publishableKey,
     {
       cookies: {
         getAll() {

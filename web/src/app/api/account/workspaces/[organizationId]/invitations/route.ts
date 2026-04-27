@@ -6,19 +6,17 @@ import {
   projectIdSchema,
 } from "@/lib/lesson-authoring-contract";
 import {
+  SMALL_JSON_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
+import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-type LooseQueryClient = {
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: string | null; error: Error | null }>;
-};
 
 function buildInviteUrls(request: Request, token: string) {
   const requestUrl = new URL(request.url);
@@ -68,9 +66,9 @@ export async function POST(
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: SMALL_JSON_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = createWorkspaceInvitationRequestBodySchema.safeParse(rawBody);
@@ -91,8 +89,7 @@ export async function POST(
   const { appInviteUrl, callbackUrl } = buildInviteUrls(request, token);
 
   try {
-    const client = supabase as unknown as LooseQueryClient;
-    const { error: createError } = await client.rpc("create_organization_invitation", {
+    const { error: createError } = await supabase.rpc("create_organization_invitation", {
       invitation_email: email,
       invitation_role: parsedBody.data.role,
       invitation_token_hash: tokenHash,

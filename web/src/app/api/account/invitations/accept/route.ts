@@ -2,18 +2,16 @@ import {
   acceptWorkspaceInvitationRequestBodySchema,
 } from "@/lib/lesson-authoring-contract";
 import {
+  SMALL_JSON_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
+import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-type RpcClient = {
-  rpc: (
-    functionName: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: string | null; error: Error | null }>;
-};
 
 export async function POST(request: Request) {
   if (!hasSupabasePublicEnv()) {
@@ -38,9 +36,9 @@ export async function POST(request: Request) {
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: SMALL_JSON_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = acceptWorkspaceInvitationRequestBodySchema.safeParse(rawBody);
@@ -56,8 +54,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const client = supabase as unknown as RpcClient;
-    const { data: organizationId, error } = await client.rpc("accept_organization_invitation", {
+    const { data: organizationId, error } = await supabase.rpc("accept_organization_invitation", {
       invitation_token: parsedBody.data.token,
     });
 

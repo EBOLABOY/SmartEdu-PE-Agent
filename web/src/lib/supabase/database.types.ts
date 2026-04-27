@@ -193,6 +193,7 @@ export type Database = {
           user_id: string;
         };
         Update: Partial<Database["public"]["Tables"]["organization_members"]["Insert"]>;
+        Relationships: [];
       };
       organization_invitations: {
         Row: {
@@ -224,6 +225,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["organization_invitations"]["Insert"]>;
+        Relationships: [];
       };
       organizations: {
         Row: {
@@ -243,6 +245,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["organizations"]["Insert"]>;
+        Relationships: [];
       };
       projects: {
         Row: {
@@ -321,6 +324,31 @@ export type Database = {
           workspace_name?: string;
         };
         Returns: string;
+      };
+      is_org_writer: {
+        Args: {
+          target_organization_id: string;
+        };
+        Returns: boolean;
+      };
+      is_project_writer: {
+        Args: {
+          target_project_id: string;
+        };
+        Returns: boolean;
+      };
+      require_project_writer: {
+        Args: {
+          target_project_id: string;
+        };
+        Returns: string;
+      };
+      can_insert_org_member: {
+        Args: {
+          inserted_role: "owner" | "admin" | "teacher" | "viewer";
+          target_organization_id: string;
+        };
+        Returns: boolean;
       };
       accept_organization_invitation: {
         Args: {

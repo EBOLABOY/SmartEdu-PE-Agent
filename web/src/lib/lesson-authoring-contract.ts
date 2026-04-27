@@ -41,15 +41,15 @@ export type LessonScreenPlan = z.infer<typeof lessonScreenPlanSchema>;
 
 export const peTeacherContextSchema = z
   .object({
-    grade: z.string().trim().min(1).optional(),
-    teacherName: z.string().trim().min(1).optional(),
-    schoolName: z.string().trim().min(1).optional(),
-    teachingGrade: z.string().trim().min(1).optional(),
-    teachingLevel: z.string().trim().min(1).optional(),
-    topic: z.string().trim().min(1).optional(),
+    grade: z.string().trim().min(1).max(80).optional(),
+    teacherName: z.string().trim().min(1).max(80).optional(),
+    schoolName: z.string().trim().min(1).max(160).optional(),
+    teachingGrade: z.string().trim().min(1).max(80).optional(),
+    teachingLevel: z.string().trim().min(1).max(80).optional(),
+    topic: z.string().trim().min(1).max(160).optional(),
     duration: z.number().int().positive().max(240).optional(),
-    venue: z.string().trim().min(1).optional(),
-    equipment: z.array(z.string().trim().min(1)).max(32).optional(),
+    venue: z.string().trim().min(1).max(160).optional(),
+    equipment: z.array(z.string().trim().min(1).max(120)).max(32).optional(),
   })
   .strict();
 
@@ -342,11 +342,11 @@ export const smartEduDataSchemas = {
 
 export const chatRequestBodySchema = z
   .object({
-    messages: z.unknown(),
+    messages: z.array(z.unknown()).max(60),
     projectId: projectIdSchema.optional(),
     context: peTeacherContextSchema.optional(),
     mode: generationModeSchema.optional(),
-    lessonPlan: z.string().optional(),
+    lessonPlan: z.string().max(1_000_000).optional(),
     screenPlan: lessonScreenPlanSchema.optional(),
     market: standardsMarketSchema.optional(),
   })

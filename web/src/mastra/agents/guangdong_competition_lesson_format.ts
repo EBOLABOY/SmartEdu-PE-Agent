@@ -39,7 +39,7 @@ JSON 输出要求：
 2. 学习评价必须写入 evaluation 数组，星级依次为“三颗星”“二颗星”“一颗星”。
 3. 课时计划必须写入 periodPlan.rows 数组，每行包含课的结构、具体教学内容、教与学的方法、组织形式、运动时间、强度。
 4. 课时计划表“运动时间”字段必须写完整中文单位，例如“2分钟”“8分钟”“10-12分钟”。
-5. 多条内容必须使用字符串数组，不要在 JSON 字符串里用 <br> 拼接。
+5. 正文块字段统一使用字符串数组，不要在 JSON 字符串里用 <br> 拼接；包括 narrative、learningObjectives、keyDifficultPoints、loadEstimate.rationale、venueEquipment.venue、venueEquipment.equipment、periodPlan.mainContent、periodPlan.safety、periodPlan.homework、periodPlan.reflection。
 6. narrative.guidingThought、narrative.textbookAnalysis、narrative.studentAnalysis 属于正式教案叙述正文，通常每个字段只写 1 个完整自然段；禁止把半句、短语、口号拆成多个数组项，避免打印版出现不必要换行。
 7. 不要输出代码围栏、Markdown、HTML、XML 或 artifact 标签。
 `;

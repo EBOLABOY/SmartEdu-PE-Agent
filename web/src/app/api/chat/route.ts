@@ -6,24 +6,32 @@ import {
   type PeTeacherContext,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
+import {
+  allowsAnonymousAiRequests,
+  getAiRequestAuth,
+  takeAiRateLimitToken,
+} from "@/lib/api/ai-guard";
+import { CHAT_REQUEST_MAX_BYTES, jsonRequestErrorResponse, readJsonRequest } from "@/lib/api/request";
 import { createLessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import { createProjectChatPersistence } from "@/lib/persistence/project-chat-store";
+import {
+  ProjectAuthorizationError,
+  requireProjectWriteAccess,
+} from "@/lib/persistence/project-authorization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { LessonAuthoringError, streamLessonAuthoring } from "@/mastra/services/lesson_authoring";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const CHAT_RATE_LIMIT = 30;
+const CHAT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
 type ProfileRow = {
   school_name: string | null;
   teacher_name: string | null;
   teaching_grade: string | null;
   teaching_level: string | null;
-};
-
-type LooseProfileClient = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  from: (table: "profiles") => any;
 };
 
 function profileToContext(profile: ProfileRow | null): PeTeacherContext {
@@ -44,8 +52,7 @@ async function loadUserProfileContext(
   }
 
   try {
-    const client = supabase as unknown as LooseProfileClient;
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("profiles")
       .select("school_name, teacher_name, teaching_grade, teaching_level")
       .eq("id", userId)
@@ -68,9 +75,9 @@ export async function POST(request: Request) {
   let rawBody: unknown;
 
   try {
-    rawBody = await request.json();
-  } catch {
-    return Response.json({ error: "请求体必须是 JSON。" }, { status: 400 });
+    rawBody = await readJsonRequest(request, { maxBytes: CHAT_REQUEST_MAX_BYTES });
+  } catch (error) {
+    return jsonRequestErrorResponse(error, "请求体必须是 JSON。");
   }
 
   const parsedBody = chatRequestBodySchema.safeParse(rawBody);
@@ -104,10 +111,42 @@ export async function POST(request: Request) {
   let authoringResult: Awaited<ReturnType<typeof streamLessonAuthoring>>;
 
   try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = supabase ? await supabase.auth.getUser() : { data: { user: null } };
+    const { supabase, user } = await getAiRequestAuth();
+
+    if (!user && !allowsAnonymousAiRequests()) {
+      return Response.json(
+        { error: "请先登录后再使用 AI 生成。匿名 AI 只能通过 SMARTEDU_ALLOW_ANONYMOUS_AI 显式开启。" },
+        { status: 401 },
+      );
+    }
+
+    const rateLimit = takeAiRateLimitToken({
+      limit: CHAT_RATE_LIMIT,
+      request,
+      userId: user?.id,
+      windowMs: CHAT_RATE_LIMIT_WINDOW_MS,
+    });
+
+    if (!rateLimit.ok) {
+      return Response.json(
+        { error: "AI 请求过于频繁，请稍后再试。" },
+        {
+          headers: {
+            "retry-after": String(rateLimit.retryAfterSeconds),
+          },
+          status: 429,
+        },
+      );
+    }
+
+    if (parsedBody.data.projectId) {
+      if (!supabase) {
+        return Response.json({ error: "当前环境未启用 Supabase，无法校验项目写入权限。" }, { status: 503 });
+      }
+
+      await requireProjectWriteAccess(supabase, parsedBody.data.projectId);
+    }
+
     const lessonPersistence = user ? createLessonAuthoringPersistence(supabase) : null;
     const chatPersistence = user ? createProjectChatPersistence(supabase, user.id) : null;
     const profileContext = await loadUserProfileContext(supabase, user?.id);
@@ -142,7 +181,10 @@ export async function POST(request: Request) {
       market: parsedBody.data.market,
     });
   } catch (error) {
-    const status = error instanceof LessonAuthoringError ? error.status : 500;
+    const status =
+      error instanceof LessonAuthoringError || error instanceof ProjectAuthorizationError
+        ? error.status
+        : 500;
 
     return Response.json(
       { error: error instanceof Error ? error.message : "体育教案生成服务异常。" },

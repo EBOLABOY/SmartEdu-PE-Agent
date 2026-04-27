@@ -34,23 +34,39 @@ const EMPTY_EXTRACTED_ARTIFACT: ExtractedArtifact = {
   source: "none",
 };
 
+function stripJsonCodeFence(text: string) {
+  const trimmed = text.trim();
+  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+
+  return match?.[1]?.trim() ?? trimmed;
+}
+
+export function extractJsonObjectText(text: string) {
+  const stripped = stripJsonCodeFence(text);
+  const start = stripped.indexOf("{");
+  const end = stripped.lastIndexOf("}");
+
+  if (start < 0 || end <= start) {
+    return stripped;
+  }
+
+  return stripped.slice(start, end + 1);
+}
+
 export function lessonContentToPlan(
   content: string,
   contentType: ArtifactContentType,
 ): CompetitionLessonPlan | undefined {
   try {
     return contentType === "lesson-json"
-      ? competitionLessonPlanSchema.parse(JSON.parse(content))
+      ? competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(content)))
       : undefined;
   } catch {
     return undefined;
   }
 }
 
-function normalizeLessonArtifactContent(
-  content: string,
-  _contentType: ArtifactContentType,
-) {
+function normalizeLessonArtifactContent(content: string) {
   return content;
 }
 
@@ -147,10 +163,7 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
       stage: structuredArtifact.stage,
       lessonContent:
         structuredArtifact.stage === "lesson"
-          ? normalizeLessonArtifactContent(
-              structuredArtifact.content,
-              structuredArtifact.contentType,
-            )
+          ? normalizeLessonArtifactContent(structuredArtifact.content)
           : "",
       html: structuredArtifact.stage === "html" ? structuredArtifact.content : "",
       htmlComplete:
