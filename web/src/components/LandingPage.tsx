@@ -36,7 +36,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BRAND_TAGLINE } from "@/lib/brand";
 import type { PersistedProjectSummary } from "@/lib/lesson-authoring-contract";
 
 interface LandingPageProps {
@@ -47,12 +46,6 @@ interface LandingPageProps {
   isDeletingRecent?: boolean;
   onStart: (query: string) => void;
 }
-
-const QUICK_PROMPTS = [
-  "三年级篮球运球接力，40人，半个篮球场",
-  "四年级跳绳耐力课，分组轮换，35分钟",
-  "足球传接球练习，安全路线和评价标准",
-];
 
 const WORKFLOW_HINTS = [
   { icon: PencilLine, label: "生成结构化教案" },
@@ -245,10 +238,6 @@ function Sidebar({
         )}
       </div>
 
-      <div className="mt-auto space-y-3 border-t border-border/70 px-2 pt-4">
-        <p className="text-xs leading-5 text-muted-foreground">{BRAND_TAGLINE}</p>
-        <AuthNavActions registerVariant="outline" />
-      </div>
     </aside>
   );
 }
@@ -266,64 +255,45 @@ function LandingPrompt({
   const normalizedValue = value.trim();
 
   return (
-    <div className="space-y-4">
-      <form
-        className="group flex min-h-16 w-full items-center gap-2 rounded-[2rem] border border-border/80 bg-card px-4 py-2 shadow-[0_18px_55px_-42px_rgba(35,35,35,0.38)] transition-colors focus-within:border-brand/45 focus-within:ring-4 focus-within:ring-brand/10"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onLaunch(normalizedValue);
-        }}
+    <form
+      className="group flex min-h-16 w-full items-center gap-2 rounded-[2rem] border border-border/80 bg-card px-4 py-2 shadow-[0_18px_55px_-42px_rgba(35,35,35,0.38)] transition-colors focus-within:border-brand/45 focus-within:ring-4 focus-within:ring-brand/10"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onLaunch(normalizedValue);
+      }}
+    >
+      <Button
+        aria-label="补充课程条件"
+        className="shrink-0 rounded-full"
+        disabled={isLaunching}
+        onClick={() => inputRef.current?.focus()}
+        size="icon"
+        type="button"
+        variant="ghost"
       >
-        <Button
-          aria-label="补充课程条件"
-          className="shrink-0 rounded-full"
-          disabled={isLaunching}
-          onClick={() => inputRef.current?.focus()}
-          size="icon"
-          type="button"
-          variant="ghost"
-        >
-          <Plus className="size-5 text-muted-foreground" />
-        </Button>
-        <input
-          ref={inputRef}
-          aria-label="课程主题"
-          className="h-12 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={isLaunching}
-          onChange={(event) => setValue(event.target.value)}
-          placeholder="描述你的体育课，例如：三年级篮球运球接力，40人，半场，40分钟"
-          type="text"
-          value={value}
-        />
-        <Button
-          aria-label="生成教案"
-          className="size-10 shrink-0 rounded-full"
-          disabled={!normalizedValue || isLaunching}
-          size="icon"
-          type="submit"
-          variant="brand"
-        >
-          <ArrowUp className="size-5" />
-        </Button>
-      </form>
-
-      <div className="flex flex-wrap justify-center gap-2">
-        {QUICK_PROMPTS.map((prompt) => (
-          <button
-            className="rounded-full border border-border/80 bg-card/70 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-brand/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            disabled={isLaunching}
-            key={prompt}
-            onClick={() => {
-              setValue(prompt);
-              inputRef.current?.focus();
-            }}
-            type="button"
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-    </div>
+        <Plus className="size-5 text-muted-foreground" />
+      </Button>
+      <input
+        ref={inputRef}
+        aria-label="课程主题"
+        className="h-12 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={isLaunching}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder="描述你的体育课，例如：三年级篮球运球接力，40人，半场，40分钟"
+        type="text"
+        value={value}
+      />
+      <Button
+        aria-label="生成教案"
+        className="size-10 shrink-0 rounded-full"
+        disabled={!normalizedValue || isLaunching}
+        size="icon"
+        type="submit"
+        variant="brand"
+      >
+        <ArrowUp className="size-5" />
+      </Button>
+    </form>
   );
 }
 

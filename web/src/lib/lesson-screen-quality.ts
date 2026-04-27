@@ -12,6 +12,12 @@ export function analyzeLessonScreenHtml(html: string): LessonScreenQualityReport
   const warnings: string[] = [];
   const slideCount = countMatches(html, /<section\b[^>]*class=["'][^"']*\bslide\b/gi);
   const timedSlideCount = countMatches(html, /data-duration=["']\d+["']/gi);
+  const visibleText = html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   if (!/<!doctype\s+html/i.test(html) && !/<html[\s>]/i.test(html)) {
     errors.push("缺少完整 HTML 文档结构。");
@@ -46,7 +52,15 @@ export function analyzeLessonScreenHtml(html: string): LessonScreenQualityReport
   }
 
   if (!/学生三步行动/.test(html)) {
-    errors.push("缺少面向学生的三步行动提示。");
+    errors.push("缺少“学生三步行动”提示。");
+  }
+
+  if (!/本环节怎么做/.test(html)) {
+    errors.push("缺少“本环节怎么做”的学生任务聚焦区。");
+  }
+
+  if (!/学生自助提示/.test(html)) {
+    errors.push("缺少学生看屏自助理解提示。");
   }
 
   if (!/安全提醒/.test(html)) {
@@ -63,6 +77,14 @@ export function analyzeLessonScreenHtml(html: string): LessonScreenQualityReport
 
   if (!/data-support-module=["']/.test(html)) {
     warnings.push("未检测到支持模块结构化标记，后续难以稳定控制战术板、计分板、轮换路线和队形图。");
+  }
+
+  if (!/战术板|组织队形图|小组轮换路线|分组计分板/.test(html)) {
+    warnings.push("未检测到动作、队形、轮换或计分可视化模块，学生理解支撑不足。");
+  }
+
+  if (/\b(Unified|Playback|Console|Showcase|Open Class|Phase|AI)\b/i.test(visibleText)) {
+    errors.push("课堂大屏可见界面不应出现英文控制台、展示页或 AI 包装文案。");
   }
 
   if (/<script[^>]+src\s*=\s*["']https?:\/\//i.test(html) || /<link[^>]+href\s*=\s*["']https?:\/\//i.test(html)) {

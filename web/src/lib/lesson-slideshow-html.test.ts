@@ -101,6 +101,24 @@ describe("lesson-slideshow-html", () => {
     ).toBe(false);
   });
 
+  it("会拒绝偏公开课展示而非学生学习辅助的 HTML", () => {
+    const showcaseHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><style>html,body{width:100vw;height:100vh;overflow:hidden}</style></head>
+<body>
+  <section class="slide active" data-duration="0"><h1>Unified Playback Console</h1><button>开始上课</button></section>
+  <section class="slide" data-duration="60"><h2>PHASE 01</h2><p>AI 情境导入，高密度练习。</p><p>倒计时</p></section>
+  <section class="slide" data-duration="60"><h2>Open Class Showcase</h2><p>上一页 下一页 暂停 重新计时</p></section>
+</body>
+</html>`;
+
+    const report = analyzeLessonScreenHtml(showcaseHtml);
+
+    expect(isPptStyleLessonHtml(showcaseHtml)).toBe(false);
+    expect(report.errors.join(" ")).toContain("学生三步行动");
+    expect(report.errors.join(" ")).toContain("英文控制台");
+  });
+
   it("会报告不合格的课堂大屏 HTML", () => {
     const report = analyzeLessonScreenHtml("<!DOCTYPE html><html><body><h1>单页教案</h1></body></html>");
 

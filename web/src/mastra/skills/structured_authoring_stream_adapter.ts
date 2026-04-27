@@ -294,15 +294,15 @@ export function createStructuredAuthoringStreamAdapter({
                     delta: part.delta,
                     ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
                   });
-                  writeArtifact(
-                    buildArtifactData(workflow, {
-                      content: rawText,
-                      contentType: "lesson-json",
-                      isComplete: false,
-                      status: "streaming",
-                    }),
-                  );
                 }
+                writeArtifact(
+                  buildArtifactData(workflow, {
+                    content: rawText,
+                    contentType: "lesson-json",
+                    isComplete: false,
+                    status: "streaming",
+                  }),
+                );
                 break;
               }
 
@@ -484,7 +484,7 @@ export function createStructuredAuthoringStreamAdapter({
                 const shouldUseFallback = !isPptStyleLessonHtml(extraction.html);
                 const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : extraction.html;
                 const fallbackWarning = shouldUseFallback
-                  ? "模型 HTML 未满足课堂学习辅助大屏结构，系统已按已确认教案生成多页倒计时学习辅助大屏兜底版本。"
+                  ? "模型 HTML 未满足课堂学习辅助大屏结构或学生理解支撑要求，系统已按已确认教案生成多页倒计时学习辅助大屏兜底版本。"
                   : undefined;
 
                 if (shouldUseFallback) {
@@ -492,7 +492,7 @@ export function createStructuredAuthoringStreamAdapter({
                     createTraceEntry(
                       "html-slideshow-fallback",
                       "success",
-                      "已将非 PPT 结构 HTML 替换为多页课堂倒计时课件。",
+                      "已将不合格 HTML 替换为多页课堂倒计时学习辅助大屏。",
                     ),
                   );
                 }

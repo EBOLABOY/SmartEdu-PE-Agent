@@ -8,6 +8,7 @@ import {
 } from "./lesson-screen-modules";
 import { competitionLessonPlanSchema, type CompetitionLessonPlanRow } from "./competition-lesson-contract";
 import { renderLessonScreenScript } from "./lesson-screen-script";
+import { analyzeLessonScreenHtml } from "./lesson-screen-quality";
 import { buildLessonScreenProjectState } from "./lesson-screen-state";
 import { renderLessonScreenStyles } from "./lesson-screen-styles";
 
@@ -465,8 +466,9 @@ export function isPptStyleLessonHtml(html: string) {
   const hasStart = /开始上课|开始课程|开始/.test(html);
   const hasTimer = /倒计时|timer|countdown/i.test(html);
   const hasControls = /上一页|下一页|暂停|继续|重新计时/.test(html);
+  const report = analyzeLessonScreenHtml(html);
 
-  return slideCount >= 3 && timedSlideCount >= 2 && hasStart && hasTimer && hasControls;
+  return slideCount >= 3 && timedSlideCount >= 2 && hasStart && hasTimer && hasControls && report.errors.length === 0;
 }
 
 export function buildLessonSlideshowHtml(lessonPlan: string) {

@@ -88,10 +88,35 @@ function getLatestStructuredArtifact(message: SmartEduUIMessage) {
   return message.parts.filter(isArtifactPart).at(-1)?.data;
 }
 
-function shouldHideAssistantText(message: SmartEduUIMessage) {
+function hasLessonWorkflowTrace(message: SmartEduUIMessage) {
+  return message.parts.some((part) => isTracePart(part) && part.data.mode === "lesson");
+}
+
+function looksLikeCompetitionLessonPlanJson(text: string) {
+  const trimmed = text.trim();
+
+  return (
+    trimmed.startsWith("{") &&
+    (trimmed.includes("\"title\"") ||
+      trimmed.includes("\"learningObjectives\"") ||
+      trimmed.includes("\"periodPlan\"") ||
+      trimmed.includes("\"loadEstimate\""))
+  );
+}
+
+function shouldHideAssistantText(message: SmartEduUIMessage, text: string) {
   const latestArtifact = getLatestStructuredArtifact(message);
 
-  return latestArtifact?.status === "ready";
+  if (latestArtifact?.status === "ready") {
+    return true;
+  }
+
+  const isLessonGeneration =
+    latestArtifact?.stage === "lesson" ||
+    latestArtifact?.contentType === "lesson-json" ||
+    hasLessonWorkflowTrace(message);
+
+  return isLessonGeneration && looksLikeCompetitionLessonPlanJson(text);
 }
 
 function NativeSourceList({ message }: { message: SmartEduUIMessage }) {
@@ -161,11 +186,13 @@ function AssistantTextParts({
   message: SmartEduUIMessage;
   sources: AssistantSourceItem[];
 }) {
-  if (shouldHideAssistantText(message)) {
+  const rawText = getFallbackText(message);
+
+  if (shouldHideAssistantText(message, rawText)) {
     return null;
   }
 
-  const text = getFallbackText(message) || "正在生成...";
+  const text = rawText || "正在生成...";
   const citationSources = getAssistantCitationSources(message);
   const citationLabel = getAssistantCitationLabel(message);
 

@@ -16,7 +16,7 @@ const baseWorkflow = {
     confirmedLessonRequired: false,
     outputProtocol: "lesson-json",
     responseTransport: "structured-data-part",
-    assistantTextPolicy: "mirror-json-text",
+    assistantTextPolicy: "suppress-json-text",
     maxSteps: 3,
     protocolVersion: "structured-v1",
   },
@@ -65,6 +65,10 @@ function getArtifactData(chunk: UIMessageChunk | undefined): StructuredArtifactD
 
 function getTraceData(chunk: UIMessageChunk): WorkflowTraceData | undefined {
   return chunk.type === "data-trace" ? (chunk.data as WorkflowTraceData) : undefined;
+}
+
+function isAssistantTextChunk(chunk: UIMessageChunk) {
+  return chunk.type === "text-start" || chunk.type === "text-delta" || chunk.type === "text-end";
 }
 
 async function readAll(stream: ReadableStream<UIMessageChunk>) {
@@ -146,6 +150,7 @@ describe("structured authoring stream adapter", () => {
       isComplete: false,
     });
     expect(firstArtifact?.content).toContain("\"title\"");
+    expect(chunks.some(isAssistantTextChunk)).toBe(false);
     expect(chunks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -154,6 +159,36 @@ describe("structured authoring stream adapter", () => {
         }),
       ]),
     );
+  });
+
+  it("只有显式 mirror-json-text 时才会把 lesson JSON 镜像为 assistant text", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      generationPlan: {
+        ...baseWorkflow.generationPlan,
+        assistantTextPolicy: "mirror-json-text",
+      },
+    } satisfies LessonWorkflowOutput;
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-mirror-json",
+      workflow,
+      stream: createChunkStream([
+        { type: "text-start", id: "text-1" },
+        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
+        { type: "text-end", id: "text-1" },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+
+    expect(chunks.filter(isAssistantTextChunk)).toEqual([
+      expect.objectContaining({ type: "text-start", id: "text-1" }),
+      expect.objectContaining({ type: "text-delta", id: "text-1" }),
+      expect.objectContaining({ type: "text-end", id: "text-1" }),
+    ]);
   });
 
   it("lesson JSON 流在结构化校验失败时会直接报错，不再自动调用修复模型", async () => {
@@ -212,6 +247,7 @@ describe("structured authoring stream adapter", () => {
       isComplete: true,
       title: "羽毛球",
     });
+    expect(chunks.some(isAssistantTextChunk)).toBe(false);
   });
 
   it("html 文本流在非 PPT 结构时仍输出 ready html artifact", async () => {

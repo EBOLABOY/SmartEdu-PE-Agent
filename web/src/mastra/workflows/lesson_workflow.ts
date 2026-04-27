@@ -191,7 +191,7 @@ const planDeliveryStep = createStep({
         confirmedLessonRequired: inputData.mode === "html",
         outputProtocol: inputData.mode === "html" ? ("html-document" as const) : ("lesson-json" as const),
         responseTransport: "structured-data-part" as const,
-        assistantTextPolicy: inputData.mode === "html" ? ("suppress-html-text" as const) : ("mirror-json-text" as const),
+        assistantTextPolicy: inputData.mode === "html" ? ("suppress-html-text" as const) : ("suppress-json-text" as const),
         maxSteps: 3,
         protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
       },
@@ -203,7 +203,7 @@ const planDeliveryStep = createStep({
           detail:
             inputData.mode === "html"
               ? "已规划 HTML 结构化 Artifact 推流，并抑制原始 HTML 文本进入会话历史。"
-              : "已规划 CompetitionLessonPlan JSON 实时推流，完成后直接校验并封装为正式 Artifact。",
+              : "已规划 CompetitionLessonPlan JSON 实时推流，并抑制原始 JSON 文本进入会话历史。",
         },
       ],
     };
