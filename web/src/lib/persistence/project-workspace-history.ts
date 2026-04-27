@@ -1,10 +1,16 @@
 import { safeValidateUIMessages } from "ai";
 
+import { extractJsonObjectText } from "@/lib/artifact-protocol";
+import {
+  competitionLessonPlanSchema,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
 import {
   persistedConversationSchema,
   persistedProjectMessageSchema,
   persistedProjectSummarySchema,
   smartEduDataSchemas,
+  type ArtifactContentType,
   type PersistedConversation,
   type PersistedProjectMessage,
   type PersistedProjectSummary,
@@ -17,11 +23,74 @@ import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
 type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
+type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
+type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 
-function toPersistedProjectSummary(row: ProjectRow): PersistedProjectSummary {
+const MAX_PROJECT_DISPLAY_TITLE_LENGTH = 160;
+const GENERIC_ARTIFACT_TITLES = new Set([
+  "XXX",
+  "教案 Artifact",
+  "互动大屏 Artifact",
+]);
+
+function normalizeDisplayTitle(value: string | null | undefined) {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+
+  if (!normalized || GENERIC_ARTIFACT_TITLES.has(normalized)) {
+    return undefined;
+  }
+
+  if (normalized.length <= MAX_PROJECT_DISPLAY_TITLE_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_PROJECT_DISPLAY_TITLE_LENGTH - 1).trimEnd()}…`;
+}
+
+function parseLessonPlan(content: string): CompetitionLessonPlan | undefined {
+  try {
+    return competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(content)));
+  } catch {
+    return undefined;
+  }
+}
+
+export function deriveProjectDisplayTitle(input: {
+  artifactTitle?: string | null;
+  lessonContent?: string | null;
+  lessonContentType?: ArtifactContentType | null;
+  projectTitle: string;
+}) {
+  return (
+    deriveLessonTitleOverride(input) ??
+    normalizeDisplayTitle(input.projectTitle) ??
+    input.projectTitle
+  );
+}
+
+function deriveLessonTitleOverride(input: {
+  artifactTitle?: string | null;
+  lessonContent?: string | null;
+  lessonContentType?: ArtifactContentType | null;
+}) {
+  const lessonTitle =
+    input.lessonContentType === "lesson-json" && input.lessonContent
+      ? parseLessonPlan(input.lessonContent)?.title
+      : undefined;
+
+  return normalizeDisplayTitle(lessonTitle) ?? normalizeDisplayTitle(input.artifactTitle);
+}
+
+function toPersistedProjectSummary(
+  row: ProjectRow,
+  titleOverride?: string,
+): PersistedProjectSummary {
   return persistedProjectSummarySchema.parse({
     id: row.id,
-    title: row.title,
+    title: deriveProjectDisplayTitle({
+      projectTitle: row.title,
+      artifactTitle: titleOverride,
+    }),
     market: row.market,
     createdAt: toIsoDateTime(row.created_at, "projects.created_at"),
     updatedAt: toIsoDateTime(row.updated_at, "projects.updated_at"),
@@ -60,6 +129,65 @@ async function toPersistedProjectMessage(
   });
 }
 
+async function getLessonTitleOverridesByProjectId(
+  supabase: SmartEduSupabaseClient,
+  projectIds: string[],
+) {
+  const titleOverrides = new Map<string, string>();
+
+  if (!projectIds.length) {
+    return titleOverrides;
+  }
+
+  const { data: artifactRows, error: artifactRowsError } = await supabase
+    .from("artifacts")
+    .select("*")
+    .in("project_id", projectIds)
+    .eq("stage", "lesson");
+
+  if (artifactRowsError) {
+    throw artifactRowsError;
+  }
+
+  const lessonArtifacts = (artifactRows ?? []) as ArtifactRow[];
+  const currentVersionIds = lessonArtifacts
+    .map((artifact) => artifact.current_version_id)
+    .filter((id): id is string => Boolean(id));
+  const versionById = new Map<string, ArtifactVersionRow>();
+
+  if (currentVersionIds.length) {
+    const { data: versionRows, error: versionRowsError } = await supabase
+      .from("artifact_versions")
+      .select("*")
+      .in("id", currentVersionIds);
+
+    if (versionRowsError) {
+      throw versionRowsError;
+    }
+
+    ((versionRows ?? []) as ArtifactVersionRow[]).forEach((version) => {
+      versionById.set(version.id, version);
+    });
+  }
+
+  lessonArtifacts.forEach((artifact) => {
+    const currentVersion = artifact.current_version_id
+      ? versionById.get(artifact.current_version_id)
+      : undefined;
+    const title = deriveLessonTitleOverride({
+      artifactTitle: artifact.title,
+      lessonContent: currentVersion?.content,
+      lessonContentType: currentVersion?.content_type,
+    });
+
+    if (title) {
+      titleOverrides.set(artifact.project_id, title);
+    }
+  });
+
+  return titleOverrides;
+}
+
 export async function listProjectsForUser(supabase: SmartEduSupabaseClient) {
   const { data, error } = await supabase
     .from("projects")
@@ -71,7 +199,13 @@ export async function listProjectsForUser(supabase: SmartEduSupabaseClient) {
     throw error;
   }
 
-  return ((data ?? []) as ProjectRow[]).map((row) => toPersistedProjectSummary(row));
+  const projectRows = (data ?? []) as ProjectRow[];
+  const titleOverrides = await getLessonTitleOverridesByProjectId(
+    supabase,
+    projectRows.map((row) => row.id),
+  );
+
+  return projectRows.map((row) => toPersistedProjectSummary(row, titleOverrides.get(row.id)));
 }
 
 export async function getProjectWorkspaceHistory(
@@ -88,7 +222,9 @@ export async function getProjectWorkspaceHistory(
     throw projectError;
   }
 
-  const persistedProject = toPersistedProjectSummary(project as ProjectRow);
+  const projectRow = project as ProjectRow;
+  const titleOverrides = await getLessonTitleOverridesByProjectId(supabase, [projectRow.id]);
+  const persistedProject = toPersistedProjectSummary(projectRow, titleOverrides.get(projectRow.id));
   const { data: conversations, error: conversationsError } = await supabase
     .from("conversations")
     .select("*")

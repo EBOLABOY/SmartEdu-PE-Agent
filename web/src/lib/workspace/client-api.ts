@@ -109,6 +109,26 @@ export async function requestCreateProject(title: string): Promise<ProjectWorksp
   return parsedPayload.data;
 }
 
+export async function requestDeleteProject(projectId: string): Promise<ProjectDirectoryResponse> {
+  const response = await fetch(`/api/projects/${projectId}`, {
+    cache: "no-store",
+    method: "DELETE",
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(getResponseError(payload, "删除历史教案失败。"));
+  }
+
+  const parsedPayload = projectDirectoryResponseSchema.safeParse(payload);
+
+  if (!parsedPayload.success) {
+    throw new Error("删除历史教案响应结构不合法。");
+  }
+
+  return parsedPayload.data;
+}
+
 export async function requestArtifactVersionRestore(
   projectId: string,
   versionId: string,
@@ -177,7 +197,6 @@ export async function requestSaveLessonArtifactVersion(
     },
     body: JSON.stringify({
       lessonPlan: input.lessonPlan,
-      title: "教案 Artifact",
       summary: input.summary,
     }),
   });

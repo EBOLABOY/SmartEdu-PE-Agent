@@ -210,6 +210,7 @@ describe("structured authoring stream adapter", () => {
       contentType: "lesson-json",
       status: "ready",
       isComplete: true,
+      title: "羽毛球",
     });
   });
 

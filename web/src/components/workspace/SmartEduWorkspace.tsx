@@ -146,6 +146,7 @@ function AppContent() {
   const [lessonConfirmed, setLessonConfirmed] = useState(false);
   const [isArtifactSyncPendingState, setIsArtifactSyncPendingState] = useState(false);
   const [isRestoringArtifactVersionState, setIsRestoringArtifactVersionState] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [hasLiveArtifactAuthority, setHasLiveArtifactAuthority] = useState(false);
   const [isProjectSheetOpen, setIsProjectSheetOpen] = useState(false);
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
@@ -171,10 +172,12 @@ function AppContent() {
   const {
     createPersistentProject,
     currentProject,
+    deletePersistentProject,
     isArtifactHistoryLoading,
     isProjectDirectoryLoading,
     isWorkspaceLoading,
     persistedVersions,
+    projectDirectoryPersistence,
     projects,
     refreshArtifactVersions,
     setArtifactHistoryLoading,
@@ -189,6 +192,8 @@ function AppContent() {
   });
   const isLoading = status === "submitted" || status === "streaming";
   const hasWorkspaceStarted = hasStarted || Boolean(projectId);
+  const recentProject =
+    projectDirectoryPersistence.authenticated && projects.length ? projects[0] : null;
   const isHistoryLoading = projectId
     ? isArtifactHistoryLoading || isWorkspaceLoading
     : false;
@@ -431,6 +436,34 @@ function AppContent() {
     router.push(`${pathname}?projectId=${project.id}`);
   };
 
+  const handleDeleteProject = (project: PersistedProjectSummary) => {
+    if (deletingProjectId) {
+      return;
+    }
+
+    void (async () => {
+      setDeletingProjectId(project.id);
+
+      try {
+        await deletePersistentProject(project.id);
+
+        if (project.id === projectId) {
+          handleResetWorkspace();
+        }
+
+        toast.success("历史教案已删除", {
+          description: `“${project.title}”已从历史列表隐藏。`,
+        });
+      } catch (deleteError) {
+        toast.error("删除历史教案失败", {
+          description: deleteError instanceof Error ? deleteError.message : "请稍后重试。",
+        });
+      } finally {
+        setDeletingProjectId(null);
+      }
+    })();
+  };
+
   const handleResetWorkspace = () => {
     stop();
     setHasStarted(false);
@@ -469,7 +502,25 @@ function AppContent() {
   if (!hasWorkspaceStarted) {
     return (
       <>
-        <LandingPage onStart={handleStart} />
+        <LandingPage
+          isDeletingRecent={recentProject?.id === deletingProjectId}
+          onContinueRecent={
+            recentProject
+              ? () => {
+                  setCurrentProject(recentProject);
+                  router.push(`${pathname}?projectId=${recentProject.id}`);
+                }
+              : undefined
+          }
+          onDeleteRecent={
+            recentProject
+              ? () => handleDeleteProject(recentProject)
+              : undefined
+          }
+          onOpenHistory={() => router.push("/projects")}
+          onStart={handleStart}
+          recentProject={recentProject}
+        />
         {authDialog}
       </>
     );
@@ -565,7 +616,9 @@ function AppContent() {
           <div className="h-full overflow-y-auto p-5">
             <ProjectDirectoryPanel
               activeProjectId={projectId}
+              deletingProjectId={deletingProjectId}
               isLoading={isProjectDirectoryLoading}
+              onDeleteProject={handleDeleteProject}
               onSelectProject={handleSelectProject}
               projects={projects}
             />

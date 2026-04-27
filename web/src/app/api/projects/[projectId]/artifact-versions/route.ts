@@ -18,6 +18,8 @@ import {
 
 export const runtime = "nodejs";
 
+const GENERIC_LESSON_ARTIFACT_TITLES = new Set(["XXX", "教案 Artifact"]);
+
 function persistenceUnavailableResponse(projectId: string, reason: string) {
   return Response.json(
     artifactVersionsResponseSchema.parse({
@@ -35,6 +37,27 @@ function persistenceUnavailableResponse(projectId: string, reason: string) {
       },
     },
   );
+}
+
+function resolveLessonArtifactTitle(...candidates: Array<string | undefined>) {
+  const title = candidates
+    .map((candidate) => candidate?.replace(/\s+/g, " ").trim())
+    .find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" &&
+        candidate.length > 0 &&
+        !GENERIC_LESSON_ARTIFACT_TITLES.has(candidate),
+    );
+
+  if (!title) {
+    return "教案 Artifact";
+  }
+
+  if (title.length <= 120) {
+    return title;
+  }
+
+  return `${title.slice(0, 119).trimEnd()}…`;
 }
 
 export async function GET(
@@ -190,7 +213,10 @@ export async function POST(
         isComplete: true,
         status: "ready",
         source: "data-part",
-        title: parsedBody.data.title ?? "教案 Artifact",
+        title: resolveLessonArtifactTitle(
+          parsedBody.data.title,
+          parsedBody.data.lessonPlan.title,
+        ),
         warningText: parsedBody.data.summary,
         updatedAt: new Date().toISOString(),
       },

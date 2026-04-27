@@ -73,6 +73,7 @@ function buildArtifactData(
     contentType?: StructuredArtifactData["contentType"];
     isComplete: boolean;
     status: StructuredArtifactData["status"];
+    title?: string;
     warningText?: string;
   },
 ): StructuredArtifactData {
@@ -84,7 +85,9 @@ function buildArtifactData(
     isComplete: options.isComplete,
     status: options.status,
     source: "data-part",
-    title: workflow.generationPlan.mode === "html" ? "互动大屏 Artifact" : "教案 Artifact",
+    title:
+      options.title ??
+      (workflow.generationPlan.mode === "html" ? "互动大屏 Artifact" : "教案 Artifact"),
     ...(options.warningText ? { warningText: options.warningText } : {}),
     updatedAt: nowIsoString(),
   };
@@ -106,6 +109,7 @@ function buildLessonJsonArtifactContent(rawText: string) {
       content: JSON.stringify(parsed),
       contentType: "lesson-json" as const,
       detail: "模型输出已通过 CompetitionLessonPlan JSON schema 校验。",
+      title: parsed.title,
       warningText: undefined,
     };
   } catch (error) {
@@ -457,6 +461,7 @@ export function createStructuredAuthoringStreamAdapter({
                   contentType: lessonJson.contentType,
                   isComplete: true,
                   status: "ready",
+                  title: lessonJson.title,
                   warningText: lessonJson.warningText,
                 });
 

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deriveProjectDisplayTitle,
   toPersistedConversation,
   toPersistedProjectMessage,
   toPersistedProjectSummary,
 } from "@/lib/persistence/project-workspace-history";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import type { Database } from "@/lib/supabase/database.types";
 
 describe("project-workspace-history", () => {
@@ -24,6 +26,31 @@ describe("project-workspace-history", () => {
 
     expect(project.title).toBe("篮球单元项目");
     expect(project.description).toBe("三年级篮球单元");
+  });
+
+  it("历史项目标题优先使用当前教案内容中的教案名", () => {
+    const title = deriveProjectDisplayTitle({
+      artifactTitle: "教案 Artifact",
+      lessonContent: JSON.stringify({
+        ...DEFAULT_COMPETITION_LESSON_PLAN,
+        title: "篮球运球接力与合作练习",
+      }),
+      lessonContentType: "lesson-json",
+      projectTitle: "三年级篮球，40人，半场",
+    });
+
+    expect(title).toBe("篮球运球接力与合作练习");
+  });
+
+  it("教案名不可用时回退到项目标题，避免历史列表显示通用 Artifact 名", () => {
+    const title = deriveProjectDisplayTitle({
+      artifactTitle: "教案 Artifact",
+      lessonContent: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+      lessonContentType: "lesson-json",
+      projectTitle: "三年级篮球，40人，半场",
+    });
+
+    expect(title).toBe("三年级篮球，40人，半场");
   });
 
   it("会把 Supabase 时间字符串规范化为前端契约需要的 UTC ISO 字符串", () => {

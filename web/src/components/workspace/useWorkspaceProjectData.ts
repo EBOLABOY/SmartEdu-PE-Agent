@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } 
 import { toast } from "sonner";
 
 import {
+  type PersistenceState,
   type PersistedArtifactVersion,
   type PersistedProjectSummary,
   type SmartEduUIMessage,
@@ -13,12 +14,18 @@ import {
 import {
   requestArtifactVersions,
   requestCreateProject,
+  requestDeleteProject,
   requestProjectDirectory,
   requestProjectWorkspace,
 } from "@/lib/workspace/client-api";
 
 const EMPTY_PERSISTED_VERSIONS: PersistedArtifactVersion[] = [];
 const EMPTY_PROJECTS: PersistedProjectSummary[] = [];
+const UNKNOWN_PERSISTENCE_STATE: PersistenceState = {
+  enabled: true,
+  authenticated: false,
+  reason: "unknown",
+};
 
 interface UseWorkspaceProjectDataInput {
   authRevision: number;
@@ -37,6 +44,8 @@ export function useWorkspaceProjectData({
 }: UseWorkspaceProjectDataInput) {
   const [persistedVersionsState, setPersistedVersionsState] = useState<PersistedArtifactVersion[]>([]);
   const [projectsState, setProjectsState] = useState<PersistedProjectSummary[]>(EMPTY_PROJECTS);
+  const [projectDirectoryPersistenceState, setProjectDirectoryPersistenceState] =
+    useState<PersistenceState>(UNKNOWN_PERSISTENCE_STATE);
   const [currentProjectState, setCurrentProjectState] = useState<PersistedProjectSummary | null>(null);
   const [isArtifactHistoryLoadingState, setIsArtifactHistoryLoadingState] = useState(
     () => Boolean(projectId),
@@ -53,12 +62,14 @@ export function useWorkspaceProjectData({
       try {
         const payload = await requestProjectDirectory(controller.signal);
         setProjectsState(payload.projects);
+        setProjectDirectoryPersistenceState(payload.persistence);
       } catch {
         if (controller.signal.aborted) {
           return;
         }
 
         setProjectsState(EMPTY_PROJECTS);
+        setProjectDirectoryPersistenceState(UNKNOWN_PERSISTENCE_STATE);
       } finally {
         if (!controller.signal.aborted) {
           setIsProjectDirectoryLoadingState(false);
@@ -196,8 +207,19 @@ export function useWorkspaceProjectData({
     }
   };
 
+  const deletePersistentProject = async (targetProjectId: string) => {
+    const payload = await requestDeleteProject(targetProjectId);
+
+    setProjectsState(payload.projects);
+    setProjectDirectoryPersistenceState(payload.persistence);
+    setCurrentProjectState((project) => (project?.id === targetProjectId ? null : project));
+
+    return payload.projects;
+  };
+
   return {
     createPersistentProject,
+    deletePersistentProject,
     currentProject:
       currentProjectState ??
       (projectId ? projectsState.find((project) => project.id === projectId) ?? null : null),
@@ -205,6 +227,7 @@ export function useWorkspaceProjectData({
     isProjectDirectoryLoading: isProjectDirectoryLoadingState,
     isWorkspaceLoading: projectId && messagesLength === 0 ? isWorkspaceLoadingState : false,
     persistedVersions: projectId ? persistedVersionsState : EMPTY_PERSISTED_VERSIONS,
+    projectDirectoryPersistence: projectDirectoryPersistenceState,
     projects: projectsState,
     refreshArtifactVersions,
     setArtifactHistoryLoading: setIsArtifactHistoryLoadingState,
