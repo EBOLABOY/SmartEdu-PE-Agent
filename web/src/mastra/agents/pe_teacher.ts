@@ -5,6 +5,7 @@ import {
   buildPeTeacherSystemPrompt,
   PE_TEACHER_SYSTEM_PROMPT,
 } from "../skills/pe_teacher_prompt";
+import { searchStandardsTool } from "../tools/search_standards";
 
 export type { GenerationMode, PeTeacherContext } from "@/lib/lesson-authoring-contract";
 export { buildPeTeacherSystemPrompt, PE_TEACHER_SYSTEM_PROMPT };
@@ -16,5 +17,8 @@ export function createPeTeacherAgent(model: AgentConfig["model"]) {
     description: "分阶段生成体育教案 JSON 与可结构化封装的课堂学习辅助大屏 HTML 文档。",
     instructions: PE_TEACHER_SYSTEM_PROMPT,
     model,
+    tools: {
+      searchStandardsTool,
+    },
   });
 }

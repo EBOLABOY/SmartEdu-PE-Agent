@@ -2,12 +2,14 @@ import type { FullOutput } from "@mastra/core/stream";
 import { convertToModelMessages } from "ai";
 
 import {
-  applyCompetitionLessonPatch,
+  CompetitionLessonPatchError,
+  applySemanticLessonUpdatesWithTrace,
   competitionLessonPatchResponseSchema,
-  competitionLessonPatchSchema,
-  type CompetitionLessonPatch,
+  competitionLessonSemanticUpdateActionSchema,
+  summarizeSemanticLessonUpdates,
   type CompetitionLessonPatchRequestBody,
   type CompetitionLessonPatchResponse,
+  type CompetitionLessonSemanticUpdate,
 } from "@/lib/competition-lesson-patch";
 
 import {
@@ -26,17 +28,12 @@ type LessonPatchGenerateOptions = {
       store: true;
     };
   };
-  structuredOutput: {
-    schema: typeof competitionLessonPatchSchema;
-    instructions: string;
-    jsonPromptInjection: boolean;
-  };
 };
 
 export type LessonPatchAgentRunner = (
   messages: AgentModelMessages,
   options: LessonPatchGenerateOptions,
-) => Promise<FullOutput<CompetitionLessonPatch>>;
+) => Promise<FullOutput<unknown>>;
 
 function buildPatchModelMessages(input: CompetitionLessonPatchRequestBody) {
   return [
@@ -45,6 +42,74 @@ function buildPatchModelMessages(input: CompetitionLessonPatchRequestBody) {
       content: buildLessonPatchUserPrompt(input),
     },
   ] as AgentModelMessages;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function extractToolResultCandidate(toolResult: unknown) {
+  if (!isRecord(toolResult)) {
+    return toolResult;
+  }
+
+  const payload = toolResult.payload;
+
+  if (isRecord(payload)) {
+    if (payload.isError) {
+      throw new CompetitionLessonPatchError("教案修改工具执行失败。");
+    }
+
+    if ("result" in payload) {
+      return payload.result;
+    }
+  }
+
+  if ("result" in toolResult) {
+    return toolResult.result;
+  }
+
+  if ("output" in toolResult) {
+    return toolResult.output;
+  }
+
+  return toolResult;
+}
+
+function extractToolResultCandidates(result: FullOutput<unknown>) {
+  const topLevelResults = Array.isArray(result.toolResults) ? result.toolResults : [];
+
+  if (topLevelResults.length > 0) {
+    return topLevelResults.map(extractToolResultCandidate);
+  }
+
+  const steps = Array.isArray(result.steps) ? result.steps : [];
+
+  return steps.flatMap((step) => {
+    if (!isRecord(step) || !Array.isArray(step.toolResults)) {
+      return [];
+    }
+
+    return step.toolResults.map(extractToolResultCandidate);
+  });
+}
+
+export function extractSemanticLessonUpdates(result: FullOutput<unknown>): CompetitionLessonSemanticUpdate[] {
+  const candidates = extractToolResultCandidates(result);
+
+  if (candidates.length === 0) {
+    throw new CompetitionLessonPatchError("模型没有调用任何教案修改工具。");
+  }
+
+  return candidates.map((candidate) => {
+    const parsed = competitionLessonSemanticUpdateActionSchema.safeParse(candidate);
+
+    if (!parsed.success) {
+      throw new CompetitionLessonPatchError("教案修改工具返回结构不合法。");
+    }
+
+    return parsed.data;
+  });
 }
 
 export async function runCompetitionLessonPatchSkill(
@@ -66,12 +131,6 @@ export async function runCompetitionLessonPatchSkill(
             store: true,
           },
         },
-        structuredOutput: {
-          schema: competitionLessonPatchSchema,
-          instructions:
-            "只输出符合 CompetitionLessonPatch schema 的字段级 patch operations，不要输出整份教案、Markdown、HTML 或解释文字。",
-          jsonPromptInjection: true,
-        },
       }),
     {
       mode: "lesson",
@@ -79,11 +138,13 @@ export async function runCompetitionLessonPatchSkill(
     },
   );
 
-  const patch = competitionLessonPatchSchema.parse(result.object);
-  const nextLessonPlan = applyCompetitionLessonPatch(input.lessonPlan, patch);
+  const semanticUpdates = extractSemanticLessonUpdates(result);
+  const applied = applySemanticLessonUpdatesWithTrace(input.lessonPlan, semanticUpdates);
 
   return competitionLessonPatchResponseSchema.parse({
-    patch,
-    lessonPlan: nextLessonPlan,
+    patch: applied.patch,
+    patchSummary: summarizeSemanticLessonUpdates(applied.semanticUpdates),
+    semanticUpdates: applied.semanticUpdates,
+    lessonPlan: applied.lessonPlan,
   });
 }

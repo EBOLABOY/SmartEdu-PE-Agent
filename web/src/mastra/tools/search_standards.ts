@@ -160,7 +160,7 @@ function toCorpusMetadata(corpus: PeStandardCorpus, availability: StandardsCorpu
   };
 }
 
-function resolveStandardsMarket(market = DEFAULT_STANDARDS_MARKET) {
+export function resolveStandardsMarketMetadata(market = DEFAULT_STANDARDS_MARKET) {
   if (market === "us-shape-k12") {
     return {
       requestedMarket: market,
@@ -224,7 +224,7 @@ export function searchStandards(
   } = {},
 ): StandardsSearchResult {
   const { limit = DEFAULT_LIMIT, market = DEFAULT_STANDARDS_MARKET } = options;
-  const resolved = resolveStandardsMarket(market);
+  const resolved = resolveStandardsMarketMetadata(market);
   const references = scoreCorpusEntries(query, limit);
 
   return {

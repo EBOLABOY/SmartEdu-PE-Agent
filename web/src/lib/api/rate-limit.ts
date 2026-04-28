@@ -1,13 +1,22 @@
+import { Ratelimit, type Duration } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
 type RateLimitBucket = {
   count: number;
   resetAt: number;
 };
+
+type RateLimitResult = { ok: true } | { ok: false; retryAfterSeconds: number };
 
 type SmartEduGlobal = typeof globalThis & {
   __smartEduRateLimitBuckets?: Map<string, RateLimitBucket>;
 };
 
 const DEFAULT_MAX_RATE_LIMIT_BUCKETS = 2048;
+const RATE_LIMIT_REDIS_PREFIX = "smartedu:ratelimit";
+
+let missingRedisWarningLogged = false;
+const upstashRateLimiters = new Map<string, Ratelimit>();
 
 function getBuckets() {
   const globalStore = globalThis as SmartEduGlobal;
@@ -46,7 +55,54 @@ function touchBucket(
   buckets.set(key, bucket);
 }
 
-export function takeRateLimitToken({
+function toDuration(windowMs: number): Duration {
+  return `${Math.max(1, Math.ceil(windowMs / 1000))} s` as Duration;
+}
+
+function hasUpstashRedisConfig() {
+  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+function getUpstashRateLimiter(limit: number, windowMs: number) {
+  if (!hasUpstashRedisConfig()) {
+    return null;
+  }
+
+  const cacheKey = `${limit}:${windowMs}`;
+  const cachedRateLimiter = upstashRateLimiters.get(cacheKey);
+
+  if (cachedRateLimiter) {
+    return cachedRateLimiter;
+  }
+
+  const rateLimiter = new Ratelimit({
+    redis: Redis.fromEnv(),
+    limiter: Ratelimit.slidingWindow(limit, toDuration(windowMs)),
+    prefix: RATE_LIMIT_REDIS_PREFIX,
+    ephemeralCache: false,
+    analytics: false,
+  });
+
+  upstashRateLimiters.set(cacheKey, rateLimiter);
+  return rateLimiter;
+}
+
+function shouldUseLocalMemoryFallback() {
+  return process.env.NODE_ENV !== "production" || process.env.SMARTEDU_RATE_LIMIT_FALLBACK === "memory";
+}
+
+function warnMissingDistributedRateLimitOnce() {
+  if (missingRedisWarningLogged) {
+    return;
+  }
+
+  missingRedisWarningLogged = true;
+  console.warn(
+    "[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN are missing; production requests are not rate-limited.",
+  );
+}
+
+function takeLocalRateLimitToken({
   key,
   limit,
   maxBuckets = DEFAULT_MAX_RATE_LIMIT_BUCKETS,
@@ -58,7 +114,7 @@ export function takeRateLimitToken({
   maxBuckets?: number;
   now?: number;
   windowMs: number;
-}) {
+}): RateLimitResult {
   const buckets = getBuckets();
   pruneExpiredBuckets(buckets, now);
 
@@ -85,6 +141,47 @@ export function takeRateLimitToken({
   return { ok: true as const };
 }
 
+export async function takeRateLimitToken({
+  key,
+  limit,
+  maxBuckets,
+  now,
+  windowMs,
+}: {
+  key: string;
+  limit: number;
+  maxBuckets?: number;
+  now?: number;
+  windowMs: number;
+}): Promise<RateLimitResult> {
+  const upstashRateLimiter = getUpstashRateLimiter(limit, windowMs);
+
+  if (upstashRateLimiter) {
+    const response = await upstashRateLimiter.limit(key);
+    void response.pending.catch((error: unknown) => {
+      console.warn("[rate-limit] async upstash task failed", {
+        message: error instanceof Error ? error.message : "unknown-error",
+      });
+    });
+
+    if (response.success) {
+      return { ok: true };
+    }
+
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((response.reset - Date.now()) / 1000)),
+    };
+  }
+
+  if (shouldUseLocalMemoryFallback()) {
+    return takeLocalRateLimitToken({ key, limit, maxBuckets, now, windowMs });
+  }
+
+  warnMissingDistributedRateLimitOnce();
+  return { ok: true };
+}
+
 export function getRequestActorKey(request: Request, userId: string | undefined) {
   if (userId) {
     return `user:${userId}`;
@@ -101,4 +198,6 @@ export function getRateLimitBucketKeysForTest() {
 
 export function resetRateLimitBucketsForTest() {
   getBuckets().clear();
+  upstashRateLimiters.clear();
+  missingRedisWarningLogged = false;
 }

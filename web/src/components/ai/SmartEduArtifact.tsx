@@ -36,6 +36,7 @@ import {
 import ArtifactTextViewer from "@/components/ai/renderers/ArtifactTextViewer";
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
+import NativeLessonScreen from "@/components/ai/renderers/NativeLessonScreen";
 import CompetitionLessonPrintFrame, {
   type CompetitionLessonPrintFrameHandle,
 } from "@/components/lesson-print/CompetitionLessonPrintFrame";
@@ -156,6 +157,12 @@ function formatSnapshotTime(snapshot: ArtifactSnapshot) {
   return new Date(snapshot.createdAt).toLocaleString("zh-CN");
 }
 
+function getNativeScreenKey(slides: NonNullable<ArtifactLifecycle["slideData"]>) {
+  return slides
+    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.supportModule}`)
+    .join("|");
+}
+
 function VersionItem({
   snapshot,
   isSelected,
@@ -208,6 +215,10 @@ export default function SmartEduArtifact({
   const hasHtml = htmlDisplay.hasHtml;
   const lessonDisplay = getLessonArtifactDisplayState(lifecycle);
   const competitionLessonPlan = lifecycle.lessonPlan;
+  const nativeSlideData = lifecycle.slideData ?? [];
+  const hasNativeScreen = nativeSlideData.length > 0;
+  const nativeScreenKey = getNativeScreenKey(nativeSlideData);
+  const nativeScreenTitle = competitionLessonPlan?.title ?? "课堂学习辅助大屏";
   const effectiveSelectedVersionId =
     selectedVersionId && lifecycle.versions.some((snapshot) => snapshot.id === selectedVersionId)
       ? selectedVersionId
@@ -216,6 +227,32 @@ export default function SmartEduArtifact({
     lifecycle.versions.find((snapshot) => snapshot.id === effectiveSelectedVersionId) ??
     lifecycle.activeArtifact ??
     lifecycle.versions.at(-1);
+  const selectedVersionScreenPlan = useMemo(() => {
+    if (!selectedVersion) {
+      return undefined;
+    }
+
+    if (selectedVersion.screenPlan) {
+      return selectedVersion.screenPlan;
+    }
+
+    if (selectedVersion.stage !== "html") {
+      return undefined;
+    }
+
+    const selectedVersionIndex = lifecycle.versions.findIndex((snapshot) => snapshot.id === selectedVersion.id);
+    const priorVersions =
+      selectedVersionIndex >= 0
+        ? lifecycle.versions.slice(0, selectedVersionIndex).reverse()
+        : [...lifecycle.versions].reverse();
+
+    return (
+      priorVersions.find((snapshot) => snapshot.stage === "lesson" && snapshot.screenPlan)?.screenPlan ??
+      lifecycle.screenPlan
+    );
+  }, [lifecycle.screenPlan, lifecycle.versions, selectedVersion]);
+  const selectedVersionSlideData = selectedVersionScreenPlan?.sections ?? [];
+  const selectedVersionScreenKey = getNativeScreenKey(selectedVersionSlideData);
   const canRestoreSelectedVersion = Boolean(
     selectedVersion?.persistedVersionId &&
       !selectedVersion.isCurrent &&
@@ -428,19 +465,44 @@ export default function SmartEduArtifact({
             </TabsContent>
 
             <TabsContent className="m-0 h-full p-3 lg:p-4" value="canvas">
-              <div className={`h-full overflow-hidden rounded-2xl border border-border/80 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)] ${hasHtml || htmlDisplay.shouldShowGenerationPanel ? "min-h-[560px] bg-background" : "bg-card/90"}`}>
-                {htmlDisplay.shouldShowGenerationPanel ? (
+              <div className={`h-full overflow-hidden rounded-2xl border border-border/80 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)] ${hasHtml || hasNativeScreen || htmlDisplay.shouldShowGenerationPanel ? "min-h-[560px] bg-background" : "bg-card/90"}`}>
+                {htmlDisplay.shouldShowGenerationPanel && !hasNativeScreen ? (
                   <HtmlGenerationPanel
                     code={streamingHtml}
                     hasPreviousPreview={hasHtml}
                     trace={lifecycle.activeTrace}
                   />
+                ) : hasNativeScreen ? (
+                  <div className="flex h-full flex-col">
+                    <div className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card px-4 py-2 text-foreground">
+                      <div>
+                        <h2 className="text-sm font-semibold">原生互动大屏预览</h2>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          由结构化教案数据直接渲染；HTML 仅作为导出兼容文件。
+                        </p>
+                      </div>
+                      {hasHtml ? (
+                        <Button disabled={isExporting} onClick={downloadHtml} size="sm" type="button" variant="outline" className="h-8 gap-1.5">
+                          <Download className="size-3.5" />
+                          {isExporting ? "导出中" : "导出大屏"}
+                        </Button>
+                      ) : htmlDisplay.shouldShowGenerationPanel ? (
+                        <Button disabled size="sm" type="button" variant="outline" className="h-8 gap-1.5">
+                          <Loader2 className="size-3.5 animate-spin" />
+                          生成导出文件
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="min-h-0 flex-1">
+                      <NativeLessonScreen key={nativeScreenKey} slides={nativeSlideData} title={nativeScreenTitle} />
+                    </div>
+                  </div>
                 ) : hasHtml ? (
                   <div className="flex h-full flex-col">
                     <div className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card px-4 py-2 text-foreground">
                       <div>
-                        <h2 className="text-sm font-semibold">互动大屏预览</h2>
-                        <p className="mt-0.5 text-xs text-muted-foreground">这里展示课堂投屏效果。</p>
+                        <h2 className="text-sm font-semibold">旧版 HTML 大屏预览</h2>
+                        <p className="mt-0.5 text-xs text-muted-foreground">当前历史版本缺少结构化教案数据，继续使用兼容沙箱。</p>
                       </div>
                       <Button disabled={isExporting} onClick={downloadHtml} size="sm" type="button" variant="outline" className="h-8 gap-1.5">
                         <Download className="size-3.5" />
@@ -533,6 +595,12 @@ export default function SmartEduArtifact({
                             code={selectedVersion.content}
                             hasPreviousPreview={hasHtml}
                             trace={selectedVersion.trace}
+                          />
+                        ) : selectedVersionSlideData.length ? (
+                          <NativeLessonScreen
+                            key={`${selectedVersion.id}:${selectedVersionScreenKey}`}
+                            slides={selectedVersionSlideData}
+                            title={selectedVersion.lessonPlan?.title ?? nativeScreenTitle}
                           />
                         ) : (
                           <IframeSandbox htmlContent={selectedVersion.content} />

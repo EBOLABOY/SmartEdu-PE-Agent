@@ -4,6 +4,8 @@ import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contra
 import {
   CompetitionLessonPatchError,
   applyCompetitionLessonPatch,
+  applySemanticLessonUpdates,
+  applySemanticLessonUpdatesWithTrace,
 } from "@/lib/competition-lesson-patch";
 
 describe("competition-lesson-patch", () => {
@@ -81,6 +83,67 @@ describe("competition-lesson-patch", () => {
           },
         ],
       }),
+    ).toThrow(CompetitionLessonPatchError);
+  });
+
+  it("按语义环节名称修改课时行并生成兼容 patch trace", () => {
+    const result = applySemanticLessonUpdatesWithTrace(DEFAULT_COMPETITION_LESSON_PLAN, [
+      {
+        action: "update_stage",
+        payload: {
+          targetStageName: "准备部分",
+          newTime: "8分钟",
+          reason: "按用户要求延长热身时间。",
+        },
+      },
+    ]);
+
+    expect(result.lessonPlan.periodPlan.rows[0]?.time).toBe("8分钟");
+    expect(result.patch.operations).toEqual([
+      {
+        op: "replace",
+        path: "/periodPlan/rows/0/time",
+        value: "8分钟",
+        reason: "按用户要求延长热身时间。",
+      },
+    ]);
+    expect(DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows[0]?.time).toBe("XXX");
+  });
+
+  it("按语义工具修改学习目标且不暴露数组索引给模型", () => {
+    const next = applySemanticLessonUpdates(DEFAULT_COMPETITION_LESSON_PLAN, [
+      {
+        action: "update_objectives",
+        payload: {
+          sportMorality: ["能在接力比赛中遵守规则，主动鼓励同伴。"],
+          reason: "补充体育品德目标。",
+        },
+      },
+    ]);
+
+    expect(next.learningObjectives.sportMorality).toEqual([
+      "能在接力比赛中遵守规则，主动鼓励同伴。",
+    ]);
+    expect(DEFAULT_COMPETITION_LESSON_PLAN.learningObjectives.sportMorality).toEqual(["XXX"]);
+  });
+
+  it("拒绝没有关键词的多行同环节语义修改", () => {
+    const plan = structuredClone(DEFAULT_COMPETITION_LESSON_PLAN);
+    const basicRow = structuredClone(plan.periodPlan.rows[1]!);
+    basicRow.content = ["第二个基本部分练习"];
+    plan.periodPlan.rows.splice(2, 0, basicRow);
+
+    expect(() =>
+      applySemanticLessonUpdates(plan, [
+        {
+          action: "update_stage",
+          payload: {
+            targetStageName: "基本部分",
+            newTime: "12分钟",
+            reason: "用户要求调整基本部分时间。",
+          },
+        },
+      ]),
     ).toThrow(CompetitionLessonPatchError);
   });
 });

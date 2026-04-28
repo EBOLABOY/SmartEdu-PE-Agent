@@ -7,6 +7,8 @@ import {
 } from "ai";
 
 import {
+  agentLessonGenerationSchema,
+  type AgentLessonGenerationResult,
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
@@ -18,10 +20,25 @@ type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
 type AgentStreamOptions = {
   system: string;
   maxSteps: number;
+  modelSettings?: {
+    maxRetries?: number;
+  };
   providerOptions: {
     openai: {
       store: true;
     };
+  };
+  structuredOutput?: {
+    schema: typeof agentLessonGenerationSchema;
+    instructions: string;
+    jsonPromptInjection: boolean;
+  };
+};
+
+type ReadableObjectStream<T> = {
+  getReader: () => {
+    read: () => Promise<{ done: true; value?: undefined } | { done: false; value: T }>;
+    releaseLock: () => void;
   };
 };
 
@@ -51,6 +68,7 @@ export type LessonGenerationStreams = {
 
 const DEFAULT_LESSON_MODEL_ID = "gpt-4.1-mini";
 const MAX_MODEL_OPERATION_ATTEMPTS = 5;
+const STRUCTURED_OUTPUT_MAX_RETRIES = 3;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -134,23 +152,33 @@ async function streamCompetitionLessonPlanWithMastraAgent({
   system,
   toUIMessageStream,
 }: {
-  agentStream: AgentStreamRunner<CompetitionLessonPlan>;
+  agentStream: AgentStreamRunner<AgentLessonGenerationResult>;
   maxSteps: number;
   messages: AgentModelMessages;
   system: string;
-  toUIMessageStream?: (result: MastraModelOutput<CompetitionLessonPlan>) => ReadableStream<UIMessageChunk>;
+  toUIMessageStream?: (result: MastraModelOutput<AgentLessonGenerationResult>) => ReadableStream<UIMessageChunk>;
 }): Promise<LessonGenerationStreams> {
   const result = await agentStream(messages, {
     system,
     maxSteps,
+    modelSettings: {
+      maxRetries: STRUCTURED_OUTPUT_MAX_RETRIES,
+    },
     providerOptions: {
       openai: {
         store: true,
       },
     },
+    structuredOutput: {
+      schema: agentLessonGenerationSchema,
+      instructions:
+        "请先填写 _thinking_process 作为教案设计草稿，再把最终可渲染教案写入 lessonPlan。除 schema 字段外不要输出 Markdown、HTML、XML、代码围栏或解释文字。",
+      jsonPromptInjection: true,
+    },
   });
 
   return {
+    partialOutputStream: createLessonPartialOutputStream(result),
     stream:
       toUIMessageStream?.(result) ??
       (toAISdkStream(result, {
@@ -162,14 +190,48 @@ async function streamCompetitionLessonPlanWithMastraAgent({
   };
 }
 
+function createLessonPartialOutputStream(result: MastraModelOutput<AgentLessonGenerationResult>) {
+  const objectStream = result.objectStream;
+
+  if (!objectStream || typeof objectStream.getReader !== "function") {
+    return undefined;
+  }
+
+  return mapAgentLessonPartialOutputStream(
+    objectStream as ReadableObjectStream<Partial<AgentLessonGenerationResult>>,
+  );
+}
+
+async function* mapAgentLessonPartialOutputStream(
+  objectStream: ReadableObjectStream<Partial<AgentLessonGenerationResult>>,
+): AsyncIterable<DeepPartial<CompetitionLessonPlan>> {
+  const reader = objectStream.getReader();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        return;
+      }
+
+      if (value.lessonPlan) {
+        yield value.lessonPlan as DeepPartial<CompetitionLessonPlan>;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 export async function runLessonGenerationSkill(input: {
-  agentStream?: AgentStreamRunner<CompetitionLessonPlan>;
+  agentStream?: AgentStreamRunner<AgentLessonGenerationResult>;
   messages: SmartEduUIMessage[];
   modelId?: string;
   requestId: string;
   structuredStream?: LessonStructuredStreamer;
   structuredGenerate?: LessonStructuredGenerator;
-  toUIMessageStream?: (result: MastraModelOutput<CompetitionLessonPlan>) => ReadableStream<UIMessageChunk>;
+  toUIMessageStream?: (result: MastraModelOutput<AgentLessonGenerationResult>) => ReadableStream<UIMessageChunk>;
   workflow: LessonWorkflowOutput;
 }) {
   const modelMessages = await convertToModelMessages(input.messages);

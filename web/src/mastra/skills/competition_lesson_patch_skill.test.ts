@@ -4,28 +4,37 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import {
   CompetitionLessonPatchError,
-  type CompetitionLessonPatch,
+  type CompetitionLessonSemanticUpdate,
 } from "@/lib/competition-lesson-patch";
 
 import { runCompetitionLessonPatchSkill } from "./competition_lesson_patch_skill";
 
-function fullOutput(object: CompetitionLessonPatch) {
-  return { object } as FullOutput<CompetitionLessonPatch>;
+function fullOutputFromToolResults(
+  semanticUpdates: CompetitionLessonSemanticUpdate[],
+) {
+  return {
+    steps: [],
+    toolResults: semanticUpdates.map((result, index) => ({
+      type: "tool-result",
+      payload: {
+        toolCallId: `tool-${index}`,
+        toolName: result.action,
+        result,
+      },
+    })),
+  } as unknown as FullOutput<unknown>;
 }
 
 describe("competition lesson patch skill", () => {
-  it("uses the Mastra lesson patch agent runner and applies the returned patch", async () => {
-    const patch: CompetitionLessonPatch = {
-      operations: [
-        {
-          op: "replace",
-          path: "/title",
-          value: "篮球行进间运球课",
-          reason: "按用户要求修改教案标题。",
-        },
-      ],
+  it("uses the Mastra lesson patch agent runner and applies semantic tool results", async () => {
+    const semanticUpdate: CompetitionLessonSemanticUpdate = {
+      action: "update_lesson_meta",
+      payload: {
+        title: "篮球行进间运球课",
+        reason: "按用户要求修改教案标题。",
+      },
     };
-    const agentGenerate = vi.fn().mockResolvedValue(fullOutput(patch));
+    const agentGenerate = vi.fn().mockResolvedValue(fullOutputFromToolResults([semanticUpdate]));
 
     const result = await runCompetitionLessonPatchSkill(
       {
@@ -40,7 +49,18 @@ describe("competition lesson patch skill", () => {
       },
     );
 
-    expect(result.patch).toEqual(patch);
+    expect(result.patch).toEqual({
+      operations: [
+        {
+          op: "replace",
+          path: "/title",
+          value: "篮球行进间运球课",
+          reason: "按用户要求修改教案标题。",
+        },
+      ],
+    });
+    expect(result.patchSummary).toBe("基础信息");
+    expect(result.semanticUpdates).toEqual([semanticUpdate]);
     expect(result.lessonPlan.title).toBe("篮球行进间运球课");
     expect(DEFAULT_COMPETITION_LESSON_PLAN.title).toBe("XXX");
     expect(agentGenerate).toHaveBeenCalledWith(
@@ -57,39 +77,41 @@ describe("competition lesson patch skill", () => {
             store: true,
           },
         },
-        structuredOutput: expect.objectContaining({
-          jsonPromptInjection: true,
-          schema: expect.any(Object),
-        }),
       }),
     );
+    expect(agentGenerate.mock.calls[0]?.[1]).not.toHaveProperty("structuredOutput");
   });
 
-  it("rejects an agent patch that breaks the lesson plan schema", async () => {
+  it("rejects ambiguous semantic stage updates instead of guessing an array index", async () => {
+    const lessonPlan = structuredClone(DEFAULT_COMPETITION_LESSON_PLAN);
+    const basicRow = structuredClone(lessonPlan.periodPlan.rows[1]!);
+    basicRow.content = ["第二个基本部分练习"];
+    lessonPlan.periodPlan.rows.splice(2, 0, basicRow);
+
     const agentGenerate = vi.fn().mockResolvedValue(
-      fullOutput({
-        operations: [
-          {
-            op: "replace",
-            path: "/evaluation/1/description",
-            value: "",
-            reason: "非法空评价描述。",
+      fullOutputFromToolResults([
+        {
+          action: "update_stage",
+          payload: {
+            targetStageName: "基本部分",
+            newTime: "12分钟",
+            reason: "用户要求调整基本部分时间。",
           },
-        ],
-      }),
+        },
+      ]),
     );
 
     await expect(
       runCompetitionLessonPatchSkill(
         {
-          lessonPlan: DEFAULT_COMPETITION_LESSON_PLAN,
-          instruction: "把第二档评价清空",
-          targetPaths: ["/evaluation/1/description"],
+          lessonPlan,
+          instruction: "把基本部分改成 12 分钟",
+          targetPaths: ["/periodPlan/rows/1/time"],
         },
         {
           agentGenerate,
           maxSteps: 2,
-          requestId: "request-patch-invalid",
+          requestId: "request-patch-ambiguous",
         },
       ),
     ).rejects.toThrow(CompetitionLessonPatchError);

@@ -14,7 +14,6 @@ import {
 } from "@/lib/api/ai-guard";
 import {
   competitionLessonPatchRequestBodySchema,
-  type CompetitionLessonPatch,
 } from "@/lib/competition-lesson-patch";
 import { mastra } from "@/mastra";
 import {
@@ -59,7 +58,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const rateLimit = takeAiRateLimitToken({
+    const rateLimit = await takeAiRateLimitToken({
       limit: PATCH_RATE_LIMIT,
       request,
       userId: user?.id,
@@ -80,7 +79,7 @@ export async function POST(request: Request) {
 
     const patchAgent = mastra.getAgent("lessonPatchAgent");
     const agentGenerate: LessonPatchAgentRunner = async (messages, options) =>
-      (await patchAgent.generate(messages, options)) as FullOutput<CompetitionLessonPatch>;
+      (await patchAgent.generate(messages, options)) as FullOutput<unknown>;
     const response = await runCompetitionLessonPatchSkill(parsedBody.data, {
       agentGenerate,
       maxSteps: 2,

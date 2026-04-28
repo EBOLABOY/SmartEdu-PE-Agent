@@ -2,7 +2,12 @@ import type { FullOutput, MastraModelOutput } from "@mastra/core/stream";
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN, type CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import {
+  DEFAULT_COMPETITION_LESSON_PLAN,
+  agentLessonGenerationSchema,
+  type AgentLessonGenerationResult,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
 import type { LessonScreenPlan, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
@@ -175,7 +180,7 @@ describe("generation skills", () => {
     expect(partials).toEqual([{ title: "羽毛球草稿" }]);
   });
 
-  it("lesson generation uses Mastra Agent text streaming by default and leaves schema validation to the adapter", async () => {
+  it("lesson generation uses Mastra Agent structured output with the planning wrapper", async () => {
     const convertedStream = new ReadableStream<UIMessageChunk>({
       start(controller) {
         controller.enqueue({ type: "text-start", id: "lesson-json" });
@@ -216,10 +221,62 @@ describe("generation skills", () => {
       expect.arrayContaining([expect.objectContaining({ role: "user" })]),
       expect.objectContaining({
         maxSteps: 3,
+        modelSettings: {
+          maxRetries: 3,
+        },
         system: "system prompt",
+        structuredOutput: expect.objectContaining({
+          schema: agentLessonGenerationSchema,
+          jsonPromptInjection: true,
+        }),
       }),
     );
-    expect(agentStream.mock.calls[0]?.[1]).not.toHaveProperty("structuredOutput");
+  });
+
+  it("lesson generation maps wrapped partial object stream to lessonPlan drafts", async () => {
+    const partialWrapper = {
+      lessonPlan: {
+        title: "羽毛球草稿",
+      },
+    } as Partial<AgentLessonGenerationResult>;
+    const objectStream = new ReadableStream<Partial<AgentLessonGenerationResult>>({
+      start(controller) {
+        controller.enqueue(partialWrapper);
+        controller.close();
+      },
+    });
+    const convertedStream = new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({ type: "finish", finishReason: "stop" });
+        controller.close();
+      },
+    });
+    const mastraOutput = { objectStream } as unknown as MastraModelOutput<AgentLessonGenerationResult>;
+    const agentStream = vi.fn().mockResolvedValue(mastraOutput);
+    const toUIMessageStream = vi.fn().mockReturnValue(convertedStream);
+    const messages = [
+      {
+        id: "user-1",
+        role: "user",
+        parts: [{ type: "text", text: "五年级羽毛球正手发高远球" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationSkill({
+      agentStream,
+      messages,
+      requestId: "request-mastra-partial-wrapper",
+      toUIMessageStream,
+      workflow,
+    });
+
+    const partials = [];
+
+    for await (const partial of result.partialOutputStream ?? []) {
+      partials.push(partial);
+    }
+
+    expect(partials).toEqual([{ title: "羽毛球草稿" }]);
   });
 
   it("html generation uses a slim message instead of passing the full chat history", async () => {

@@ -42,6 +42,9 @@ const baseWorkflow = {
     forbiddenCapabilities: [],
     warnings: [],
   },
+  decision: {
+    type: "generate",
+  },
   trace: [],
 } satisfies LessonWorkflowOutput;
 
@@ -260,6 +263,44 @@ describe("structured authoring stream adapter", () => {
       title: "羽毛球",
     });
     expect(chunks.some(isAssistantTextChunk)).toBe(false);
+  });
+
+  it("lesson 流收到 Mastra structured output 包装对象时只持久化 lessonPlan", async () => {
+    const lessonPlan = createConcreteLessonPlan();
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-structured-output",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        {
+          type: "data-structured-output",
+          data: {
+            object: {
+              _thinking_process: "先完成教学设计草稿。",
+              lessonPlan,
+            },
+          },
+        },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+    const parsed = JSON.parse(finalArtifact?.content ?? "{}");
+
+    expect(finalArtifact).toMatchObject({
+      contentType: "lesson-json",
+      status: "ready",
+      isComplete: true,
+      title: "羽毛球",
+    });
+    expect(parsed).not.toHaveProperty("_thinking_process");
+    expect(parsed.title).toBe("羽毛球");
   });
 
   it("lesson 文本流会把课时计划行的中文字段别名归一化后再输出 final artifact", async () => {

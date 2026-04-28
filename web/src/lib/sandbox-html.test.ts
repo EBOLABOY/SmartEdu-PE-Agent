@@ -31,4 +31,28 @@ describe("sandbox-html", () => {
     expect(report.blockedReasons.join(" ")).toContain("主动网络请求");
     expect(report.blockedReasons.join(" ")).toContain("浏览器本地信息访问");
   });
+
+  it("会用 HTML 解析器识别换行和实体编码后的外部资源", () => {
+    const report = analyzeSandboxHtml(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <SCRIPT
+            SRC="h&#x74;tps://cdn.example.com/app.js"></SCRIPT>
+          <link
+            href="//cdn.example.com/app.css"
+            rel="stylesheet">
+        </head>
+        <body>
+          <img
+            src="https://cdn.example.com/photo.png"
+            alt="">
+        </body>
+      </html>
+    `);
+
+    expect(report.blockedReasons.join(" ")).toContain("外部运行资源");
+    expect(report.blockedReasons.join(" ")).toContain("外部样式资源");
+    expect(report.blockedReasons.join(" ")).toContain("外部媒体资源");
+  });
 });

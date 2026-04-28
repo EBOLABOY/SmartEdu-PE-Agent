@@ -9,6 +9,13 @@ import {
 import { competitionLessonPlanSchema, type CompetitionLessonPlanRow } from "./competition-lesson-contract";
 import { renderLessonScreenScript } from "./lesson-screen-script";
 import { analyzeLessonScreenHtml } from "./lesson-screen-quality";
+import {
+  getHtmlAttribute,
+  getHtmlElements,
+  getVisibleText,
+  hasHtmlClass,
+  parseHtmlDocument,
+} from "./html-inspection";
 import { buildLessonScreenProjectState } from "./lesson-screen-state";
 import { renderLessonScreenStyles } from "./lesson-screen-styles";
 
@@ -461,11 +468,17 @@ export function extractLessonSlides(lessonPlan: string) {
 }
 
 export function isPptStyleLessonHtml(html: string) {
-  const slideCount = (html.match(/<section\b[^>]*class=["'][^"']*\bslide\b/gi) ?? []).length;
-  const timedSlideCount = (html.match(/data-duration=["']\d+["']/gi) ?? []).length;
-  const hasStart = /开始上课|开始课程|开始/.test(html);
-  const hasTimer = /倒计时|timer|countdown/i.test(html);
-  const hasControls = /上一页|下一页|暂停|继续|重新计时/.test(html);
+  const document = parseHtmlDocument(html);
+  const visibleText = getVisibleText(document);
+  const slideCount = getHtmlElements(document, "section").filter((element) =>
+    hasHtmlClass(element, "slide"),
+  ).length;
+  const timedSlideCount = getHtmlElements(document).filter((element) =>
+    /^\d+$/.test(getHtmlAttribute(element, "data-duration") ?? ""),
+  ).length;
+  const hasStart = /开始上课|开始课程|开始/.test(visibleText);
+  const hasTimer = /倒计时|timer|countdown/i.test(visibleText);
+  const hasControls = /上一页|下一页|暂停|继续|重新计时/.test(visibleText);
   const report = analyzeLessonScreenHtml(html);
 
   return slideCount >= 3 && timedSlideCount >= 2 && hasStart && hasTimer && hasControls && report.errors.length === 0;

@@ -6,9 +6,9 @@ import { peTeacherPromptSkills } from "@/mastra/skills";
 
 describe("pe_teacher", () => {
   it("默认注入广东省比赛体育教案参考格式", () => {
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("广东省比赛体育教案参考格式硬约束");
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("广东省比赛体育教案标准规范");
     expect(PE_TEACHER_SYSTEM_PROMPT).toContain("九、课时计划(教案)");
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("一张 8 列综合表格");
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("8 列综合表格");
     expect(PE_TEACHER_SYSTEM_PROMPT).toContain("课的结构、具体教学内容、教与学的方法、组织形式、运动时间、强度");
   });
 
@@ -22,24 +22,24 @@ describe("pe_teacher", () => {
     ]);
   });
 
-  it("教案生成 Agent 不重复暴露课标检索工具", async () => {
+  it("教案生成 Agent 直接暴露课标检索工具", async () => {
     const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
     const globalTools = mastra.listTools();
 
-    expect(Object.keys(agentTools ?? {})).not.toContain("searchStandardsTool");
+    expect(Object.keys(agentTools ?? {})).toContain("searchStandardsTool");
     expect(globalTools).toHaveProperty("searchStandardsTool");
   });
 
-  it("lesson 阶段要求流式输出 CompetitionLessonPlan JSON", () => {
+  it("lesson 阶段要求流式输出带 lessonPlan 的 AgentLessonGeneration JSON", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, { mode: "lesson" });
 
-    expect(prompt).toContain("必须严格依据广东省比赛体育教案参考格式");
-    expect(prompt).toContain("CompetitionLessonPlan JSON");
-    expect(prompt).toContain("只输出 JSON 对象本体");
-    expect(prompt).toContain("evaluation 数组");
-    expect(prompt).toContain("periodPlan.rows 数组");
+    expect(prompt).toContain("必须严格依据广东省比赛体育教案标准规范");
+    expect(prompt).toContain("AgentLessonGeneration JSON");
+    expect(prompt).toContain("顶层只输出 _thinking_process 和 lessonPlan");
+    expect(prompt).toContain("evaluation 字段");
+    expect(prompt).toContain("periodPlan.rows");
     expect(prompt).toContain("time 必须统一使用“X分钟”或“X-Y分钟”格式");
-    expect(prompt).toContain("禁止使用 2’、2'、2min、2, 或纯数字");
+    expect(prompt).toContain("错误示例：2'、2’、2min、2,");
     expect(prompt).not.toContain("请确认教案是否无误，确认后我再生成互动大屏");
   });
 

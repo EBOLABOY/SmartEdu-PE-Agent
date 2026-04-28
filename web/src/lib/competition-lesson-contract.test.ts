@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
+  agentLessonGenerationSchema,
   competitionLessonPlanSchema,
+  unwrapAgentLessonGenerationResult,
 } from "@/lib/competition-lesson-contract";
 
 describe("competition-lesson-contract", () => {
@@ -61,5 +63,16 @@ describe("competition-lesson-contract", () => {
     expect(parsed.error?.issues.map((issue) => issue.path.join("."))).toEqual(
       expect.arrayContaining(["periodPlan.rows.0"]),
     );
+  });
+
+  it("AgentLessonGeneration 包装 schema 会保留草稿字段但解包为 CompetitionLessonPlan", () => {
+    const wrapped = agentLessonGenerationSchema.parse({
+      _thinking_process: "先梳理目标、重难点和三段时间分配。",
+      lessonPlan: DEFAULT_COMPETITION_LESSON_PLAN,
+    });
+
+    expect(wrapped._thinking_process).toContain("三段时间");
+    expect(unwrapAgentLessonGenerationResult(wrapped)).toEqual(DEFAULT_COMPETITION_LESSON_PLAN);
+    expect(unwrapAgentLessonGenerationResult(DEFAULT_COMPETITION_LESSON_PLAN)).toEqual(DEFAULT_COMPETITION_LESSON_PLAN);
   });
 });

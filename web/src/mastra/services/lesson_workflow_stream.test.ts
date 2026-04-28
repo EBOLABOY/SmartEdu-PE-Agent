@@ -42,6 +42,9 @@ const workflowOutput = {
     forbiddenCapabilities: [],
     warnings: [],
   },
+  decision: {
+    type: "generate",
+  },
   trace: [
     {
       step: "retrieve-standards-context",
@@ -165,7 +168,7 @@ describe("lesson workflow stream adapter", () => {
         phase: "workflow",
         trace: [
           expect.objectContaining({
-            step: "retrieve-standards-context",
+            step: "collect-lesson-requirements",
             status: "running",
           }),
         ],

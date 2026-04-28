@@ -3,21 +3,21 @@ import type { AgentConfig } from "@mastra/core/agent";
 
 import type { CompetitionLessonPatchRequestBody } from "@/lib/competition-lesson-patch";
 
+import { editLessonTools } from "../tools/edit_lesson_tools";
+
 export const LESSON_PATCH_SYSTEM_PROMPT = `
-你是“创AI”的体育教案结构化修改 Agent。你的职责不是重新生成整份教案，而是把教师的后续修改意见转成可校验、可回放、字段级的 JSON Pointer patch operations。
+你是“创AI”的体育教案修改专家。你的职责不是重新生成整份教案，也不是编写 JSON Pointer patch。
+你的任务是理解教师的修改意图，并调用合适的语义工具来表达业务修改。
 
 核心规则：
-1. 只修改用户要求涉及的最小字段，避免重写整份教案。
-2. path 必须使用 JSON Pointer，例如 /learningObjectives/sportAbility/0 或 /periodPlan/rows/1/methods/teacher/0。
-3. op 只能使用 replace、append、remove。replace/remove 必须指向已存在字段或数组元素；append 必须指向数组字段。
-4. value 必须是目标字段需要的新值，不要包含 Markdown 表格、HTML 标签、代码围栏或解释性文字。
-5. reason 必须说明修改位置、理由和同步检查要点。
+1. 直接调用工具，不要输出 Markdown、HTML 或解释文字。
+2. 只修改用户要求涉及的最小业务字段，避免重写整份教案。
+3. 不要传数组索引、JSON Pointer 或底层路径；教学环节只能用“准备部分 / 基本部分 / 结束部分”和原内容关键词定位。
+4. 如果同一环节有多行，必须提供 targetContentKeyword；没有把握就选择最保守的单个工具调用。
+5. 如果修改运动时间、强度、课堂结构或练习密度，必须同时检查是否需要调用 update_load_estimate。
 6. 修改后必须保持广东省比赛体育教案结构完整，不能破坏学习评价三档、课时计划三段、运动负荷和安全保障。
-7. 如果修改运动时间、强度、课堂结构或练习密度，必须同步检查 /loadEstimate；必要时同时调整 /loadEstimate/loadLevel、/loadEstimate/targetHeartRateRange、/loadEstimate/averageHeartRate、/loadEstimate/groupDensity、/loadEstimate/individualDensity、/loadEstimate/chartPoints 和 /loadEstimate/rationale/0，保证文字说明与图表曲线一致。
-8. 如果用户要求模糊，选择最保守、最小影响的 patch；不要借机扩写无关字段。
-
-你只能返回符合 CompetitionLessonPatch schema 的结构化对象，不要输出 Markdown、HTML 或自然语言说明。
-`;
+7. reason 必须说明修改依据和同步检查要点，方便后台审计。
+8. 当前教案完整 JSON 会提供给你作为参考，你只能通过工具提交修改意图。`;
 
 export function buildLessonPatchSystemPrompt() {
   return LESSON_PATCH_SYSTEM_PROMPT;
@@ -25,13 +25,13 @@ export function buildLessonPatchSystemPrompt() {
 
 function buildTargetPathHint(targetPaths?: string[]) {
   if (!targetPaths?.length) {
-    return "用户未指定路径。你必须选择最小必要字段路径，不要重写整份教案。";
+    return "用户未指定 UI 字段。你必须根据用户意图选择最小必要的语义工具，不要重写整份教案。";
   }
 
   return [
-    "用户允许优先修改这些路径：",
+    "用户在 UI 中优先指向这些旧字段路径。它们只作为定位提示，不允许在工具参数中输出 JSON Pointer：",
     ...targetPaths.map((path) => `- ${path}`),
-    "如确需同步调整其他字段，最多额外增加 2 个直接相关路径。",
+    "如果需要同步调整相关业务字段，使用相应的语义工具表达。",
   ].join("\n");
 }
 
@@ -45,16 +45,17 @@ export function buildLessonPatchUserPrompt(input: CompetitionLessonPatchRequestB
     "当前 CompetitionLessonPlan JSON：",
     JSON.stringify(input.lessonPlan, null, 2),
     "",
-    "请只返回符合 schema 的 operations。",
+    "请通过工具调用提交语义化修改，不要输出 JSON Pointer patch。",
   ].join("\n");
 }
 
 export function createLessonPatchAgent(model: AgentConfig["model"]) {
   return new Agent({
     id: "lesson-patch-agent",
-    name: "创AI体育教案结构化修改智能体",
-    description: "把教师对已生成体育教案的后续修改意见转换成可校验的字段级 JSON Pointer patch。",
+    name: "创AI体育教案修改智能体",
+    description: "把教师对已生成体育教案的后续修改意见转换成可校验的语义工具调用。",
     instructions: LESSON_PATCH_SYSTEM_PROMPT,
     model,
+    tools: editLessonTools,
   });
 }

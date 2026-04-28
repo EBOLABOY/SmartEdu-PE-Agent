@@ -53,17 +53,25 @@ export type LessonWorkflowTraceState = {
 const WORKFLOW_RESPONSE_TRANSPORT = "structured-data-part" as const;
 
 const STEP_RUNNING_DETAILS: Record<string, string> = {
+  "collect-lesson-requirements": "正在核对课题、年级、场地和器材等上课信息。",
+  "prepare-clarification-response": "正在准备必要追问。",
+  "prepare-generation-response": "正在准备正式生成上下文。",
   "retrieve-standards-context": "正在检索课程标准并解析目标市场。",
   "construct-generation-prompt": "正在构造生成提示词。",
   "plan-structured-delivery": "正在规划结构化输出协议。",
   "validate-generation-safety": "正在校验生成安全边界。",
+  "merge-workflow-branch-output": "正在归一化工作流分支输出。",
 };
 
 const STEP_SUCCESS_DETAILS: Record<string, string> = {
+  "collect-lesson-requirements": "信息收集已完成。",
+  "prepare-clarification-response": "必要追问已准备。",
+  "prepare-generation-response": "正式生成上下文已准备。",
   "retrieve-standards-context": "课程标准检索已完成。",
   "construct-generation-prompt": "生成提示词已构造。",
   "plan-structured-delivery": "结构化输出协议已就绪。",
   "validate-generation-safety": "生成安全校验已通过。",
+  "merge-workflow-branch-output": "工作流分支输出已归一化。",
 };
 
 function nowIsoString() {
@@ -363,9 +371,9 @@ export async function runLessonAuthoringWorkflowWithTrace(
   replaceTraceEntry(
     state,
     createWorkflowTraceEntry(
-      "retrieve-standards-context",
+      "collect-lesson-requirements",
       "running",
-      STEP_RUNNING_DETAILS["retrieve-standards-context"],
+      STEP_RUNNING_DETAILS["collect-lesson-requirements"],
     ),
   );
   publishTrace();

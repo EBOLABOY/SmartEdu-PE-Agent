@@ -234,10 +234,34 @@ export const competitionLessonPlanSchema = z
   })
   .strict();
 
+export const agentLessonGenerationSchema = z
+  .object({
+    _thinking_process: z
+      .string()
+      .trim()
+      .min(1)
+      .describe(
+        "教案生成前的设计草稿：先梳理核心教学目标、重难点拆解、准备/基本/结束三部分时间分配和环节设计思路。",
+      ),
+    lessonPlan: competitionLessonPlanSchema.describe("最终可持久化和渲染的 CompetitionLessonPlan 教案数据。"),
+  })
+  .strict();
+
 export type CompetitionLessonPlan = z.infer<typeof competitionLessonPlanSchema>;
+export type AgentLessonGenerationResult = z.infer<typeof agentLessonGenerationSchema>;
 export type CompetitionLessonPlanRow = z.infer<typeof competitionLessonPlanRowSchema>;
 export type CompetitionLessonLoadEstimate = z.infer<typeof competitionLessonLoadEstimateSchema>;
 export type CompetitionLessonLoadChartPoint = z.infer<typeof competitionLessonLoadChartPointSchema>;
+
+export function unwrapAgentLessonGenerationResult(value: unknown): CompetitionLessonPlan {
+  const wrapped = agentLessonGenerationSchema.safeParse(value);
+
+  if (wrapped.success) {
+    return wrapped.data.lessonPlan;
+  }
+
+  return competitionLessonPlanSchema.parse(value);
+}
 
 export const DEFAULT_COMPETITION_LESSON_PLAN: CompetitionLessonPlan = {
   title: "XXX",

@@ -330,7 +330,8 @@ function AppContent() {
             lessonPlan: currentLessonPlan,
           });
           const changedPaths = patchResult.patch.operations.map((operation) => operation.path);
-          const summary = `结构化字段修改：${summarizeCompetitionLessonPatch(changedPaths)}`;
+          const summary =
+            patchResult.patchSummary ?? `结构化字段修改：${summarizeCompetitionLessonPatch(changedPaths)}`;
 
           setLessonConfirmed(false);
           setHasLiveArtifactAuthority(true);

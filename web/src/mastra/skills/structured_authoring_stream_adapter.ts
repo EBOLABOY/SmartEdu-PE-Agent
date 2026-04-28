@@ -8,6 +8,7 @@ import {
 import { extractHtmlDocumentFromText, extractJsonObjectText } from "@/lib/artifact-protocol";
 import {
   competitionLessonPlanSchema,
+  unwrapAgentLessonGenerationResult,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import { buildCompetitionLessonDraft } from "@/lib/competition-lesson-draft";
@@ -106,9 +107,27 @@ function containsDefaultPlaceholder(value: unknown) {
   return JSON.stringify(value).includes("\"XXX\"");
 }
 
-function buildLessonJsonArtifactContent(rawText: string) {
+function readStructuredOutputPart(part: UIMessageChunk) {
+  const candidate = part as {
+    data?: {
+      object?: unknown;
+    };
+    type?: string;
+  };
+
+  if (candidate.type !== "data-structured-output") {
+    return undefined;
+  }
+
+  return candidate.data?.object;
+}
+
+function buildLessonJsonArtifactContent(rawText: string, structuredOutput?: unknown) {
   try {
-    const parsed = competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(rawText)));
+    const parsed =
+      structuredOutput === undefined
+        ? unwrapAgentLessonGenerationResult(JSON.parse(extractJsonObjectText(rawText)))
+        : unwrapAgentLessonGenerationResult(structuredOutput);
 
     if (containsDefaultPlaceholder(parsed)) {
       throw new Error("模型输出包含默认占位符 XXX，不能作为正式 CompetitionLessonPlan JSON。");
@@ -196,6 +215,7 @@ export function createStructuredAuthoringStreamAdapter({
     execute: async ({ writer }) => {
       let rawText = "";
       let hasFinished = false;
+      let structuredLessonOutput: unknown;
       const reader = stream.getReader();
 
       const writeTrace = (phase: WorkflowTraceData["phase"]) => {
@@ -281,12 +301,12 @@ export function createStructuredAuthoringStreamAdapter({
       const finalizeLessonArtifact = async () => {
         const lessonText = rawText.trim();
 
-        if (!lessonText) {
+        if (!lessonText && structuredLessonOutput === undefined) {
           writeStreamError("validate-lesson-output", "模型未返回可用的 CompetitionLessonPlan JSON 内容。");
           return false;
         }
 
-        const lessonJson = buildLessonJsonArtifactContent(lessonText);
+        const lessonJson = buildLessonJsonArtifactContent(lessonText, structuredLessonOutput);
         const artifact = buildArtifactData(workflow, {
           content: lessonJson.content,
           contentType: lessonJson.contentType,
@@ -397,6 +417,22 @@ export function createStructuredAuthoringStreamAdapter({
           }
 
           const part = value;
+          const structuredOutput = mode === "lesson" ? readStructuredOutputPart(part) : undefined;
+
+          if (structuredOutput !== undefined) {
+            structuredLessonOutput = structuredOutput;
+            const lessonPlan = unwrapAgentLessonGenerationResult(structuredOutput);
+
+            writeArtifact(
+              buildArtifactData(workflow, {
+                content: JSON.stringify(competitionLessonPlanSchema.parse(lessonPlan)),
+                contentType: "lesson-json",
+                isComplete: false,
+                status: "streaming",
+                title: lessonPlan.title,
+              }),
+            );
+          }
 
           switch (part.type) {
             case "text-start": {
