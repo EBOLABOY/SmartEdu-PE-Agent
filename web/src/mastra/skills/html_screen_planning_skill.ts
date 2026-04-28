@@ -162,6 +162,7 @@ function normalizeAgentPlan(agentPlan: LessonScreenPlan, fallbackPlan: LessonScr
 }
 
 export async function runHtmlScreenPlanningSkill(input: {
+  additionalInstructions?: string;
   agentGenerate: HtmlScreenPlanAgentRunner;
   lessonPlan?: string;
   maxSteps: number;
@@ -182,7 +183,7 @@ export async function runHtmlScreenPlanningSkill(input: {
     const result = await runModelOperationWithRetry(
       () =>
         input.agentGenerate(modelMessages, {
-          system: buildHtmlScreenPlanningSystemPrompt(),
+          system: [buildHtmlScreenPlanningSystemPrompt(), input.additionalInstructions].filter(Boolean).join("\n\n"),
           maxSteps: input.maxSteps,
           providerOptions: {
             openai: {

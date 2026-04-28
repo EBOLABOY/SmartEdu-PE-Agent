@@ -8,6 +8,7 @@ import {
   type ProjectDirectoryResponse,
   type ProjectWorkspaceResponse,
 } from "@/lib/lesson-authoring-contract";
+import { withSmartEduProjectHeader } from "@/lib/api/smartedu-request-headers";
 
 function getResponseError(payload: unknown, fallback: string) {
   return payload &&
@@ -160,13 +161,17 @@ export async function requestArtifactVersionRestore(
 export async function requestCompetitionLessonPatch(input: {
   instruction: string;
   lessonPlan: CompetitionLessonPlan;
+  projectId?: string;
 }) {
   const response = await fetch("/api/competition-lesson-patches", {
     method: "POST",
-    headers: {
+    headers: withSmartEduProjectHeader({
       "content-type": "application/json",
-    },
-    body: JSON.stringify(input),
+    }, input.projectId),
+    body: JSON.stringify({
+      instruction: input.instruction,
+      lessonPlan: input.lessonPlan,
+    }),
   });
   const payload = await response.json().catch(() => null);
 

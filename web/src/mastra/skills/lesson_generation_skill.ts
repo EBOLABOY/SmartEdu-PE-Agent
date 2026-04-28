@@ -11,6 +11,7 @@ import {
   type AgentLessonGenerationResult,
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
+  unwrapAgentLessonGenerationResult,
 } from "@/lib/competition-lesson-contract";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
@@ -62,6 +63,7 @@ export type LessonStructuredStreamer = (options: {
 }) => Promise<LessonGenerationStreams | ReadableStream<UIMessageChunk>>;
 
 export type LessonGenerationStreams = {
+  finalLessonPlanPromise?: Promise<CompetitionLessonPlan>;
   partialOutputStream?: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
   stream: ReadableStream<UIMessageChunk>;
 };
@@ -178,6 +180,7 @@ async function streamCompetitionLessonPlanWithMastraAgent({
   });
 
   return {
+    finalLessonPlanPromise: createFinalLessonPlanPromise(result),
     partialOutputStream: createLessonPartialOutputStream(result),
     stream:
       toUIMessageStream?.(result) ??
@@ -188,6 +191,16 @@ async function streamCompetitionLessonPlanWithMastraAgent({
         sendFinish: true,
       }) as ReadableStream<UIMessageChunk>),
   };
+}
+
+function createFinalLessonPlanPromise(result: MastraModelOutput<AgentLessonGenerationResult>) {
+  const objectPromise = result.object;
+
+  if (!objectPromise || typeof objectPromise.then !== "function") {
+    return undefined;
+  }
+
+  return objectPromise.then((value) => unwrapAgentLessonGenerationResult(value));
 }
 
 function createLessonPartialOutputStream(result: MastraModelOutput<AgentLessonGenerationResult>) {
@@ -242,17 +255,20 @@ export async function runLessonGenerationSkill(input: {
           const lessonPlan = await input.structuredGenerate!(options);
           const content = JSON.stringify(competitionLessonPlanSchema.parse(lessonPlan));
 
-          return new ReadableStream<UIMessageChunk>({
-            start(controller) {
-              const id = "lesson-json";
+          return {
+            finalLessonPlanPromise: Promise.resolve(competitionLessonPlanSchema.parse(lessonPlan)),
+            stream: new ReadableStream<UIMessageChunk>({
+              start(controller) {
+                const id = "lesson-json";
 
-              controller.enqueue({ type: "text-start", id });
-              controller.enqueue({ type: "text-delta", id, delta: content });
-              controller.enqueue({ type: "text-end", id });
-              controller.enqueue({ type: "finish", finishReason: "stop" });
-              controller.close();
-            },
-          });
+                controller.enqueue({ type: "text-start", id });
+                controller.enqueue({ type: "text-delta", id, delta: content });
+                controller.enqueue({ type: "text-end", id });
+                controller.enqueue({ type: "finish", finishReason: "stop" });
+                controller.close();
+              },
+            }),
+          };
         }
       : input.agentStream
         ? (options: Parameters<LessonStructuredStreamer>[0]) =>
@@ -283,6 +299,7 @@ export async function runLessonGenerationSkill(input: {
   );
 
   return {
+    finalLessonPlanPromise: generationStreams.finalLessonPlanPromise,
     modelMessageCount: modelMessages.length,
     partialOutputStream: generationStreams.partialOutputStream,
     stream: generationStreams.stream,

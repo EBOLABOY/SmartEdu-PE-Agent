@@ -2,6 +2,7 @@ import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
 import {
+  artifactViewSchema,
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   generationModeSchema,
@@ -10,13 +11,16 @@ import {
   lessonScreenPlanSchema,
   peTeacherContextSchema,
   standardsMarketSchema,
+  uiHintSchema,
   workflowTraceEntrySchema,
   workflowStandardsReferenceSchema,
+  type ArtifactView,
   type GenerationMode,
   type LessonAuthoringMemory,
   type LessonScreenPlan,
   type PeTeacherContext,
   type SmartEduUIMessage,
+  type UiHint,
 } from "@/lib/lesson-authoring-contract";
 
 import { buildPeTeacherSystemPrompt } from "../agents/pe_teacher";
@@ -28,9 +32,20 @@ import {
   runLessonIntakeSkill,
   type LessonIntakeSkillResult,
 } from "../skills/lesson_intake_skill";
-import { resolveStandardsMarketMetadata } from "../tools/search_standards";
+import {
+  lessonIntentSchema,
+  runLessonIntentSkill,
+  type LessonIntent,
+} from "../skills/lesson_intent_skill";
+import {
+  runStandardsRetrievalSkill,
+} from "../skills/standards_retrieval_skill";
+import {
+  resolveStandardsMarketMetadata,
+} from "../tools/search_standards";
 
 const MAX_WORKFLOW_AGENT_STEPS = 3;
+const LOW_CONFIDENCE_INTENT_THRESHOLD = 0.7;
 
 const lessonIntakeSkillResultSchema = z
   .object({
@@ -59,13 +74,28 @@ export const lessonWorkflowDecisionSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("clarify"),
       text: z.string().trim().min(1),
-      intakeResult: lessonIntakeSkillResultSchema,
+      intentResult: lessonIntentSchema,
+      intakeResult: lessonIntakeSkillResultSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("respond"),
+      text: z.string().trim().min(1),
+      intentResult: lessonIntentSchema,
     })
     .strict(),
   z
     .object({
       type: z.literal("generate"),
+      intentResult: lessonIntentSchema,
       intakeResult: lessonIntakeSkillResultSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("patch"),
+      intentResult: lessonIntentSchema,
     })
     .strict(),
 ]);
@@ -103,6 +133,7 @@ export const lessonWorkflowOutputSchema = z.object({
     forbiddenCapabilities: z.array(z.string()),
     warnings: z.array(z.string()),
   }),
+  uiHints: z.array(uiHintSchema).default([]),
   decision: lessonWorkflowDecisionSchema,
   trace: z.array(workflowTraceEntrySchema),
 });
@@ -119,10 +150,15 @@ export type LessonWorkflowDecision = z.infer<typeof lessonWorkflowDecisionSchema
 export type LessonWorkflowOutput = z.infer<typeof lessonWorkflowOutputSchema>;
 
 type LessonIntakeRunner = typeof runLessonIntakeSkill;
+type LessonIntentRunner = typeof runLessonIntentSkill;
 
-const intakeCollectionOutputSchema = lessonWorkflowInputSchema.extend({
-  intakeResult: lessonIntakeSkillResultSchema.optional(),
+const intentClassificationOutputSchema = lessonWorkflowInputSchema.extend({
+  intentResult: lessonIntentSchema,
   trace: lessonWorkflowOutputSchema.shape.trace,
+});
+
+const intakeCollectionOutputSchema = intentClassificationOutputSchema.extend({
+  intakeResult: lessonIntakeSkillResultSchema.optional(),
 });
 
 const promptConstructionOutputSchema = intakeCollectionOutputSchema.extend({
@@ -137,6 +173,9 @@ const deliveryPlanningOutputSchema = promptConstructionOutputSchema.extend({
 
 const workflowBranchOutputSchema = z
   .object({
+    "prepare-intent-clarification-response": lessonWorkflowOutputSchema.optional(),
+    "prepare-patch-response": lessonWorkflowOutputSchema.optional(),
+    "prepare-standards-consultation-response": lessonWorkflowOutputSchema.optional(),
     "prepare-clarification-response": lessonWorkflowOutputSchema.optional(),
     "prepare-generation-response": lessonWorkflowOutputSchema.optional(),
   })
@@ -185,6 +224,56 @@ function createSafety(mode: GenerationMode, warnings: string[]) {
   };
 }
 
+function createSwitchTabUiHint(tab: ArtifactView): UiHint {
+  return {
+    action: "switch_tab",
+    params: {
+      tab: artifactViewSchema.parse(tab),
+    },
+  };
+}
+
+function createGenerationUiHints(mode: GenerationMode): UiHint[] {
+  return [createSwitchTabUiHint(mode === "html" ? "canvas" : "lesson")];
+}
+
+function getIntentDisplayLabel(intent: LessonIntent["intent"]) {
+  switch (intent) {
+    case "generate_lesson":
+      return "生成新教案";
+    case "patch_lesson":
+      return "修改现有教案";
+    case "generate_html":
+      return "生成互动大屏";
+    case "consult_standards":
+      return "咨询课标与合规依据";
+    case "clarify":
+    default:
+      return "继续澄清任务方向";
+  }
+}
+
+function createLowConfidenceIntentUiHints(intentResult: LessonIntent): UiHint[] {
+  if (intentResult.confidence >= LOW_CONFIDENCE_INTENT_THRESHOLD) {
+    return [];
+  }
+
+  return [
+    {
+      action: "show_toast",
+      params: {
+        level: "info",
+        title: "我对本轮意图的理解还不够确定",
+        description: `当前先按“${getIntentDisplayLabel(intentResult.intent)}”处理；如果理解有误，请直接纠正我。`,
+      },
+    },
+  ];
+}
+
+function mergeUiHints(...collections: UiHint[][]) {
+  return collections.flat();
+}
+
 function getWorkflowRequestId(inputData: z.infer<typeof lessonWorkflowInputSchema>, runId: string) {
   return inputData.requestId ?? runId;
 }
@@ -201,6 +290,17 @@ function getWorkflowMessages(inputData: z.infer<typeof lessonWorkflowInputSchema
       parts: [{ type: "text", text: inputData.query }],
     },
   ] as SmartEduUIMessage[];
+}
+
+function resolveGenerationMode(inputData: {
+  intentResult?: LessonIntent;
+  mode: GenerationMode;
+}) {
+  if (inputData.mode === "html" || inputData.intentResult?.intent === "generate_html") {
+    return "html" as const;
+  }
+
+  return "lesson" as const;
 }
 
 function buildDeferredStandardsWorkflowFields(
@@ -246,6 +346,79 @@ function buildDeferredStandardsWorkflowFields(
   };
 }
 
+async function buildResolvedStandardsWorkflowFields(inputData: {
+  market: z.infer<typeof lessonWorkflowInputSchema>["market"];
+  query: string;
+}) {
+  const standardsResult = await runStandardsRetrievalSkill({
+    query: inputData.query,
+    market: inputData.market,
+  });
+
+  return {
+    standardsContext: standardsResult.context,
+    standards: {
+      requestedMarket: standardsResult.requestedMarket,
+      resolvedMarket: standardsResult.resolvedMarket,
+      corpusId: standardsResult.corpus.corpusId,
+      displayName: standardsResult.corpus.displayName,
+      officialStatus: standardsResult.corpus.officialStatus,
+      sourceName: standardsResult.corpus.sourceName,
+      issuer: standardsResult.corpus.issuer,
+      version: standardsResult.corpus.version,
+      url: standardsResult.corpus.url,
+      availability: standardsResult.corpus.availability,
+      referenceCount: standardsResult.references.length,
+      references: standardsResult.references.map((reference) => ({
+        id: reference.id,
+        title: reference.title,
+        summary: reference.summary,
+        citation: reference.citation,
+        module: reference.module,
+        gradeBands: reference.gradeBands,
+        sectionPath: reference.sectionPath,
+        score: reference.score,
+      })),
+      warning: standardsResult.warning,
+    },
+    trace: [
+      createTraceEntry(
+        "consult-standards-context",
+        "success",
+        `已检索 ${standardsResult.references.length} 条课标条目，供直接咨询答复使用。`,
+      ),
+      ...(standardsResult.warning
+        ? [createTraceEntry("resolve-standards-market", "blocked", standardsResult.warning)]
+        : []),
+    ],
+  };
+}
+
+function buildIntentClarificationText(intentResult: LessonIntent) {
+  return [
+    "我还不能直接执行当前请求。",
+    "请明确你是要：",
+    "1. 生成一份新的体育教案；",
+    "2. 修改当前已确认教案；",
+    "3. 生成互动大屏；",
+    "4. 咨询课标、安全或评价依据。",
+    `当前判断依据：${intentResult.reason}`,
+  ].join("\n");
+}
+
+function buildPatchRequiresLessonText() {
+  return "要修改现有教案，请先提供一份已确认的结构化教案，再说明你想调整的部分。";
+}
+
+function buildStandardsConsultationText(standardsContext: string) {
+  return [
+    "以下是与当前问题最相关的课标与教学依据：",
+    standardsContext,
+    "",
+    "如果你愿意，我可以继续基于这些依据生成教案，或对现有教案做合规性核对。",
+  ].join("\n");
+}
+
 function buildIntakePromptParts(intakeResult?: LessonIntakeSkillResult) {
   if (!intakeResult?.intake.readyToGenerate) {
     return [];
@@ -273,17 +446,47 @@ function buildWorkflowWarnings(inputData: {
   ];
 }
 
+function createClassifyIntentStep(runLessonIntent: LessonIntentRunner) {
+  return createStep({
+    id: "classify-intent",
+    description: "识别当前请求是生成教案、修改教案、生成互动大屏、咨询课标，还是需要先澄清。",
+    inputSchema: lessonWorkflowInputSchema,
+    outputSchema: intentClassificationOutputSchema,
+    execute: async ({ inputData, runId }) => {
+      const intentResult = await runLessonIntent({
+        lessonPlan: inputData.lessonPlan,
+        messages: getWorkflowMessages(inputData),
+        mode: inputData.mode,
+        query: inputData.query,
+        requestId: getWorkflowRequestId(inputData, runId),
+      });
+
+      return {
+        ...inputData,
+        intentResult,
+        trace: [
+          createTraceEntry(
+            "classify-intent",
+            "success",
+            `已识别当前请求意图为 ${intentResult.intent}，置信度 ${intentResult.confidence.toFixed(2)}。${intentResult.reason}`,
+          ),
+        ],
+      };
+    },
+  });
+}
+
 function createCollectLessonRequirementsStep(runLessonIntake: LessonIntakeRunner) {
   return createStep({
     id: "collect-lesson-requirements",
     description: "在正式生成体育教案前核对年级、课题等必要信息，并决定追问或继续生成。",
-    inputSchema: lessonWorkflowInputSchema,
+    inputSchema: intentClassificationOutputSchema,
     outputSchema: intakeCollectionOutputSchema,
     execute: async ({ inputData, runId }) => {
-      if (inputData.mode === "html") {
+      if (inputData.intentResult.intent !== "generate_lesson") {
         return {
           ...inputData,
-          trace: [],
+          intakeResult: undefined,
         };
       }
 
@@ -333,10 +536,12 @@ const prepareClarificationResponseStep = createStep({
       system: "",
       standardsContext: standards.standardsContext,
       standards: standards.standards,
-      generationPlan: createGenerationPlan(inputData.mode),
-      safety: createSafety(inputData.mode, warnings),
+      generationPlan: createGenerationPlan(resolveGenerationMode(inputData)),
+      safety: createSafety(resolveGenerationMode(inputData), warnings),
+      uiHints: createLowConfidenceIntentUiHints(inputData.intentResult),
       decision: {
         type: "clarify" as const,
+        intentResult: inputData.intentResult,
         text: formatLessonIntakeQuestions(inputData.intakeResult.intake),
         intakeResult: inputData.intakeResult,
       },
@@ -353,6 +558,142 @@ const prepareClarificationResponseStep = createStep({
   },
 });
 
+const prepareIntentClarificationResponseStep = createStep({
+  id: "prepare-intent-clarification-response",
+  description: "当入口意图仍不明确时，返回任务方向澄清信息。",
+  inputSchema: intakeCollectionOutputSchema,
+  outputSchema: lessonWorkflowOutputSchema,
+  execute: async ({ inputData }) => {
+    const standards = buildDeferredStandardsWorkflowFields(inputData);
+    const resolvedMode = resolveGenerationMode(inputData);
+    const warnings = buildWorkflowWarnings({
+      standards: standards.standards,
+    });
+
+    return {
+      system: "",
+      standardsContext: standards.standardsContext,
+      standards: standards.standards,
+      generationPlan: createGenerationPlan(resolvedMode),
+      safety: createSafety(resolvedMode, warnings),
+      uiHints: createLowConfidenceIntentUiHints(inputData.intentResult),
+      decision: {
+        type: "clarify" as const,
+        intentResult: inputData.intentResult,
+        text: buildIntentClarificationText(inputData.intentResult),
+      },
+      trace: [
+        ...inputData.trace,
+        ...standards.trace,
+        createTraceEntry(
+          "prepare-intent-clarification-response",
+          "blocked",
+          "入口意图不够明确，工作流已返回任务方向澄清提示。",
+        ),
+      ],
+    };
+  },
+});
+
+const prepareStandardsConsultationResponseStep = createStep({
+  id: "prepare-standards-consultation-response",
+  description: "直接检索课标并返回咨询结果，跳过正式生成链路。",
+  inputSchema: intakeCollectionOutputSchema,
+  outputSchema: lessonWorkflowOutputSchema,
+  execute: async ({ inputData }) => {
+    const standards = await buildResolvedStandardsWorkflowFields(inputData);
+    const warnings = buildWorkflowWarnings({
+      standards: standards.standards,
+    });
+
+    return {
+      system: "",
+      standardsContext: standards.standardsContext,
+      standards: standards.standards,
+      generationPlan: createGenerationPlan("lesson"),
+      safety: createSafety("lesson", warnings),
+      uiHints: createLowConfidenceIntentUiHints(inputData.intentResult),
+      decision: {
+        type: "respond" as const,
+        intentResult: inputData.intentResult,
+        text: buildStandardsConsultationText(standards.standardsContext),
+      },
+      trace: [
+        ...inputData.trace,
+        ...standards.trace,
+        createTraceEntry(
+          "prepare-standards-consultation-response",
+          "success",
+          "已完成课标检索，并直接返回咨询结果。",
+        ),
+      ],
+    };
+  },
+});
+
+const preparePatchResponseStep = createStep({
+  id: "prepare-patch-response",
+  description: "识别为已确认教案修改请求后，跳过 intake 并转入结构化补丁链路。",
+  inputSchema: intakeCollectionOutputSchema,
+  outputSchema: lessonWorkflowOutputSchema,
+  execute: async ({ inputData }) => {
+    const standards = buildDeferredStandardsWorkflowFields(inputData);
+    const warnings = buildWorkflowWarnings({
+      standards: standards.standards,
+    });
+
+    if (!inputData.lessonPlan?.trim()) {
+      return {
+        system: "",
+        standardsContext: standards.standardsContext,
+        standards: standards.standards,
+        generationPlan: createGenerationPlan("lesson"),
+        safety: createSafety("lesson", warnings),
+        uiHints: createLowConfidenceIntentUiHints(inputData.intentResult),
+        decision: {
+          type: "clarify" as const,
+          intentResult: inputData.intentResult,
+          text: buildPatchRequiresLessonText(),
+        },
+        trace: [
+          ...inputData.trace,
+          ...standards.trace,
+          createTraceEntry(
+            "prepare-patch-response",
+            "blocked",
+            "识别到教案修改意图，但当前请求未携带已确认教案，已改为返回补充提示。",
+          ),
+        ],
+      };
+    }
+
+    return {
+      system: "",
+      standardsContext: standards.standardsContext,
+      standards: standards.standards,
+      generationPlan: createGenerationPlan("lesson"),
+      safety: createSafety("lesson", warnings),
+      uiHints: mergeUiHints(
+        createGenerationUiHints("lesson"),
+        createLowConfidenceIntentUiHints(inputData.intentResult),
+      ),
+      decision: {
+        type: "patch" as const,
+        intentResult: inputData.intentResult,
+      },
+      trace: [
+        ...inputData.trace,
+        ...standards.trace,
+        createTraceEntry(
+          "prepare-patch-response",
+          "success",
+          "已识别为现有教案局部修改请求，跳过 intake 并转入结构化补丁链路。",
+        ),
+      ],
+    };
+  },
+});
+
 const constructPromptStep = createStep({
   id: "construct-generation-prompt",
   description: "根据生成阶段、课堂上下文、信息收集结果与课标解析结果构造 Agent 系统提示词。",
@@ -360,9 +701,10 @@ const constructPromptStep = createStep({
   outputSchema: promptConstructionOutputSchema,
   execute: async ({ inputData }) => {
     const standards = buildDeferredStandardsWorkflowFields(inputData);
+    const resolvedMode = resolveGenerationMode(inputData);
     const system = [
       buildPeTeacherSystemPrompt(inputData.context, {
-        mode: inputData.mode,
+        mode: resolvedMode,
         lessonPlan: inputData.lessonPlan,
         screenPlan: inputData.screenPlan,
       }),
@@ -383,7 +725,7 @@ const constructPromptStep = createStep({
         createTraceEntry(
           "construct-generation-prompt",
           "success",
-          `已构造 ${inputData.mode} 阶段系统提示词，并把课标检索决策交给 Agent 工具。`,
+          `已构造 ${resolvedMode} 阶段系统提示词，并把课标检索决策交给 Agent 工具。`,
         ),
       ],
     };
@@ -396,15 +738,16 @@ const planDeliveryStep = createStep({
   inputSchema: promptConstructionOutputSchema,
   outputSchema: deliveryPlanningOutputSchema,
   execute: async ({ inputData }) => {
+    const resolvedMode = resolveGenerationMode(inputData);
     return {
       ...inputData,
-      generationPlan: createGenerationPlan(inputData.mode),
+      generationPlan: createGenerationPlan(resolvedMode),
       trace: [
         ...inputData.trace,
         createTraceEntry(
           "plan-structured-delivery",
           "success",
-          inputData.mode === "html"
+          resolvedMode === "html"
             ? "已规划 HTML 结构化 Artifact 推流，并抑制原始 HTML 文本进入会话历史。"
             : "已规划 CompetitionLessonPlan JSON 实时推流，并抑制原始 JSON 文本进入会话历史。",
         ),
@@ -419,7 +762,9 @@ const validateSafetyStep = createStep({
   inputSchema: deliveryPlanningOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
-    if (inputData.mode === "html" && !inputData.lessonPlan?.trim()) {
+    const resolvedMode = inputData.generationPlan.mode;
+
+    if (resolvedMode === "html" && !inputData.lessonPlan?.trim()) {
       throw new Error("生成互动大屏前必须提供已确认教案。请先完成教案确认，再进入 HTML 生成阶段。");
     }
 
@@ -429,14 +774,19 @@ const validateSafetyStep = createStep({
       standards: inputData.standards,
       generationPlan: inputData.generationPlan,
       safety: createSafety(
-        inputData.mode,
+        resolvedMode,
         buildWorkflowWarnings({
           intakeResult: inputData.intakeResult,
           standards: inputData.standards,
         }),
       ),
+      uiHints: mergeUiHints(
+        createGenerationUiHints(resolvedMode),
+        createLowConfidenceIntentUiHints(inputData.intentResult),
+      ),
       decision: {
         type: "generate" as const,
+        intentResult: inputData.intentResult,
         ...(inputData.intakeResult ? { intakeResult: inputData.intakeResult } : {}),
       },
       trace: [
@@ -444,7 +794,7 @@ const validateSafetyStep = createStep({
         createTraceEntry(
           "validate-generation-safety",
           "success",
-          inputData.mode === "html"
+          resolvedMode === "html"
             ? "已通过 HTML 结构化推流前置校验，并要求前端沙箱渲染。"
             : "已通过 CompetitionLessonPlan JSON 结构化推流前置校验。",
         ),
@@ -459,7 +809,12 @@ const mergeWorkflowBranchStep = createStep({
   inputSchema: workflowBranchOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
-    const output = inputData["prepare-clarification-response"] ?? inputData["prepare-generation-response"];
+    const output =
+      inputData["prepare-intent-clarification-response"] ??
+      inputData["prepare-standards-consultation-response"] ??
+      inputData["prepare-patch-response"] ??
+      inputData["prepare-clarification-response"] ??
+      inputData["prepare-generation-response"];
 
     if (!output) {
       throw new Error("教案工作流没有命中可执行分支。");
@@ -471,9 +826,13 @@ const mergeWorkflowBranchStep = createStep({
 
 export function createLessonAuthoringWorkflow(
   options: {
+    runLessonIntent?: LessonIntentRunner;
     runLessonIntake?: LessonIntakeRunner;
   } = {},
 ) {
+  const classifyIntentStep = createClassifyIntentStep(
+    options.runLessonIntent ?? runLessonIntentSkill,
+  );
   const collectLessonRequirementsStep = createCollectLessonRequirementsStep(
     options.runLessonIntake ?? runLessonIntakeSkill,
   );
@@ -490,20 +849,36 @@ export function createLessonAuthoringWorkflow(
 
   return createWorkflow({
     id: "lesson-authoring-workflow",
-    description: "编排信息收集、追问分支、课标检索、提示词构建、结构化推流计划与 HTML 沙箱安全校验。",
+    description: "编排入口意图识别、信息收集、追问分支、课标咨询、补丁分发、提示词构建与结构化推流安全校验。",
     inputSchema: lessonWorkflowInputSchema,
     outputSchema: lessonWorkflowOutputSchema,
   })
+    .then(classifyIntentStep)
     .then(collectLessonRequirementsStep)
     .branch([
       [
+        async ({ inputData }) => inputData.intentResult.intent === "clarify",
+        prepareIntentClarificationResponseStep,
+      ],
+      [
+        async ({ inputData }) => inputData.intentResult.intent === "consult_standards",
+        prepareStandardsConsultationResponseStep,
+      ],
+      [
+        async ({ inputData }) => inputData.intentResult.intent === "patch_lesson",
+        preparePatchResponseStep,
+      ],
+      [
         async ({ inputData }) =>
-          inputData.mode === "lesson" && inputData.intakeResult?.intake.readyToGenerate === false,
+          inputData.intentResult.intent === "generate_lesson" &&
+          inputData.intakeResult?.intake.readyToGenerate === false,
         prepareClarificationResponseStep,
       ],
       [
         async ({ inputData }) =>
-          inputData.mode === "html" || inputData.intakeResult?.intake.readyToGenerate === true,
+          inputData.intentResult.intent === "generate_html" ||
+          (inputData.intentResult.intent === "generate_lesson" &&
+            inputData.intakeResult?.intake.readyToGenerate === true),
         prepareGenerationWorkflow,
       ],
     ])

@@ -10,6 +10,7 @@ import { toast } from "sonner";
 
 import SmartEduArtifact from "@/components/ai/SmartEduArtifact";
 import { useArtifactLifecycle } from "@/components/ai/artifact-model";
+import { applyUiHints } from "@/components/ai/artifact-ui-hints";
 import AuthPanel from "@/components/auth/AuthPanel";
 import BrandLogo from "@/components/BrandLogo";
 import ChatPanel from "@/components/workspace/ChatPanel";
@@ -22,6 +23,7 @@ import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import ProjectDirectoryPanel from "@/components/workspace/ProjectDirectoryPanel";
 import { useWorkspaceProjectData } from "@/components/workspace/useWorkspaceProjectData";
 import {
+  DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   projectIdSchema,
   smartEduDataSchemas,
@@ -29,6 +31,7 @@ import {
   type PersistedProjectSummary,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
+import { withSmartEduProjectHeader } from "@/lib/api/smartedu-request-headers";
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
 import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
@@ -84,6 +87,7 @@ function createLocalPatchMessages(input: {
   summary: string;
 }): SmartEduUIMessage[] {
   const now = new Date().toISOString();
+  const requestId = `local-patch-${crypto.randomUUID()}`;
   const userMessageId = `local-user-${crypto.randomUUID()}`;
   const assistantMessageId = `local-lesson-patch-${crypto.randomUUID()}`;
 
@@ -100,6 +104,37 @@ function createLocalPatchMessages(input: {
         {
           type: "text",
           text: `已完成局部修改：${input.summary}。`,
+        },
+        {
+          type: "data-trace",
+          id: "trace",
+          data: {
+            protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+            requestId,
+            mode: "lesson",
+            phase: "completed",
+            responseTransport: "structured-data-part",
+            requestedMarket: DEFAULT_STANDARDS_MARKET,
+            resolvedMarket: DEFAULT_STANDARDS_MARKET,
+            warnings: [],
+            uiHints: [
+              {
+                action: "switch_tab",
+                params: {
+                  tab: "lesson",
+                },
+              },
+            ],
+            trace: [
+              {
+                step: "lesson-patch-finished",
+                status: "success",
+                detail: input.summary,
+                timestamp: now,
+              },
+            ],
+            updatedAt: now,
+          },
         },
         {
           type: "data-artifact",
@@ -152,12 +187,19 @@ function AppContent() {
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        prepareSendMessagesRequest: ({ body, messages }) => ({
-          body: {
-            ...body,
-            messages,
-          },
-        }),
+        prepareSendMessagesRequest: ({ body, headers, messages }) => {
+          // Phase 7: 记忆激活 - 废弃全量传递，只传递增量（最后一条）消息。
+          // 历史上下文将由后端的 Mastra Storage Adapter 自动接管并组装。
+          const incrementalMessages = messages.length > 0 ? [messages[messages.length - 1]] : [];
+
+          return {
+            body: {
+              ...body,
+              messages: incrementalMessages,
+            },
+            headers: withSmartEduProjectHeader(headers, body?.projectId),
+          };
+        },
       }),
     [],
   );
@@ -328,6 +370,7 @@ function AppContent() {
           const patchResult = await requestCompetitionLessonPatch({
             instruction: normalizedQuery,
             lessonPlan: currentLessonPlan,
+            projectId: explicitProjectId ?? undefined,
           });
           const changedPaths = patchResult.patch.operations.map((operation) => operation.path);
           const summary =
@@ -507,11 +550,19 @@ function AppContent() {
       setPersistedVersions(payload.versions);
       setLessonConfirmed(false);
       setHasLiveArtifactAuthority(false);
-      toast.success("版本已恢复", {
-        description: snapshot.stage === "lesson"
-          ? `已将\u201c${snapshot.title}\u201d恢复为当前教案版本，原互动大屏已失效，请重新生成。`
-          : `已将\u201c${snapshot.title}\u201d恢复为当前互动大屏版本。`,
-      });
+
+      // 业务状态描述权归后端：从 API 响应的 uiHints 中执行 UI 指令
+      if (payload.uiHints.length > 0) {
+        applyUiHints(payload.uiHints, {
+          setView: () => {},
+          showToast: ({ level, title: toastTitle, description }) => {
+            const toaster = level === "error" ? toast.error : level === "warning" ? toast.warning : toast.success;
+            toaster(toastTitle, description ? { description } : undefined);
+          },
+        });
+      } else {
+        toast.success("版本已恢复");
+      }
     } catch (restoreError) {
       toast.error("版本恢复失败", {
         description: restoreError instanceof Error ? restoreError.message : "请稍后重试。",

@@ -77,7 +77,7 @@ describe("artifact-view-state", () => {
     });
   });
 
-  it("keeps assistant text fallback in the JSON stream view before schema parsing", () => {
+  it("没有 data-artifact 时会保持等待结构化首包的流式工作区", () => {
     const assistantMessage = {
       id: "assistant-lesson-text-stream",
       role: "assistant",
@@ -94,9 +94,9 @@ describe("artifact-view-state", () => {
     const displayState = getLessonArtifactDisplayState(lifecycle);
 
     expect(displayState).toMatchObject({
-      hasLesson: true,
-      isJsonStream: true,
-      isPendingStream: false,
+      hasLesson: false,
+      isJsonStream: false,
+      isPendingStream: true,
       isStreamActive: true,
       shouldShowPrintFrame: false,
       shouldShowWorkspace: true,

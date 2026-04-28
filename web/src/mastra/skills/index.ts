@@ -20,7 +20,17 @@ export {
   type LessonIntakeGenerateRunner,
   type LessonIntakeSkillResult,
 } from "./lesson_intake_skill";
+export {
+  lessonIntentSchema,
+  runLessonIntentSkill,
+  type LessonIntent,
+  type LessonIntentGenerateRunner,
+} from "./lesson_intent_skill";
 export { runLessonGenerationSkill } from "./lesson_generation_skill";
+export {
+  runLessonGenerationWithRepair,
+  type LessonRepairGenerateRunner,
+} from "./lesson_generation_repair";
 export { runStandardsRetrievalSkill } from "./standards_retrieval_skill";
 export {
   createLessonClarificationStreamAdapter,

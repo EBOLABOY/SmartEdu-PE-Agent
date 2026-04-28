@@ -14,8 +14,7 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
-import React, { useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
+import React from "react";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 
 import {
@@ -28,24 +27,21 @@ import {
 } from "@/components/ai-elements/artifact";
 import type { ArtifactLifecycle, ArtifactLifecycleStatus, ArtifactSnapshot } from "@/components/ai/artifact-model";
 import {
-  getArtifactDefaultView,
   getHtmlArtifactDisplayState,
   getLessonArtifactDisplayState,
-  type ArtifactView,
 } from "@/components/ai/artifact-view-state";
+import { useArtifactController } from "@/components/ai/useArtifactController";
 import ArtifactTextViewer from "@/components/ai/renderers/ArtifactTextViewer";
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
 import NativeLessonScreen from "@/components/ai/renderers/NativeLessonScreen";
-import CompetitionLessonPrintFrame, {
-  type CompetitionLessonPrintFrameHandle,
-} from "@/components/lesson-print/CompetitionLessonPrintFrame";
+import CompetitionLessonPrintFrame from "@/components/lesson-print/CompetitionLessonPrintFrame";
+import type { ArtifactView } from "@/lib/lesson-authoring-contract";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SelectableSurface, StateNotice, StateSurface } from "@/components/ui/state-surface";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { exportHtmlResponseSchema } from "@/lib/lesson-authoring-contract";
 
 interface SmartEduArtifactProps {
   lifecycle: ArtifactLifecycle;
@@ -157,12 +153,6 @@ function formatSnapshotTime(snapshot: ArtifactSnapshot) {
   return new Date(snapshot.createdAt).toLocaleString("zh-CN");
 }
 
-function getNativeScreenKey(slides: NonNullable<ArtifactLifecycle["slideData"]>) {
-  return slides
-    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.supportModule}`)
-    .join("|");
-}
-
 function VersionItem({
   snapshot,
   isSelected,
@@ -204,11 +194,27 @@ export default function SmartEduArtifact({
   onGenerateHtml,
   onRestoreArtifactVersion,
 }: SmartEduArtifactProps) {
-  const [view, setView] = useState<ArtifactView | null>(null);
-  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-  const printFrameRef = useRef<CompetitionLessonPrintFrameHandle>(null);
-  const activeView = view ?? getArtifactDefaultView(lifecycle, isHtmlGenerationPending);
+  const {
+    activeView,
+    canRestoreSelectedVersion,
+    downloadHtml,
+    generateHtml,
+    isExporting,
+    printFrameRef,
+    printLesson,
+    restoreSelectedVersion,
+    selectedVersion,
+    selectedVersionScreenKey,
+    selectedVersionSlideData,
+    setSelectedVersionId,
+    setView,
+  } = useArtifactController({
+    isHtmlGenerationPending,
+    lifecycle,
+    onGenerateHtml,
+    onRestoreArtifactVersion,
+    projectId,
+  });
   const html = lifecycle.html;
   const streamingHtml = lifecycle.streamingHtml;
   const htmlDisplay = getHtmlArtifactDisplayState(lifecycle, isHtmlGenerationPending);
@@ -217,144 +223,10 @@ export default function SmartEduArtifact({
   const competitionLessonPlan = lifecycle.lessonPlan;
   const nativeSlideData = lifecycle.slideData ?? [];
   const hasNativeScreen = nativeSlideData.length > 0;
-  const nativeScreenKey = getNativeScreenKey(nativeSlideData);
+  const nativeScreenKey = nativeSlideData
+    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.supportModule}`)
+    .join("|");
   const nativeScreenTitle = competitionLessonPlan?.title ?? "课堂学习辅助大屏";
-  const effectiveSelectedVersionId =
-    selectedVersionId && lifecycle.versions.some((snapshot) => snapshot.id === selectedVersionId)
-      ? selectedVersionId
-      : lifecycle.activeArtifact?.id ?? lifecycle.versions.at(-1)?.id ?? null;
-  const selectedVersion =
-    lifecycle.versions.find((snapshot) => snapshot.id === effectiveSelectedVersionId) ??
-    lifecycle.activeArtifact ??
-    lifecycle.versions.at(-1);
-  const selectedVersionScreenPlan = useMemo(() => {
-    if (!selectedVersion) {
-      return undefined;
-    }
-
-    if (selectedVersion.screenPlan) {
-      return selectedVersion.screenPlan;
-    }
-
-    if (selectedVersion.stage !== "html") {
-      return undefined;
-    }
-
-    const selectedVersionIndex = lifecycle.versions.findIndex((snapshot) => snapshot.id === selectedVersion.id);
-    const priorVersions =
-      selectedVersionIndex >= 0
-        ? lifecycle.versions.slice(0, selectedVersionIndex).reverse()
-        : [...lifecycle.versions].reverse();
-
-    return (
-      priorVersions.find((snapshot) => snapshot.stage === "lesson" && snapshot.screenPlan)?.screenPlan ??
-      lifecycle.screenPlan
-    );
-  }, [lifecycle.screenPlan, lifecycle.versions, selectedVersion]);
-  const selectedVersionSlideData = selectedVersionScreenPlan?.sections ?? [];
-  const selectedVersionScreenKey = getNativeScreenKey(selectedVersionSlideData);
-  const canRestoreSelectedVersion = Boolean(
-    selectedVersion?.persistedVersionId &&
-      !selectedVersion.isCurrent &&
-      onRestoreArtifactVersion,
-  );
-
-  const downloadBlob = useMemo(() => {
-    if (!hasHtml) {
-      return null;
-    }
-
-    return new Blob([html], { type: "text/html;charset=utf-8" });
-  }, [hasHtml, html]);
-
-  const downloadHtmlLocally = () => {
-    if (!downloadBlob) {
-      toast.warning("暂无可导出的大屏文件", { description: "请先确认教案并生成互动大屏。" });
-      return;
-    }
-
-    const url = URL.createObjectURL(downloadBlob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "smartedu-pe-screen.html";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadHtml = () => {
-    void (async () => {
-      if (!downloadBlob) {
-        toast.warning("暂无可导出的大屏文件", { description: "请先确认教案并生成互动大屏。" });
-        return;
-      }
-
-      if (!projectId) {
-        downloadHtmlLocally();
-        toast.success("大屏文件已导出", { description: "当前为临时会话，已保存为本地 HTML 文件。" });
-        return;
-      }
-
-      setIsExporting(true);
-
-      try {
-        const response = await fetch(`/api/projects/${projectId}/exports/html`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            artifactVersionId: lifecycle.activeArtifact?.persistedVersionId,
-            filename: "smartedu-pe-screen.html",
-            html,
-          }),
-        });
-        const payload = await response.json().catch(() => null);
-
-        if (!response.ok) {
-          throw new Error(
-            payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
-              ? payload.error
-              : "云端导出失败。",
-          );
-        }
-
-        const parsedPayload = exportHtmlResponseSchema.safeParse(payload);
-
-        if (!parsedPayload.success) {
-          throw new Error("云端导出响应结构不合法。");
-        }
-
-        downloadHtmlLocally();
-        toast.success("大屏文件已导出", {
-          description: `已写入 R2：${parsedPayload.data.exportFile.objectKey}`,
-        });
-      } catch (exportError) {
-        downloadHtmlLocally();
-        toast.warning("云端导出未完成，已改为本地导出", {
-          description: exportError instanceof Error ? exportError.message : "请检查 R2 环境配置后重试。",
-        });
-      } finally {
-        setIsExporting(false);
-      }
-    })();
-  };
-
-  const generateHtml = () => {
-    setView("canvas");
-    onGenerateHtml();
-  };
-
-  const printLesson = () => {
-    printFrameRef.current?.print();
-  };
-
-  const restoreSelectedVersion = () => {
-    if (!selectedVersion || !onRestoreArtifactVersion) {
-      return;
-    }
-
-    void onRestoreArtifactVersion(selectedVersion);
-  };
 
   return (
     <Artifact className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none">

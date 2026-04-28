@@ -4,17 +4,23 @@ import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   standardsMarketSchema,
+  uiHintSchema,
   workflowStandardsSnapshotSchema,
   workflowTraceEntrySchema,
   type StandardsMarket,
+  type UiHint,
   type WorkflowTraceData,
   type WorkflowTraceEntry,
 } from "@/lib/lesson-authoring-contract";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
+type WorkflowCompatibleOutput = Omit<LessonWorkflowOutput, "uiHints"> & {
+  uiHints?: LessonWorkflowOutput["uiHints"];
+};
+
 type WorkflowRunResult = {
   error?: unknown;
-  result?: LessonWorkflowOutput;
+  result?: WorkflowCompatibleOutput;
   status: string;
 };
 
@@ -47,16 +53,21 @@ export type LessonWorkflowTraceState = {
   resolvedMarket: StandardsMarket;
   standards?: WorkflowTraceData["standards"];
   trace: WorkflowTraceEntry[];
+  uiHints: UiHint[];
   warnings: string[];
 };
 
 const WORKFLOW_RESPONSE_TRANSPORT = "structured-data-part" as const;
 
 const STEP_RUNNING_DETAILS: Record<string, string> = {
+  "classify-intent": "正在识别当前请求的入口意图。",
   "collect-lesson-requirements": "正在核对课题、年级、场地和器材等上课信息。",
+  "prepare-intent-clarification-response": "正在准备任务方向澄清提示。",
+  "prepare-patch-response": "正在准备教案补丁分发上下文。",
+  "prepare-standards-consultation-response": "正在准备课标咨询结果。",
   "prepare-clarification-response": "正在准备必要追问。",
   "prepare-generation-response": "正在准备正式生成上下文。",
-  "retrieve-standards-context": "正在检索课程标准并解析目标市场。",
+  "consult-standards-context": "正在检索课程标准并解析目标市场。",
   "construct-generation-prompt": "正在构造生成提示词。",
   "plan-structured-delivery": "正在规划结构化输出协议。",
   "validate-generation-safety": "正在校验生成安全边界。",
@@ -64,10 +75,14 @@ const STEP_RUNNING_DETAILS: Record<string, string> = {
 };
 
 const STEP_SUCCESS_DETAILS: Record<string, string> = {
+  "classify-intent": "入口意图识别已完成。",
   "collect-lesson-requirements": "信息收集已完成。",
+  "prepare-intent-clarification-response": "任务方向澄清提示已准备。",
+  "prepare-patch-response": "教案补丁分发上下文已准备。",
+  "prepare-standards-consultation-response": "课标咨询结果已准备。",
   "prepare-clarification-response": "必要追问已准备。",
   "prepare-generation-response": "正式生成上下文已准备。",
-  "retrieve-standards-context": "课程标准检索已完成。",
+  "consult-standards-context": "课程标准检索已完成。",
   "construct-generation-prompt": "生成提示词已构造。",
   "plan-structured-delivery": "结构化输出协议已就绪。",
   "validate-generation-safety": "生成安全校验已通过。",
@@ -99,6 +114,7 @@ export function createLessonWorkflowTraceState(input: LessonWorkflowInput): Less
     requestedMarket,
     resolvedMarket: requestedMarket,
     trace: [],
+    uiHints: [],
     warnings: [],
   };
 }
@@ -107,6 +123,7 @@ export function buildWorkflowTraceData(
   state: LessonWorkflowTraceState,
   requestId: string,
   phase: WorkflowTraceData["phase"],
+  uiHints: UiHint[] = state.uiHints,
 ): WorkflowTraceData {
   return {
     protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -117,6 +134,7 @@ export function buildWorkflowTraceData(
     requestedMarket: state.requestedMarket,
     resolvedMarket: state.resolvedMarket,
     warnings: state.warnings,
+    uiHints,
     ...(state.standards ? { standards: state.standards } : {}),
     trace: state.trace,
     updatedAt: nowIsoString(),
@@ -128,6 +146,7 @@ export function buildWorkflowTraceDataFromWorkflow(
   requestId: string,
   phase: WorkflowTraceData["phase"],
   trace: WorkflowTraceEntry[] = workflow.trace,
+  uiHints: UiHint[] = workflow.uiHints,
 ): WorkflowTraceData {
   return buildWorkflowTraceData(
     {
@@ -146,10 +165,12 @@ export function buildWorkflowTraceDataFromWorkflow(
           }
         : undefined,
       trace,
+      uiHints,
       warnings: workflow.safety.warnings,
     },
     requestId,
     phase,
+    uiHints,
   );
 }
 
@@ -291,6 +312,14 @@ function updateSafetySnapshot(state: LessonWorkflowTraceState, output: Record<st
   state.warnings = safety.warnings.filter((warning): warning is string => typeof warning === "string");
 }
 
+function updateUiHints(state: LessonWorkflowTraceState, output: Record<string, unknown>) {
+  const parsed = uiHintSchema.array().safeParse(output.uiHints);
+
+  if (parsed.success) {
+    state.uiHints = parsed.data;
+  }
+}
+
 function updateStateFromStepOutput(state: LessonWorkflowTraceState, output: unknown) {
   if (!isRecord(output)) {
     return;
@@ -298,6 +327,7 @@ function updateStateFromStepOutput(state: LessonWorkflowTraceState, output: unkn
 
   updateStandardsSnapshot(state, output);
   updateSafetySnapshot(state, output);
+  updateUiHints(state, output);
 
   const trace = getWorkflowTraceEntries(output);
 
@@ -353,7 +383,10 @@ function assertSuccessfulWorkflowResult(result: WorkflowRunResult): LessonWorkfl
     );
   }
 
-  return result.result;
+  return {
+    ...result.result,
+    uiHints: result.result.uiHints ?? [],
+  };
 }
 
 export async function runLessonAuthoringWorkflowWithTrace(
@@ -371,9 +404,9 @@ export async function runLessonAuthoringWorkflowWithTrace(
   replaceTraceEntry(
     state,
     createWorkflowTraceEntry(
-      "collect-lesson-requirements",
+      "classify-intent",
       "running",
-      STEP_RUNNING_DETAILS["collect-lesson-requirements"],
+      STEP_RUNNING_DETAILS["classify-intent"],
     ),
   );
   publishTrace();

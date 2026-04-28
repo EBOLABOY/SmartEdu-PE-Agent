@@ -10,6 +10,14 @@ import {
   runLessonAuthoringWorkflowWithTrace,
 } from "./lesson_workflow_stream";
 
+function createIntentResult() {
+  return {
+    intent: "generate_lesson" as const,
+    confidence: 0.91,
+    reason: "测试用生成意图。",
+  };
+}
+
 const workflowOutput = {
   system: "system prompt",
   standardsContext: "",
@@ -42,8 +50,17 @@ const workflowOutput = {
     forbiddenCapabilities: [],
     warnings: [],
   },
+  uiHints: [
+    {
+      action: "switch_tab",
+      params: {
+        tab: "lesson",
+      },
+    },
+  ],
   decision: {
     type: "generate",
+    intentResult: createIntentResult(),
   },
   trace: [
     {
@@ -111,6 +128,7 @@ describe("lesson workflow stream adapter", () => {
     expect(finished).toBe(true);
     expect(state.trace).toEqual(workflowOutput.trace);
     expect(state.standards?.references).toEqual([]);
+    expect(state.uiHints).toEqual(workflowOutput.uiHints);
   });
 
   it("runs workflow through run.stream and publishes trace before completion", async () => {
@@ -161,19 +179,20 @@ describe("lesson workflow stream adapter", () => {
       },
     );
 
-    expect(result).toBe(workflowOutput);
+    expect(result).toStrictEqual(workflowOutput);
     expect(createRun).toHaveBeenCalledOnce();
     expect(traces[0]).toEqual(
       expect.objectContaining({
         phase: "workflow",
         trace: [
           expect.objectContaining({
-            step: "collect-lesson-requirements",
+            step: "classify-intent",
             status: "running",
           }),
         ],
       }),
     );
     expect(traces.at(-1)?.trace).toEqual(workflowOutput.trace);
+    expect(traces.at(-1)?.uiHints).toEqual(workflowOutput.uiHints);
   });
 });

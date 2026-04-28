@@ -9,6 +9,8 @@ export const generationModeSchema = z.enum(["lesson", "html"]);
 export type GenerationMode = z.infer<typeof generationModeSchema>;
 export const artifactContentTypeSchema = z.enum(["html", "lesson-json"]);
 export type ArtifactContentType = z.infer<typeof artifactContentTypeSchema>;
+export const artifactViewSchema = z.enum(["lesson", "canvas", "versions"]);
+export type ArtifactView = z.infer<typeof artifactViewSchema>;
 
 export const projectIdSchema = z.string().uuid();
 
@@ -153,6 +155,56 @@ export const workflowStandardsSnapshotSchema = z
 
 export type WorkflowStandardsSnapshot = z.infer<typeof workflowStandardsSnapshotSchema>;
 
+export const uiHintToastLevelSchema = z.enum(["info", "success", "warning", "error"]);
+export type UiHintToastLevel = z.infer<typeof uiHintToastLevelSchema>;
+
+export const uiHintSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("switch_tab"),
+      params: z
+        .object({
+          tab: artifactViewSchema,
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("show_toast"),
+      params: z
+        .object({
+          level: uiHintToastLevelSchema,
+          title: z.string().trim().min(1).max(120),
+          description: z.string().trim().min(1).max(240).optional(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("trigger_print"),
+      params: z
+        .object({
+          target: z.literal("lesson"),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("scroll_to"),
+      params: z
+        .object({
+          target: z.enum(["artifact-top", "artifact-content", "versions-panel"]),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
+export type UiHint = z.infer<typeof uiHintSchema>;
+
 export const structuredArtifactDataSchema = z.object({
   protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
   stage: generationModeSchema,
@@ -177,6 +229,7 @@ export const workflowTraceDataSchema = z.object({
   requestedMarket: standardsMarketSchema,
   resolvedMarket: standardsMarketSchema,
   warnings: z.array(z.string()),
+  uiHints: z.array(uiHintSchema).default([]),
   standards: workflowStandardsSnapshotSchema.optional(),
   trace: z.array(workflowTraceEntrySchema),
   updatedAt: z.string().datetime(),
@@ -252,6 +305,7 @@ export const artifactVersionsResponseSchema = z.object({
   projectId: projectIdSchema,
   versions: z.array(persistedArtifactVersionSchema),
   persistence: persistenceStateSchema,
+  uiHints: z.array(uiHintSchema).default([]),
 });
 
 export type ArtifactVersionsResponse = z.infer<typeof artifactVersionsResponseSchema>;

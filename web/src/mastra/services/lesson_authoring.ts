@@ -5,10 +5,15 @@ import { toAISdkStream } from "@mastra/ai-sdk";
 import {
   createUIMessageStream,
   type UIMessage,
+  type UIMessageChunk,
   type UIMessageStreamWriter,
 } from "ai";
 
-import type { AgentLessonGenerationResult } from "@/lib/competition-lesson-contract";
+import {
+  competitionLessonPlanSchema,
+  type AgentLessonGenerationResult,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
 import {
   DEFAULT_STANDARDS_MARKET,
   type GenerationMode,
@@ -17,6 +22,7 @@ import {
   type PeTeacherContext,
   type SmartEduUIMessage,
   type StandardsMarket,
+  type UiHint,
 } from "@/lib/lesson-authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { LessonMemoryPersistence } from "@/lib/persistence/lesson-memory-store";
@@ -26,12 +32,15 @@ import { formatLessonScreenPlanForPrompt } from "@/mastra/agents/html_screen_pla
 import {
   createLessonClarificationStreamAdapter,
   createStructuredAuthoringStreamAdapter,
+  runCompetitionLessonPatchSkill,
   runHtmlScreenGenerationSkill,
   runHtmlScreenPlanningSkill,
-  runLessonGenerationSkill,
+  runLessonGenerationWithRepair,
   type AgentStreamRunner,
   type HtmlScreenPlanAgentRunner,
   type HtmlScreenPlanningResult,
+  type LessonRepairGenerateRunner,
+  type LessonPatchAgentRunner,
 } from "@/mastra/skills";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 import {
@@ -48,6 +57,7 @@ export type LessonAuthoringRequest = {
   chatPersistence?: ProjectChatPersistence | null;
   memory?: LessonAuthoringMemory;
   memoryPersistence?: LessonMemoryPersistence | null;
+  mastraStorageAdapter?: import("@/mastra/storage/mastra-storage-adapter").SupabaseMastraStorageAdapter | null;
   projectId?: string;
   context?: PeTeacherContext;
   mode?: GenerationMode;
@@ -86,6 +96,38 @@ function getLatestUserText(messages: UIMessage[]) {
     .join("\n");
 }
 
+function parseConfirmedLessonPlan(lessonPlan?: string): CompetitionLessonPlan | undefined {
+  if (!lessonPlan?.trim()) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(lessonPlan);
+    const result = competitionLessonPlanSchema.safeParse(parsed);
+
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function createPatchedLessonStream(lessonPlan: CompetitionLessonPlan) {
+  return new ReadableStream<UIMessageChunk>({
+    start(controller) {
+      controller.enqueue({
+        type: "data-structured-output",
+        data: {
+          object: {
+            lessonPlan,
+          },
+        },
+      } as UIMessageChunk);
+      controller.enqueue({ type: "finish", finishReason: "stop" });
+      controller.close();
+    },
+  });
+}
+
 function getWorkflowFailureMessage(result: { status: string; error?: unknown }) {
   if (result.error instanceof Error) {
     return result.error.message;
@@ -98,6 +140,8 @@ function logLessonAuthoringTrace(trace: LessonAuthoringTrace) {
   console.info("[lesson-authoring]", {
     requestId: trace.requestId,
     mode: trace.mode,
+    decisionType: trace.workflow.decision.type,
+    intent: trace.workflow.decision.intentResult.intent,
     queryLength: trace.query.length,
     outputProtocol: trace.workflow.generationPlan.outputProtocol,
     responseTransport: trace.workflow.generationPlan.responseTransport,
@@ -160,7 +204,10 @@ async function rememberLessonIntake(input: {
     return;
   }
 
-  const intakeResult = input.workflow.decision.intakeResult;
+  const intakeResult =
+    "intakeResult" in input.workflow.decision
+      ? input.workflow.decision.intakeResult
+      : undefined;
 
   if (!intakeResult) {
     return;
@@ -191,8 +238,9 @@ function writeWorkflowTracePart(
   requestId: string,
   phase: Parameters<typeof buildWorkflowTraceDataFromWorkflow>[2],
   trace = workflow.trace,
+  uiHints: UiHint[] = workflow.uiHints,
 ) {
-  writeTracePart(writer, buildWorkflowTraceDataFromWorkflow(workflow, requestId, phase, trace));
+  writeTracePart(writer, buildWorkflowTraceDataFromWorkflow(workflow, requestId, phase, trace, uiHints));
 }
 
 function appendWorkflowTrace(
@@ -202,6 +250,65 @@ function appendWorkflowTrace(
   return {
     ...workflow,
     trace: [...workflow.trace, entry],
+  };
+}
+
+function mergeUiHints(...collections: UiHint[][]) {
+  const seen = new Set<string>();
+  const merged: UiHint[] = [];
+
+  collections.flat().forEach((hint) => {
+    const signature = JSON.stringify(hint);
+
+    if (seen.has(signature)) {
+      return;
+    }
+
+    seen.add(signature);
+    merged.push(hint);
+  });
+
+  return merged;
+}
+
+function buildIntentExecutionHandover(workflow: LessonWorkflowOutput) {
+  const { confidence, intent, reason } = workflow.decision.intentResult;
+
+  return [
+    "入口意图接力说明（隐藏执行指令，不要向教师复述）：",
+    `- 当前入口判定：${intent}（置信度 ${confidence.toFixed(2)}）。`,
+    `- 判定依据：${reason}`,
+    "- 执行原则：优先围绕上述判定依据理解教师真正想解决的问题；若与教师最新明确指令冲突，以教师最新明确指令为准。",
+  ].join("\n");
+}
+
+function appendHiddenInstructions(baseSystem: string, hiddenInstructions?: string) {
+  if (!hiddenInstructions?.trim()) {
+    return baseSystem;
+  }
+
+  return [baseSystem, hiddenInstructions].join("\n\n");
+}
+
+function applyIntentExecutionHandover(workflow: LessonWorkflowOutput) {
+  if (workflow.decision.type !== "generate") {
+    return workflow;
+  }
+
+  return {
+    ...workflow,
+    system: appendHiddenInstructions(workflow.system, buildIntentExecutionHandover(workflow)),
+  };
+}
+
+function createRepairSuccessUiHint(): UiHint {
+  return {
+    action: "show_toast",
+    params: {
+      level: "success",
+      title: "教案已自动修复",
+      description: "检测到教案中存在未完成字段，系统已自动完善并替换占位符。",
+    },
   };
 }
 
@@ -230,6 +337,45 @@ function writeAuthoringFailure(input: {
   input.writer.write({ type: "finish", finishReason: "error" });
 }
 
+async function buildExecutionMessages(request: LessonAuthoringRequest): Promise<SmartEduUIMessage[]> {
+  const incrementalMessages = request.messages;
+
+  if (!request.projectId || !request.mastraStorageAdapter) {
+    return incrementalMessages;
+  }
+
+  try {
+    const history = await request.mastraStorageAdapter.listMessages({
+      threadId: request.projectId,
+      limit: 15,
+    });
+
+    if (history.length === 0) {
+      return incrementalMessages;
+    }
+
+    // Sanitize: 剥离占用大量 Token 的 Data Part 等结构化载荷，仅提取纯文本意图
+    const sanitizedHistory: SmartEduUIMessage[] = history.map((msg) => ({
+      id: msg.id,
+      role: msg.role === "system" ? "system" : msg.role === "user" ? "user" : "assistant",
+      content: msg.content,
+      parts: [{ type: "text", text: msg.content }],
+    }));
+
+    // 去重合并：因为前端最后一条消息在 route.ts 中已被 upsert，可能包含在 history 里
+    const historyIds = new Set(sanitizedHistory.map((m) => m.id));
+    const newMessages = incrementalMessages.filter((m) => !historyIds.has(m.id));
+
+    return [...sanitizedHistory, ...newMessages];
+  } catch (error) {
+    console.warn("[lesson-authoring] build-execution-messages-failed", {
+      projectId: request.projectId,
+      message: error instanceof Error ? error.message : "unknown-error",
+    });
+    return incrementalMessages;
+  }
+}
+
 export async function runLessonAuthoringWorkflow(input: LessonWorkflowInput) {
   const workflow = mastra.getWorkflow("lessonAuthoringWorkflow");
   const run = await workflow.createRun();
@@ -250,6 +396,7 @@ async function executeLessonAuthoringStream(input: {
   writer: UIMessageStreamWriter<SmartEduUIMessage>;
 }) {
   const { mode, query, request, requestId, writer } = input;
+  const executionMessages = await buildExecutionMessages(request);
   const requestedMarket = request.market ?? DEFAULT_STANDARDS_MARKET;
   const workflowRunner = mastra.getWorkflow("lessonAuthoringWorkflow");
   let workflow = await runLessonAuthoringWorkflowWithTrace(
@@ -262,7 +409,7 @@ async function executeLessonAuthoringStream(input: {
       screenPlan: request.screenPlan,
       market: requestedMarket,
       memory: request.memory,
-      messages: request.messages,
+      messages: executionMessages,
       requestId,
     },
     {
@@ -270,8 +417,9 @@ async function executeLessonAuthoringStream(input: {
       onTrace: (traceData) => writeTracePart(writer, traceData),
     },
   );
+  workflow = applyIntentExecutionHandover(workflow);
 
-  logLessonAuthoringTrace({ workflow, mode, query, requestId });
+  logLessonAuthoringTrace({ workflow, mode: workflow.generationPlan.mode, query, requestId });
 
   await rememberLessonIntake({
     context: request.context,
@@ -281,10 +429,10 @@ async function executeLessonAuthoringStream(input: {
     requestId,
   });
 
-  if (workflow.decision.type === "clarify") {
+  if (workflow.decision.type === "clarify" || workflow.decision.type === "respond") {
     writer.merge(
       createLessonClarificationStreamAdapter({
-        originalMessages: request.messages,
+        originalMessages: executionMessages,
         chatPersistence: request.chatPersistence,
         projectId: request.projectId,
         requestId,
@@ -295,14 +443,72 @@ async function executeLessonAuthoringStream(input: {
     return;
   }
 
+  if (workflow.decision.type === "patch") {
+    const confirmedLessonPlan = parseConfirmedLessonPlan(request.lessonPlan);
+    const additionalInstructions = buildIntentExecutionHandover(workflow);
+
+    if (!confirmedLessonPlan) {
+      throw new LessonAuthoringError("当前修改请求缺少已确认的结构化教案，无法执行局部补丁。");
+    }
+
+    const patchAgent = mastra.getAgent("lessonPatchAgent");
+    const agentGenerate: LessonPatchAgentRunner = async (messages, options) =>
+      (await patchAgent.generate(messages, options)) as FullOutput<unknown>;
+
+    workflow = appendWorkflowTrace(
+      workflow,
+      createWorkflowTraceEntry("lesson-patch-started", "running", "正在执行结构化教案补丁。"),
+    );
+    writeWorkflowTracePart(writer, workflow, requestId, "generation");
+
+    const patchResponse = await runCompetitionLessonPatchSkill(
+      {
+        instruction: query,
+        lessonPlan: confirmedLessonPlan,
+      },
+      {
+        additionalInstructions,
+        agentGenerate,
+        maxSteps: workflow.generationPlan.maxSteps,
+        requestId,
+      },
+    );
+
+    workflow = appendWorkflowTrace(
+      workflow,
+      createWorkflowTraceEntry(
+        "lesson-patch-finished",
+        "success",
+        patchResponse.patchSummary ??
+          `已完成 ${patchResponse.patch.operations.length} 处结构化教案修改。`,
+      ),
+    );
+    writeWorkflowTracePart(writer, workflow, requestId, "generation");
+
+    writer.merge(
+      createStructuredAuthoringStreamAdapter({
+        originalMessages: executionMessages,
+        chatPersistence: request.chatPersistence,
+        mode: "lesson",
+        persistence: request.persistence,
+        projectId: request.projectId,
+        requestId,
+        workflow,
+        stream: createPatchedLessonStream(patchResponse.lessonPlan),
+      }),
+    );
+    return;
+  }
+
   const agent = mastra.getAgent("peTeacherAgent");
   const agentStream: AgentStreamRunner = async (messages, options) =>
     (await agent.stream(messages, options as never)) as MastraModelOutput<unknown>;
 
-  if (mode === "html") {
+  if (workflow.generationPlan.mode === "html") {
     const plannerAgent = mastra.getAgent("htmlScreenPlannerAgent");
     const agentGenerate: HtmlScreenPlanAgentRunner = async (messages, options) =>
       (await plannerAgent.generate(messages, options)) as FullOutput<LessonScreenPlan>;
+    const additionalInstructions = buildIntentExecutionHandover(workflow);
 
     writeWorkflowTracePart(writer, workflow, requestId, "workflow", [
       ...workflow.trace,
@@ -314,6 +520,7 @@ async function executeLessonAuthoringStream(input: {
     ]);
 
     const screenPlanning = await runHtmlScreenPlanningSkill({
+      additionalInstructions,
       agentGenerate,
       lessonPlan: request.lessonPlan,
       maxSteps: workflow.generationPlan.maxSteps,
@@ -351,7 +558,7 @@ async function executeLessonAuthoringStream(input: {
         originalMessages: request.messages,
         chatPersistence: request.chatPersistence,
         lessonPlan: request.lessonPlan,
-        mode,
+        mode: workflow.generationPlan.mode,
         persistence: request.persistence,
         projectId: request.projectId,
         requestId,
@@ -364,30 +571,49 @@ async function executeLessonAuthoringStream(input: {
 
   const lessonAgentStream: AgentStreamRunner<AgentLessonGenerationResult> = async (messages, options) =>
     (await agent.stream(messages, options as never)) as MastraModelOutput<AgentLessonGenerationResult>;
+  const lessonAgentGenerate: LessonRepairGenerateRunner = async (messages, options) =>
+    (await agent.generate(messages, options as never)) as FullOutput<CompetitionLessonPlan>;
+  const lessonRuntimeTrace = [...workflow.trace];
+  const lessonRuntimeUiHints = [...workflow.uiHints];
+  const recordLessonTrace = (
+    entry: LessonWorkflowOutput["trace"][number],
+    phase: Parameters<typeof buildWorkflowTraceDataFromWorkflow>[2] = "generation",
+  ) => {
+    if (entry.step === "lesson-repair-finished" && entry.status === "success") {
+      const nextUiHints = mergeUiHints(lessonRuntimeUiHints, [createRepairSuccessUiHint()]);
+      lessonRuntimeUiHints.splice(0, lessonRuntimeUiHints.length, ...nextUiHints);
+    }
 
-  workflow = appendWorkflowTrace(
-    workflow,
+    lessonRuntimeTrace.push(entry);
+    writeWorkflowTracePart(writer, workflow, requestId, phase, lessonRuntimeTrace, lessonRuntimeUiHints);
+  };
+
+  recordLessonTrace(
     createWorkflowTraceEntry("agent-stream-started", "running", "正在连接结构化教案生成模型流。"),
   );
-  writeWorkflowTracePart(writer, workflow, requestId, "generation");
 
-  const lessonGeneration = await runLessonGenerationSkill({
+  const lessonGeneration = await runLessonGenerationWithRepair({
     agentStream: lessonAgentStream,
-    messages: request.messages,
+    messages: executionMessages,
+    onTrace: (entry) => recordLessonTrace(entry, "generation"),
+    repairGenerate: lessonAgentGenerate,
     requestId,
     workflow,
   });
 
   writer.merge(
     createStructuredAuthoringStreamAdapter({
-      originalMessages: request.messages,
+      finalLessonPlanPromise: lessonGeneration.finalLessonPlanPromise,
+      originalMessages: executionMessages,
       chatPersistence: request.chatPersistence,
       lessonDraftStream: lessonGeneration.partialOutputStream,
       lessonPlan: request.lessonPlan,
-      mode,
+      mode: workflow.generationPlan.mode,
       persistence: request.persistence,
       projectId: request.projectId,
       requestId,
+      runtimeTrace: lessonRuntimeTrace,
+      runtimeUiHints: lessonRuntimeUiHints,
       workflow,
       stream: lessonGeneration.stream,
     }),

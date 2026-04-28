@@ -1,0 +1,249 @@
+import type { FullOutput } from "@mastra/core/stream";
+import { convertToModelMessages } from "ai";
+
+import {
+  competitionLessonPlanSchema,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
+import type { SmartEduUIMessage, WorkflowTraceEntry } from "@/lib/lesson-authoring-contract";
+
+import {
+  formatLessonValidationIssues,
+  performLessonBusinessValidation,
+} from "./lesson_generation_validation";
+import {
+  runLessonGenerationSkill,
+  runModelOperationWithRetry,
+} from "./lesson_generation_skill";
+
+type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
+
+type LessonRepairGenerateOptions = {
+  system: string;
+  maxSteps: number;
+  providerOptions: {
+    openai: {
+      store: true;
+    };
+  };
+  structuredOutput: {
+    schema: typeof competitionLessonPlanSchema;
+    instructions: string;
+    jsonPromptInjection: boolean;
+  };
+};
+
+export type LessonRepairGenerateRunner = (
+  messages: AgentModelMessages,
+  options: LessonRepairGenerateOptions,
+) => Promise<FullOutput<CompetitionLessonPlan>>;
+
+function nowIsoString() {
+  return new Date().toISOString();
+}
+
+function createRepairTraceEntry(
+  step: string,
+  status: WorkflowTraceEntry["status"],
+  detail: string,
+): WorkflowTraceEntry {
+  return {
+    detail,
+    status,
+    step,
+    timestamp: nowIsoString(),
+  };
+}
+
+function buildRepairSystemPrompt(baseSystem: string) {
+  return [
+    "你正在执行体育教案结构化修复任务，不是自由续写对话。",
+    "目标是在尽量保留原有教学意图、环节结构和已完成内容的前提下，修正占位符、缺失项、业务结构不一致和明显未完成字段。",
+    "你必须只输出符合 CompetitionLessonPlan schema 的完整对象，不要输出解释、Markdown、代码围栏或额外文本。",
+    baseSystem,
+  ].join("\n\n");
+}
+
+function buildStandardsRepairHints(input: {
+  workflow: Parameters<typeof runLessonGenerationSkill>[0]["workflow"];
+}) {
+  const references = input.workflow.standards?.references;
+
+  if (!references?.length) {
+    return undefined;
+  }
+
+  return [
+    "修复时请继续保持与以下课程标准依据一致：",
+    ...references.slice(0, 5).map((reference) => {
+      return `- ${reference.title}：${reference.summary}（${reference.citation}）`;
+    }),
+  ].join("\n");
+}
+
+function buildRepairInstruction(input: {
+  draft: CompetitionLessonPlan;
+  issues: ReturnType<typeof performLessonBusinessValidation>["issues"];
+  workflow: Parameters<typeof runLessonGenerationSkill>[0]["workflow"];
+}) {
+  return [
+    "请修正下面这份结构化体育教案。",
+    "修复要求：",
+    "1. 保留原有教学目标、项目主题和课堂结构，不要无故重写整份教案。",
+    "2. 不要保留 XXX、待补充、同上 等占位符。",
+    "3. 课时计划至少覆盖准备部分、基本部分、结束部分。",
+    "4. 评价标准必须包含三颗星、二颗星、一颗星各 1 条。",
+    "5. 仅输出合法的 CompetitionLessonPlan 对象。",
+    "",
+    "发现的问题：",
+    formatLessonValidationIssues(input.issues),
+    "",
+    buildStandardsRepairHints({ workflow: input.workflow }) ?? "本轮未提供额外课程标准提示。",
+    "",
+    "待修复的当前教案 JSON：",
+    JSON.stringify(input.draft, null, 2),
+  ].join("\n");
+}
+
+async function buildRepairModelMessages(input: {
+  draft: CompetitionLessonPlan;
+  issues: ReturnType<typeof performLessonBusinessValidation>["issues"];
+  messages: SmartEduUIMessage[];
+  requestId: string;
+  workflow: Parameters<typeof runLessonGenerationSkill>[0]["workflow"];
+}) {
+  return convertToModelMessages([
+    ...input.messages,
+    {
+      id: `${input.requestId}-lesson-repair-draft`,
+      role: "assistant",
+      parts: [
+        {
+          type: "text",
+          text: JSON.stringify(input.draft),
+        },
+      ],
+    } satisfies SmartEduUIMessage,
+    {
+      id: `${input.requestId}-lesson-repair-request`,
+      role: "user",
+      parts: [
+        {
+          type: "text",
+          text: buildRepairInstruction(input),
+        },
+      ],
+    } satisfies SmartEduUIMessage,
+  ]);
+}
+
+async function repairLessonPlan(input: {
+  draft: CompetitionLessonPlan;
+  issues: ReturnType<typeof performLessonBusinessValidation>["issues"];
+  messages: SmartEduUIMessage[];
+  repairGenerate: LessonRepairGenerateRunner;
+  requestId: string;
+  workflow: Parameters<typeof runLessonGenerationSkill>[0]["workflow"];
+}) {
+  const repairMessages = await buildRepairModelMessages(input);
+  const repaired = await runModelOperationWithRetry(
+    () =>
+      input.repairGenerate(repairMessages, {
+        maxSteps: Math.max(1, Math.min(input.workflow.generationPlan.maxSteps, 2)),
+        providerOptions: {
+          openai: {
+            store: true,
+          },
+        },
+        structuredOutput: {
+          schema: competitionLessonPlanSchema,
+          instructions:
+            "只输出修复后的完整 CompetitionLessonPlan JSON 对象，不要输出解释、Markdown 或额外文字。",
+          jsonPromptInjection: true,
+        },
+        system: buildRepairSystemPrompt(input.workflow.system),
+      }),
+    {
+      mode: "lesson",
+      requestId: input.requestId,
+    },
+  );
+
+  return competitionLessonPlanSchema.parse(repaired.object);
+}
+
+export async function runLessonGenerationWithRepair(
+  input: Parameters<typeof runLessonGenerationSkill>[0] & {
+    onTrace?: (entry: WorkflowTraceEntry) => void;
+    repairGenerate?: LessonRepairGenerateRunner;
+  },
+) {
+  const generation = await runLessonGenerationSkill(input);
+
+  const finalLessonPlanPromise = generation.finalLessonPlanPromise?.then(async (draft) => {
+    const validation = performLessonBusinessValidation(draft);
+
+    if (validation.isValid) {
+      input.onTrace?.(
+        createRepairTraceEntry(
+          "validate-lesson-output",
+          "success",
+          "结构化教案已通过业务语义校验，无需自动修复。",
+        ),
+      );
+      return draft;
+    }
+
+    input.onTrace?.(
+      createRepairTraceEntry(
+        "lesson-repair-started",
+        "running",
+        `检测到 ${validation.issues.length} 处业务语义问题，正在自动完善结构化教案。`,
+      ),
+    );
+
+    if (!input.repairGenerate) {
+      const message = `结构化教案存在待修复问题，但当前未提供修复模型：\n${formatLessonValidationIssues(validation.issues)}`;
+
+      input.onTrace?.(createRepairTraceEntry("lesson-repair-failed", "failed", message));
+      throw new Error(message);
+    }
+
+    try {
+      const repairedPlan = await repairLessonPlan({
+        draft,
+        issues: validation.issues,
+        messages: input.messages,
+        repairGenerate: input.repairGenerate,
+        requestId: input.requestId,
+        workflow: input.workflow,
+      });
+      const repairedValidation = performLessonBusinessValidation(repairedPlan);
+
+      if (!repairedValidation.isValid) {
+        throw new Error(
+          `自动修复后仍存在业务问题：\n${formatLessonValidationIssues(repairedValidation.issues)}`,
+        );
+      }
+
+      input.onTrace?.(
+        createRepairTraceEntry(
+          "lesson-repair-finished",
+          "success",
+          `已完成自动修复，共修正 ${validation.issues.length} 处业务语义问题。`,
+        ),
+      );
+      return repairedPlan;
+    } catch (error) {
+      const message = `结构化教案自动修复失败：${error instanceof Error ? error.message : "unknown-error"}`;
+
+      input.onTrace?.(createRepairTraceEntry("lesson-repair-failed", "failed", message));
+      throw new Error(message);
+    }
+  });
+
+  return {
+    ...generation,
+    finalLessonPlanPromise,
+  };
+}

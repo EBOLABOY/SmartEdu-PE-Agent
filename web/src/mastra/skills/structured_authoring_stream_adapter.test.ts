@@ -11,6 +11,16 @@ import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import { createStructuredAuthoringStreamAdapter } from "./structured_authoring_stream_adapter";
 
+function createIntentResult(
+  intent: "clarify" | "generate_lesson" | "patch_lesson" | "generate_html" | "consult_standards" = "generate_lesson",
+) {
+  return {
+    intent,
+    confidence: 0.94,
+    reason: "测试用意图。",
+  };
+}
+
 const baseWorkflow = {
   system: "系统提示词",
   standardsContext: "课标上下文",
@@ -42,8 +52,17 @@ const baseWorkflow = {
     forbiddenCapabilities: [],
     warnings: [],
   },
+  uiHints: [
+    {
+      action: "switch_tab",
+      params: {
+        tab: "lesson",
+      },
+    },
+  ],
   decision: {
     type: "generate",
+    intentResult: createIntentResult(),
   },
   trace: [],
 } satisfies LessonWorkflowOutput;
@@ -59,6 +78,22 @@ function createChunkStream(chunks: UIMessageChunk[]) {
 
 function createConcreteLessonPlan() {
   return JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "羽毛球"));
+}
+
+function createPlaceholderLessonPlan() {
+  return JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "待补充"));
+}
+
+function createStructuredLessonOutputChunk(lessonPlan = createConcreteLessonPlan()): UIMessageChunk {
+  return {
+    type: "data-structured-output",
+    data: {
+      object: {
+        _thinking_process: "先完成教学设计草稿。",
+        lessonPlan,
+      },
+    },
+  } as UIMessageChunk;
 }
 
 async function* createLessonDraftStream() {
@@ -142,38 +177,31 @@ describe("structured authoring stream adapter", () => {
     expect(chunks.some((chunk) => chunk.type === "text-delta")).toBe(false);
   });
 
-  it("lesson JSON 流会实时输出 streaming lesson-json artifact", async () => {
+  it("lesson 结构化输出流会直接输出可信的 lesson-json artifact", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
       originalMessages: [],
       requestId: "request-1",
       workflow: baseWorkflow,
       stream: createChunkStream([
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: "{\"title\":\"羽毛球正手发球\"" },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
 
     const chunks = await readAll(stream);
-    const firstArtifact = getArtifactData(chunks.find((chunk) => chunk.type === "data-artifact"));
+    const artifacts = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData);
+    const finalArtifact = artifacts.at(-1);
 
-    expect(firstArtifact).toMatchObject({
+    expect(finalArtifact).toMatchObject({
       contentType: "lesson-json",
-      status: "streaming",
-      isComplete: false,
+      status: "ready",
+      isComplete: true,
     });
-    expect(firstArtifact?.content).toContain("\"title\"");
+    expect(finalArtifact?.content).toContain("\"title\"");
     expect(chunks.some(isAssistantTextChunk)).toBe(false);
-    expect(chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "error",
-          errorText: expect.stringContaining("模型未返回合法 CompetitionLessonPlan JSON"),
-        }),
-      ]),
-    );
   });
 
   it("只有显式 mirror-json-text 时才会把 lesson JSON 镜像为 assistant text", async () => {
@@ -193,6 +221,7 @@ describe("structured authoring stream adapter", () => {
         { type: "text-start", id: "text-1" },
         { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
         { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
@@ -230,13 +259,13 @@ describe("structured authoring stream adapter", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "error",
-          errorText: expect.stringContaining("已停止自动修复"),
+          errorText: expect.stringContaining("禁止回退到原始文本 JSON 解析"),
         }),
       ]),
     );
   });
 
-  it("lesson 文本流收到合法 CompetitionLessonPlan JSON 时会输出 final lesson-json artifact", async () => {
+  it("lesson 文本流即使收到合法 JSON，也不会作为最终可信源", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
       originalMessages: [],
@@ -251,18 +280,21 @@ describe("structured authoring stream adapter", () => {
     });
 
     const chunks = await readAll(stream);
-    const finalArtifact = chunks
+    const readyArtifacts = chunks
       .filter((chunk) => chunk.type === "data-artifact")
       .map(getArtifactData)
-      .at(-1);
+      .filter((artifact) => artifact?.status === "ready");
 
-    expect(finalArtifact).toMatchObject({
-      contentType: "lesson-json",
-      status: "ready",
-      isComplete: true,
-      title: "羽毛球",
-    });
+    expect(readyArtifacts).toHaveLength(0);
     expect(chunks.some(isAssistantTextChunk)).toBe(false);
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: expect.stringContaining("禁止回退到原始文本 JSON 解析"),
+        }),
+      ]),
+    );
   });
 
   it("lesson 流收到 Mastra structured output 包装对象时只持久化 lessonPlan", async () => {
@@ -303,6 +335,38 @@ describe("structured authoring stream adapter", () => {
     expect(parsed.title).toBe("羽毛球");
   });
 
+  it("lesson ready artifact 会以修复后的 finalLessonPlanPromise 为准，而不是第一轮草稿", async () => {
+    const draftLessonPlan = createPlaceholderLessonPlan();
+    const repairedLessonPlan = createConcreteLessonPlan();
+    const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(repairedLessonPlan),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-repaired-final-plan",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        createStructuredLessonOutputChunk(draftLessonPlan),
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+    const parsed = JSON.parse(finalArtifact?.content ?? "{}");
+
+    expect(finalArtifact).toMatchObject({
+      contentType: "lesson-json",
+      status: "ready",
+      isComplete: true,
+      title: "羽毛球",
+    });
+    expect(parsed.title).toBe("羽毛球");
+    expect(parsed.title).not.toBe("待补充");
+  });
+
   it("lesson 文本流会把课时计划行的中文字段别名归一化后再输出 final artifact", async () => {
     const lessonPlan = createConcreteLessonPlan();
     const firstRow = lessonPlan.periodPlan.rows[0] as Record<string, unknown>;
@@ -316,9 +380,7 @@ describe("structured authoring stream adapter", () => {
       requestId: "request-row-alias",
       workflow: baseWorkflow,
       stream: createChunkStream([
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: JSON.stringify(lessonPlan) },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(lessonPlan),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
@@ -346,9 +408,7 @@ describe("structured authoring stream adapter", () => {
       requestId: "request-json-no-finish",
       workflow: baseWorkflow,
       stream: createChunkStream([
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
       ] as UIMessageChunk[]),
     });
 
@@ -383,9 +443,7 @@ describe("structured authoring stream adapter", () => {
       requestId: "request-draft-stream",
       workflow: baseWorkflow,
       stream: createChunkStream([
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
@@ -433,7 +491,7 @@ describe("structured authoring stream adapter", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "error",
-          errorText: expect.stringContaining("模型未返回合法 CompetitionLessonPlan JSON"),
+          errorText: expect.stringContaining("禁止回退到原始文本 JSON 解析"),
         }),
       ]),
     );
@@ -487,9 +545,7 @@ describe("structured authoring stream adapter", () => {
         { type: "reasoning-start", id: "reasoning-1" },
         { type: "reasoning-delta", id: "reasoning-1", delta: "先匹配课标。" },
         { type: "reasoning-end", id: "reasoning-1" },
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
@@ -541,6 +597,8 @@ describe("structured authoring stream adapter", () => {
           output: { count: 6 },
         },
         { type: "finish-step" },
+        createStructuredLessonOutputChunk(),
+        { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
 
@@ -605,9 +663,7 @@ describe("structured authoring stream adapter", () => {
       requestId: "request-standards",
       workflow,
       stream: createChunkStream([
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });
@@ -624,6 +680,7 @@ describe("structured authoring stream adapter", () => {
         }),
       ],
     });
+    expect(firstTrace?.uiHints).toEqual(baseWorkflow.uiHints);
   });
 
   it("artifact 持久化失败只写 trace，不中断主响应", async () => {
@@ -638,9 +695,7 @@ describe("structured authoring stream adapter", () => {
       persistence,
       projectId: "11111111-1111-4111-8111-111111111111",
       stream: createChunkStream([
-        { type: "text-start", id: "text-1" },
-        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
-        { type: "text-end", id: "text-1" },
+        createStructuredLessonOutputChunk(),
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
     });

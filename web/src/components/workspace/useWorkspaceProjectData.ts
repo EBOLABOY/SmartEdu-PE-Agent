@@ -72,6 +72,7 @@ function buildArtifactVersionsResponse(
     projectId: current?.projectId ?? projectId,
     versions,
     persistence: current?.persistence ?? UNKNOWN_PERSISTENCE_STATE,
+    uiHints: [],
   };
 }
 

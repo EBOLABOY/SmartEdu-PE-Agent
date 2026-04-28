@@ -22,6 +22,7 @@ describe("assistant-workflow-status", () => {
             requestedMarket: "cn-compulsory-2022",
             resolvedMarket: "cn-compulsory-2022",
             warnings: [],
+            uiHints: [],
             updatedAt: "2026-04-26T00:00:00.000Z",
             trace: [
               {
@@ -88,6 +89,7 @@ describe("assistant-workflow-status", () => {
             requestedMarket: "cn-compulsory-2022",
             resolvedMarket: "cn-compulsory-2022",
             warnings: ["持久化失败"],
+            uiHints: [],
             updatedAt: "2026-04-26T00:00:00.000Z",
             trace: [
               {
@@ -106,5 +108,46 @@ describe("assistant-workflow-status", () => {
     expect(state.status).toBe("blocked");
     expect(state.badge).toBe("需注意");
     expect(state.warnings).toEqual(["持久化失败"]);
+  });
+
+  it("会把 Repair Pass 的步骤映射为可读中文标题", () => {
+    const message = {
+      id: "assistant-4",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-2",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-2",
+            mode: "lesson",
+            phase: "generation",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: [],
+            uiHints: [],
+            updatedAt: "2026-04-26T00:00:00.000Z",
+            trace: [
+              {
+                step: "lesson-repair-started",
+                status: "running",
+                detail: "正在自动完善结构化教案。",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+
+    expect(state.details).toEqual([
+      expect.objectContaining({
+        status: "active",
+        title: "自动修复教案",
+      }),
+    ]);
   });
 });

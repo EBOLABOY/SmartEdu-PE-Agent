@@ -1,6 +1,7 @@
 import {
   artifactVersionsResponseSchema,
   projectIdSchema,
+  type UiHint,
 } from "@/lib/lesson-authoring-contract";
 import {
   ArtifactRestoreError,
@@ -12,6 +13,50 @@ import {
 } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+
+/**
+ * 根据恢复的版本元数据，构建面向前端的 UI 指令。
+ * 恢复操作属于"动作-反馈"闭环，Toast 文案由后端统一管控。
+ */
+function buildRestoreUiHints(
+  versions: { stage: string; title?: string; isCurrent?: boolean }[],
+): UiHint[] {
+  const restoredVersion = versions.find((version) => version.isCurrent);
+
+  if (!restoredVersion) {
+    return [
+      {
+        action: "show_toast",
+        params: {
+          level: "success",
+          title: "版本已恢复",
+        },
+      },
+    ];
+  }
+
+  const versionTitle = restoredVersion.title ?? "教案版本";
+  const isLesson = restoredVersion.stage === "lesson";
+
+  return [
+    {
+      action: "show_toast",
+      params: {
+        level: "success",
+        title: "版本已恢复",
+        description: isLesson
+          ? `已将\u201c${versionTitle}\u201d恢复为当前教案版本，原互动大屏已失效，请重新生成。`
+          : `已将\u201c${versionTitle}\u201d恢复为当前互动大屏版本。`,
+      },
+    },
+    {
+      action: "switch_tab",
+      params: {
+        tab: isLesson ? "lesson" : "canvas",
+      },
+    },
+  ];
+}
 
 export async function POST(
   _request: Request,
@@ -68,6 +113,7 @@ export async function POST(
           enabled: true,
           authenticated: true,
         },
+        uiHints: buildRestoreUiHints(versions),
       }),
       {
         headers: {
@@ -88,3 +134,4 @@ export async function POST(
     );
   }
 }
+

@@ -16,6 +16,7 @@ const TRACE_FIXTURE: WorkflowTraceData = {
   requestedMarket: "us-shape-k12",
   resolvedMarket: "cn-compulsory-2022",
   warnings: ["当前仓库尚未接入 SHAPE 体育标准知识库。"],
+  uiHints: [],
   trace: [
     {
       step: "retrieve-standards-context",

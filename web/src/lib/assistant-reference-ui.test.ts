@@ -25,6 +25,7 @@ const messageWithStandards = {
         requestedMarket: "cn-compulsory-2022",
         resolvedMarket: "cn-compulsory-2022",
         warnings: [],
+        uiHints: [],
         standards: {
           corpusId: "cn-compulsory-2022",
           displayName: "义务教育体育与健康课程标准",

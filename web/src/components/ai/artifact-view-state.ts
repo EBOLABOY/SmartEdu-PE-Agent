@@ -1,6 +1,5 @@
 import type { ArtifactLifecycle } from "@/components/ai/artifact-model";
-
-export type ArtifactView = "lesson" | "canvas" | "versions";
+import type { ArtifactView } from "@/lib/lesson-authoring-contract";
 
 export type LessonArtifactDisplayState = {
   hasLesson: boolean;

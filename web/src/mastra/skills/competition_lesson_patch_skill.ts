@@ -115,6 +115,7 @@ export function extractSemanticLessonUpdates(result: FullOutput<unknown>): Compe
 export async function runCompetitionLessonPatchSkill(
   input: CompetitionLessonPatchRequestBody,
   options: {
+    additionalInstructions?: string;
     agentGenerate: LessonPatchAgentRunner;
     maxSteps: number;
     requestId: string;
@@ -124,7 +125,7 @@ export async function runCompetitionLessonPatchSkill(
   const result = await runModelOperationWithRetry(
     () =>
       options.agentGenerate(modelMessages, {
-        system: buildLessonPatchSystemPrompt(),
+        system: [buildLessonPatchSystemPrompt(), options.additionalInstructions].filter(Boolean).join("\n\n"),
         maxSteps: options.maxSteps,
         providerOptions: {
           openai: {

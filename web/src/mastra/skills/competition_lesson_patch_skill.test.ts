@@ -43,6 +43,7 @@ describe("competition lesson patch skill", () => {
         targetPaths: ["/title"],
       },
       {
+        additionalInstructions: "隐藏执行说明",
         agentGenerate,
         maxSteps: 2,
         requestId: "request-patch-agent",
@@ -77,6 +78,7 @@ describe("competition lesson patch skill", () => {
             store: true,
           },
         },
+        system: expect.stringContaining("隐藏执行说明"),
       }),
     );
     expect(agentGenerate.mock.calls[0]?.[1]).not.toHaveProperty("structuredOutput");

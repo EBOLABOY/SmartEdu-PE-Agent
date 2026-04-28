@@ -11,7 +11,12 @@ import {
 import type { LessonScreenPlan, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
-import { runHtmlScreenGenerationSkill, runHtmlScreenPlanningSkill, runLessonGenerationSkill } from "./index";
+import {
+  runHtmlScreenGenerationSkill,
+  runHtmlScreenPlanningSkill,
+  runLessonGenerationSkill,
+  runLessonGenerationWithRepair,
+} from "./index";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
 const workflow = {
@@ -24,6 +29,9 @@ const workflow = {
 const streamResult = { mocked: "stream" } as unknown as MastraModelOutput<unknown>;
 const concreteLessonPlan = JSON.parse(
   JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "lesson"),
+);
+const placeholderLessonPlan = JSON.parse(
+  JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "待补充"),
 );
 
 function fullOutput<T>(object: T) {
@@ -129,6 +137,7 @@ describe("generation skills", () => {
     const chunks = await readAll(result.stream);
 
     expect(structuredGenerate).toHaveBeenCalledOnce();
+    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
     expect(chunks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -190,7 +199,12 @@ describe("generation skills", () => {
         controller.close();
       },
     });
-    const mastraOutput = {} as unknown as MastraModelOutput<CompetitionLessonPlan>;
+    const mastraOutput = {
+      object: Promise.resolve({
+        _thinking_process: "先设计教学流程。",
+        lessonPlan: concreteLessonPlan,
+      }),
+    } as unknown as MastraModelOutput<AgentLessonGenerationResult>;
     const agentStream = vi.fn().mockResolvedValue(mastraOutput);
     const toUIMessageStream = vi.fn().mockReturnValue(convertedStream);
     const messages = [
@@ -217,6 +231,7 @@ describe("generation skills", () => {
 
     expect(result.stream).toBe(convertedStream);
     expect(partials).toEqual([]);
+    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
     expect(agentStream).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ role: "user" })]),
       expect.objectContaining({
@@ -279,6 +294,98 @@ describe("generation skills", () => {
     expect(partials).toEqual([{ title: "羽毛球草稿" }]);
   });
 
+  it("repair pass skips the second round when the first draft already passes business validation", async () => {
+    const convertedStream = new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({ type: "finish", finishReason: "stop" });
+        controller.close();
+      },
+    });
+    const agentStream = vi.fn().mockResolvedValue({
+      object: Promise.resolve({
+        _thinking_process: "先设计教学流程。",
+        lessonPlan: concreteLessonPlan,
+      }),
+    } as Partial<MastraModelOutput<AgentLessonGenerationResult>>);
+    const repairGenerate = vi.fn();
+    const onTrace = vi.fn();
+    const messages = [
+      {
+        id: "user-1",
+        role: "user",
+        parts: [{ type: "text", text: "生成五年级篮球行进间运球教案" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationWithRepair({
+      agentStream,
+      messages,
+      onTrace,
+      repairGenerate,
+      requestId: "request-repair-skip",
+      toUIMessageStream: () => convertedStream,
+      workflow,
+    });
+
+    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
+    expect(repairGenerate).not.toHaveBeenCalled();
+    expect(onTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: "validate-lesson-output",
+        status: "success",
+      }),
+    );
+  });
+
+  it("repair pass runs exactly one repair round when the first draft still contains placeholders", async () => {
+    const convertedStream = new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({ type: "finish", finishReason: "stop" });
+        controller.close();
+      },
+    });
+    const agentStream = vi.fn().mockResolvedValue({
+      object: Promise.resolve({
+        _thinking_process: "先设计教学流程。",
+        lessonPlan: placeholderLessonPlan,
+      }),
+    } as Partial<MastraModelOutput<AgentLessonGenerationResult>>);
+    const repairGenerate = vi.fn().mockResolvedValue(fullOutput(concreteLessonPlan));
+    const onTrace = vi.fn();
+    const messages = [
+      {
+        id: "user-1",
+        role: "user",
+        parts: [{ type: "text", text: "生成五年级篮球行进间运球教案" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationWithRepair({
+      agentStream,
+      messages,
+      onTrace,
+      repairGenerate,
+      requestId: "request-repair-once",
+      toUIMessageStream: () => convertedStream,
+      workflow,
+    });
+
+    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
+    expect(repairGenerate).toHaveBeenCalledTimes(1);
+    expect(onTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: "lesson-repair-started",
+        status: "running",
+      }),
+    );
+    expect(onTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: "lesson-repair-finished",
+        status: "success",
+      }),
+    );
+  });
+
   it("html generation uses a slim message instead of passing the full chat history", async () => {
     const agentStream = vi.fn().mockResolvedValue(streamResult);
 
@@ -319,6 +426,7 @@ describe("generation skills", () => {
     const agentGenerate = vi.fn().mockResolvedValue(fullOutput(agentPlan));
 
     const result = await runHtmlScreenPlanningSkill({
+      additionalInstructions: "隐藏执行说明：优先突出比赛展示。",
       agentGenerate,
       lessonPlan: JSON.stringify(concreteLessonPlan),
       maxSteps: 2,
@@ -337,6 +445,7 @@ describe("generation skills", () => {
       expect.arrayContaining([expect.objectContaining({ role: "user" })]),
       expect.objectContaining({
         maxSteps: 2,
+        system: expect.stringContaining("隐藏执行说明"),
         structuredOutput: expect.objectContaining({
           schema: expect.any(Object),
         }),

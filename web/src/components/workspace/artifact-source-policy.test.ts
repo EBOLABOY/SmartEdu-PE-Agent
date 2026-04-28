@@ -37,6 +37,7 @@ function createLifecycle(snapshot: ArtifactSnapshot): ArtifactLifecycle {
     status: snapshot.status,
     stage: snapshot.stage,
     activeArtifact: snapshot,
+    activeUiHints: [],
     versions: [snapshot],
   };
 }

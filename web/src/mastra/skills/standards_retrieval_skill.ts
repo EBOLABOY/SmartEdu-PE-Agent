@@ -7,7 +7,7 @@ export type StandardsRetrievalSkillInput = {
   market?: StandardsMarket;
 };
 
-export function runStandardsRetrievalSkill(input: StandardsRetrievalSkillInput) {
+export async function runStandardsRetrievalSkill(input: StandardsRetrievalSkillInput) {
   return searchStandards(input.query, {
     market: input.market,
   });

@@ -21,6 +21,7 @@ import {
   requireProjectWriteAccess,
 } from "@/lib/persistence/project-authorization";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createMastraStorageAdapter } from "@/mastra/storage/mastra-storage-adapter";
 import { LessonAuthoringError, streamLessonAuthoring } from "@/mastra/services/lesson_authoring";
 
 export const runtime = "nodejs";
@@ -151,6 +152,7 @@ export async function POST(request: Request) {
 
     const lessonPersistence = user ? createLessonAuthoringPersistence(supabase) : null;
     const chatPersistence = user ? createProjectChatPersistence(supabase, user.id) : null;
+    const mastraStorageAdapter = user ? createMastraStorageAdapter(supabase) : null;
     const memoryPersistence = user ? createLessonMemoryPersistence(supabase) : null;
     const lessonMemory =
       memoryPersistence && parsedBody.data.projectId
@@ -178,6 +180,7 @@ export async function POST(request: Request) {
 
     authoringResult = await streamLessonAuthoring({
       messages,
+      mastraStorageAdapter,
       persistence: lessonPersistence,
       chatPersistence,
       memory: lessonMemory,

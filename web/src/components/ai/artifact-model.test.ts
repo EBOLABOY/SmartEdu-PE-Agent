@@ -18,6 +18,7 @@ function createTrace(requestId: string, mode: "lesson" | "html"): WorkflowTraceD
     requestedMarket: "cn-compulsory-2022",
     resolvedMarket: "cn-compulsory-2022",
     warnings: [],
+    uiHints: [],
     trace: [],
     updatedAt: "2026-04-25T12:00:00.000Z",
   };
@@ -152,7 +153,7 @@ describe("artifact-model", () => {
     expect(lifecycle.activeArtifact?.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
   });
 
-  it("data-artifact 尚未到达时会回退展示 assistant text JSON 流", () => {
+  it("data-artifact 尚未到达时不会再把 assistant text 当作 lesson 可信源", () => {
     const assistantMessage = {
       id: "assistant-lesson-text-stream",
       role: "assistant",
@@ -174,9 +175,9 @@ describe("artifact-model", () => {
 
     expect(lifecycle.status).toBe("streaming");
     expect(lifecycle.stage).toBe("lesson");
-    expect(lifecycle.lessonContent).toContain("\"武术课\"");
-    expect(lifecycle.activeArtifact?.id).toBe("assistant-lesson-text-stream-lesson-text-stream");
-    expect(lifecycle.activeArtifact?.contentType).toBe("lesson-json");
+    expect(lifecycle.lessonContent).toBe("");
+    expect(lifecycle.activeArtifact).toBeUndefined();
+    expect(lifecycle.activeTrace?.requestId).toBe("live-text-stream");
   });
 
   it("会把流式 HTML 保留为源码流但不提交到 iframe 预览", () => {
