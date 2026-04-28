@@ -3,6 +3,7 @@
 import type React from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface RailButtonProps {
   icon: React.ComponentType<{ className?: string }>;
@@ -21,11 +22,12 @@ export default function RailButton({
     <Tooltip>
       <TooltipTrigger asChild>
         <button
-          className={`flex size-10 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          className={cn(
+            "flex size-10 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             isActive
               ? "border-brand/45 bg-brand/12 text-brand"
-              : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-accent/60 hover:text-foreground"
-          }`}
+              : "border-transparent text-muted-foreground hover:border-border/80 hover:bg-accent/60 hover:text-foreground",
+          )}
           onClick={onClick}
           type="button"
         >

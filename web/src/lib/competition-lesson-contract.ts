@@ -3,7 +3,11 @@ import { z } from "zod";
 const nonEmptyString = z.string().trim().min(1);
 const nonEmptyStringArray = z.array(nonEmptyString).min(1);
 
-export const competitionLessonTextBlockSchema = nonEmptyStringArray;
+function normalizeTextBlock(value: unknown) {
+  return typeof value === "string" ? [value] : value;
+}
+
+export const competitionLessonTextBlockSchema = z.preprocess(normalizeTextBlock, nonEmptyStringArray);
 
 export const competitionLessonEvaluationLevelSchema = z.enum(["三颗星", "二颗星", "一颗星"]);
 
@@ -33,6 +37,79 @@ export function normalizeCompetitionLessonTime(value: unknown, fallback = "8分�
 }
 
 const lessonTimeString = z.preprocess((value) => normalizeCompetitionLessonTime(value), nonEmptyString);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeObjectAliases(
+  value: unknown,
+  aliases: Array<{ canonical: string; aliases: string[] }>,
+) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const normalized = { ...value };
+
+  aliases.forEach(({ canonical, aliases: aliasNames }) => {
+    aliasNames.forEach((alias) => {
+      if (!Object.prototype.hasOwnProperty.call(normalized, alias)) {
+        return;
+      }
+
+      if (normalized[canonical] === undefined) {
+        normalized[canonical] = normalized[alias];
+      }
+
+      delete normalized[alias];
+    });
+  });
+
+  return normalized;
+}
+
+function normalizeCompetitionLessonMethods(value: unknown) {
+  return normalizeObjectAliases(value, [
+    {
+      canonical: "teacher",
+      aliases: ["教师", "教师活动", "教的方法", "教师教法", "教师行为"],
+    },
+    {
+      canonical: "students",
+      aliases: ["学生", "学生活动", "学的方法", "学生学法", "学生行为"],
+    },
+  ]);
+}
+
+function normalizeCompetitionLessonPlanRow(value: unknown) {
+  return normalizeObjectAliases(value, [
+    {
+      canonical: "structure",
+      aliases: ["课的结构", "课堂结构", "结构"],
+    },
+    {
+      canonical: "content",
+      aliases: ["具体教学内容", "教学内容", "内容"],
+    },
+    {
+      canonical: "methods",
+      aliases: ["教与学的方法", "教学方法", "教法学法"],
+    },
+    {
+      canonical: "organization",
+      aliases: ["组织形式", "组织队形"],
+    },
+    {
+      canonical: "time",
+      aliases: ["运动时间", "时间"],
+    },
+    {
+      canonical: "intensity",
+      aliases: ["强度", "运动强度"],
+    },
+  ]);
+}
 
 export const competitionLessonLoadChartPointSchema = z
   .object({
@@ -64,18 +141,27 @@ export const competitionLessonLoadEstimateSchema = z
   .strict();
 
 export const competitionLessonPlanRowSchema = z
-  .object({
-    structure: z.enum(["准备部分", "基本部分", "结束部分"]),
-    content: competitionLessonTextBlockSchema,
-    methods: z.object({
-      teacher: competitionLessonTextBlockSchema,
-      students: competitionLessonTextBlockSchema,
-    }),
-    organization: competitionLessonTextBlockSchema,
-    time: lessonTimeString,
-    intensity: nonEmptyString,
-  })
-  .strict();
+  .preprocess(
+    normalizeCompetitionLessonPlanRow,
+    z
+      .object({
+        structure: z.enum(["准备部分", "基本部分", "结束部分"]),
+        content: competitionLessonTextBlockSchema,
+        methods: z.preprocess(
+          normalizeCompetitionLessonMethods,
+          z
+            .object({
+              teacher: competitionLessonTextBlockSchema,
+              students: competitionLessonTextBlockSchema,
+            })
+            .strict(),
+        ),
+        organization: competitionLessonTextBlockSchema,
+        time: lessonTimeString,
+        intensity: nonEmptyString,
+      })
+      .strict(),
+  );
 
 export const competitionLessonPlanSchema = z
   .object({

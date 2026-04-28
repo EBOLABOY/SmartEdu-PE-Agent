@@ -1,12 +1,12 @@
-import type { MastraModelOutput } from "@mastra/core/stream";
+import type { FullOutput, MastraModelOutput } from "@mastra/core/stream";
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN, type CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import type { LessonScreenPlan, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
-import { runHtmlScreenGenerationSkill, runLessonGenerationSkill } from "./index";
+import { runHtmlScreenGenerationSkill, runHtmlScreenPlanningSkill, runLessonGenerationSkill } from "./index";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
 const workflow = {
@@ -20,6 +20,10 @@ const streamResult = { mocked: "stream" } as unknown as MastraModelOutput<unknow
 const concreteLessonPlan = JSON.parse(
   JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "lesson"),
 );
+
+function fullOutput<T>(object: T) {
+  return { object } as FullOutput<T>;
+}
 
 async function readAll(stream: ReadableStream<UIMessageChunk>) {
   const reader = stream.getReader();
@@ -130,6 +134,94 @@ describe("generation skills", () => {
     );
   });
 
+  it("lesson generation preserves official partial output stream when the streamer provides it", async () => {
+    async function* partialOutputStream() {
+      yield { title: "羽毛球草稿" };
+    }
+
+    const stream = new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({ type: "finish", finishReason: "stop" });
+        controller.close();
+      },
+    });
+    const structuredStream = vi.fn().mockResolvedValue({
+      partialOutputStream: partialOutputStream(),
+      stream,
+    });
+    const messages = [
+      {
+        id: "user-1",
+        role: "user",
+        parts: [{ type: "text", text: "grade 5 badminton lesson" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationSkill({
+      messages,
+      modelId: "gpt-test",
+      requestId: "request-partial",
+      structuredStream,
+      workflow,
+    });
+
+    const partials = [];
+
+    for await (const partial of result.partialOutputStream ?? []) {
+      partials.push(partial);
+    }
+
+    expect(result.stream).toBe(stream);
+    expect(partials).toEqual([{ title: "羽毛球草稿" }]);
+  });
+
+  it("lesson generation uses Mastra Agent text streaming by default and leaves schema validation to the adapter", async () => {
+    const convertedStream = new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({ type: "text-start", id: "lesson-json" });
+        controller.enqueue({ type: "text-delta", id: "lesson-json", delta: JSON.stringify(concreteLessonPlan) });
+        controller.enqueue({ type: "text-end", id: "lesson-json" });
+        controller.enqueue({ type: "finish", finishReason: "stop" });
+        controller.close();
+      },
+    });
+    const mastraOutput = {} as unknown as MastraModelOutput<CompetitionLessonPlan>;
+    const agentStream = vi.fn().mockResolvedValue(mastraOutput);
+    const toUIMessageStream = vi.fn().mockReturnValue(convertedStream);
+    const messages = [
+      {
+        id: "user-1",
+        role: "user",
+        parts: [{ type: "text", text: "五年级篮球运球，40人，40分钟，篮球场，篮球40个" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationSkill({
+      agentStream,
+      messages,
+      requestId: "request-mastra-lesson",
+      toUIMessageStream,
+      workflow,
+    });
+
+    const partials = [];
+
+    for await (const partial of result.partialOutputStream ?? []) {
+      partials.push(partial);
+    }
+
+    expect(result.stream).toBe(convertedStream);
+    expect(partials).toEqual([]);
+    expect(agentStream).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ role: "user" })]),
+      expect.objectContaining({
+        maxSteps: 3,
+        system: "system prompt",
+      }),
+    );
+    expect(agentStream.mock.calls[0]?.[1]).not.toHaveProperty("structuredOutput");
+  });
+
   it("html generation uses a slim message instead of passing the full chat history", async () => {
     const agentStream = vi.fn().mockResolvedValue(streamResult);
 
@@ -155,6 +247,70 @@ describe("generation skills", () => {
         system: "system prompt",
       }),
     );
+  });
+
+  it("html screen planning uses an agent-generated section plan and merges deterministic details", async () => {
+    const agentPlan: LessonScreenPlan = {
+      sections: concreteLessonPlan.periodPlan.rows.map((row: { content: string[]; time: string }, index: number) => ({
+        title: `${row.content[0]}-${index}`,
+        durationSeconds: 120,
+        supportModule: index === 1 ? "scoreboard" : "formation",
+        sourceRowIndex: index,
+        reason: "Agent 根据课堂环节重新规划页面。",
+      })),
+    };
+    const agentGenerate = vi.fn().mockResolvedValue(fullOutput(agentPlan));
+
+    const result = await runHtmlScreenPlanningSkill({
+      agentGenerate,
+      lessonPlan: JSON.stringify(concreteLessonPlan),
+      maxSteps: 2,
+      requestId: "request-plan",
+    });
+
+    expect(result.source).toBe("agent");
+    expect(result.modelMessageCount).toBe(1);
+    expect(result.plan.sections).toHaveLength(concreteLessonPlan.periodPlan.rows.length);
+    expect(result.plan.sections[0]).toMatchObject({
+      objective: expect.stringContaining("lesson"),
+      sourceRowIndex: 0,
+      title: "lesson-0",
+    });
+    expect(agentGenerate).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ role: "user" })]),
+      expect.objectContaining({
+        maxSteps: 2,
+        structuredOutput: expect.objectContaining({
+          schema: expect.any(Object),
+        }),
+      }),
+    );
+  });
+
+  it("html screen planning falls back to the seed plan when the planning agent fails", async () => {
+    const seedPlan: LessonScreenPlan = {
+      sections: [
+        {
+          title: "比赛展示",
+          durationSeconds: 360,
+          supportModule: "scoreboard",
+          reason: "已有结构化计划。",
+        },
+      ],
+    };
+    const agentGenerate = vi.fn().mockRejectedValue(new Error("planner schema failed"));
+
+    const result = await runHtmlScreenPlanningSkill({
+      agentGenerate,
+      lessonPlan: "not-json",
+      maxSteps: 2,
+      requestId: "request-plan-fallback",
+      seedPlan,
+    });
+
+    expect(result.source).toBe("seed-fallback");
+    expect(result.warning).toContain("planner schema failed");
+    expect(result.plan).toEqual(seedPlan);
   });
 
   it("retries retryable errors and does not retry fatal errors", async () => {

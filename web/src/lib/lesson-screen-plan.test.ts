@@ -77,6 +77,7 @@ describe("lesson-screen-plan", () => {
       title: "课堂常规",
       durationSeconds: 60,
       supportModule: "formation",
+      sourceRowIndex: 0,
     });
     expect(plan.sections.find((section) => section.title.includes("传切"))).toMatchObject({
       durationSeconds: 480,
@@ -102,5 +103,16 @@ describe("lesson-screen-plan", () => {
     expect(plan.sections.every((section) => section.reason && section.reason.length > 10)).toBe(true);
     expect(plan.sections.find((section) => section.supportModule === "scoreboard")?.reason).toContain("分组计分板");
     expect(plan.sections.find((section) => section.supportModule === "tacticalBoard")?.reason).toContain("战术板");
+  });
+
+  it("会为 Agent HTML 生成补齐页面目标、学生行动和视觉意图", () => {
+    const plan = buildLessonScreenPlanFromLessonPlan(LESSON_PLAN);
+    const tacticalSection = plan.sections.find((section) => section.supportModule === "tacticalBoard");
+
+    expect(plan.sections.every((section) => section.objective?.includes(section.title))).toBe(true);
+    expect(plan.sections.every((section) => section.studentActions?.length)).toBe(true);
+    expect(plan.sections.every((section) => section.safetyCue?.length)).toBe(true);
+    expect(plan.sections.every((section) => section.evaluationCue?.length)).toBe(true);
+    expect(tacticalSection?.visualIntent).toContain("战术板");
   });
 });

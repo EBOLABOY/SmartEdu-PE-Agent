@@ -14,6 +14,8 @@
 @theme inline {
   /* --- 字体 --- */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-display: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
   /* --- 圆角梯度 --- */
   --radius-sm: calc(var(--radius) - 4px);
@@ -68,6 +70,7 @@
   --animate-fade-in: fade-in 0.4s ease-out both;
   --animate-scale-in: scale-in 0.3s ease-out both;
   --animate-glow-pulse: glow-pulse 2s ease-in-out infinite;
+  --animate-pulse-border: pulse-border 2.5s ease-in-out infinite;
 
   @keyframes fade-up {
     from { opacity: 0; transform: translateY(12px); }
@@ -82,8 +85,12 @@
     to   { opacity: 1; transform: scale(1); }
   }
   @keyframes glow-pulse {
-    0%, 100% { opacity: 0.6; }
+    0%, 100% { opacity: 0.68; }
     50%      { opacity: 1; }
+  }
+  @keyframes pulse-border {
+    0%, 100% { border-color: oklch(var(--brand) / 0.3); }
+    50%      { border-color: oklch(var(--brand) / 0.8); box-shadow: 0 0 12px oklch(var(--brand) / 0.2); }
   }
 }
 

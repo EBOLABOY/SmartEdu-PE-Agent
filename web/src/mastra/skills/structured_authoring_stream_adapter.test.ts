@@ -1,7 +1,10 @@
 import type { UIMessageChunk } from "ai";
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import {
+  DEFAULT_COMPETITION_LESSON_PLAN,
+  competitionLessonPlanSchema,
+} from "@/lib/competition-lesson-contract";
 import type { StructuredArtifactData, WorkflowTraceData } from "@/lib/lesson-authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
@@ -53,6 +56,15 @@ function createChunkStream(chunks: UIMessageChunk[]) {
 
 function createConcreteLessonPlan() {
   return JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "羽毛球"));
+}
+
+async function* createLessonDraftStream() {
+  yield {
+    learningObjectives: {
+      sportAbility: ["能稳定完成正手发高远球"],
+    },
+    title: "羽毛球草稿",
+  };
 }
 
 function getArtifactData(chunk: UIMessageChunk | undefined): StructuredArtifactData | undefined {
@@ -248,6 +260,143 @@ describe("structured authoring stream adapter", () => {
       title: "羽毛球",
     });
     expect(chunks.some(isAssistantTextChunk)).toBe(false);
+  });
+
+  it("lesson 文本流会把课时计划行的中文字段别名归一化后再输出 final artifact", async () => {
+    const lessonPlan = createConcreteLessonPlan();
+    const firstRow = lessonPlan.periodPlan.rows[0] as Record<string, unknown>;
+
+    firstRow["强度"] = firstRow.intensity;
+    delete firstRow.intensity;
+
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-row-alias",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        { type: "text-start", id: "text-1" },
+        { type: "text-delta", id: "text-1", delta: JSON.stringify(lessonPlan) },
+        { type: "text-end", id: "text-1" },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+    const parsed = JSON.parse(finalArtifact?.content ?? "{}");
+
+    expect(finalArtifact).toMatchObject({
+      contentType: "lesson-json",
+      status: "ready",
+      isComplete: true,
+    });
+    expect(parsed.periodPlan.rows[0].intensity).toBe("羽毛球");
+    expect(parsed.periodPlan.rows[0]).not.toHaveProperty("强度");
+  });
+
+  it("lesson 底层流自然关闭但缺少 finish 时，仍先校验并输出 ready artifact", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-json-no-finish",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        { type: "text-start", id: "text-1" },
+        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
+        { type: "text-end", id: "text-1" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+    const completedTrace = chunks.map(getTraceData).find((trace) => trace?.phase === "completed");
+
+    expect(finalArtifact).toMatchObject({
+      contentType: "lesson-json",
+      status: "ready",
+      isComplete: true,
+    });
+    expect(completedTrace?.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "generation-stream-closed-without-finish",
+          status: "blocked",
+        }),
+      ]),
+    );
+    expect(chunks.at(-1)).toMatchObject({ type: "finish", finishReason: "stop" });
+  });
+
+  it("有 AI SDK partial output 时会输出可被模板消费的 streaming lesson draft", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      lessonDraftStream: createLessonDraftStream(),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-draft-stream",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        { type: "text-start", id: "text-1" },
+        { type: "text-delta", id: "text-1", delta: JSON.stringify(createConcreteLessonPlan()) },
+        { type: "text-end", id: "text-1" },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const streamingDraft = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .find((artifact) => artifact?.status === "streaming" && artifact.title === "羽毛球草稿");
+
+    expect(streamingDraft).toMatchObject({
+      contentType: "lesson-json",
+      isComplete: false,
+      status: "streaming",
+    });
+    expect(competitionLessonPlanSchema.parse(JSON.parse(streamingDraft?.content ?? "{}"))).toMatchObject({
+      learningObjectives: {
+        sportAbility: ["能稳定完成正手发高远球"],
+      },
+      title: "羽毛球草稿",
+    });
+  });
+
+  it("lesson 底层流自然关闭且 JSON 被截断时，必须报错而不是留下永久 streaming artifact", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-truncated-no-finish",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        { type: "text-start", id: "text-1" },
+        { type: "text-delta", id: "text-1", delta: "{\"title\":\"羽毛球\"" },
+        { type: "text-end", id: "text-1" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const readyArtifacts = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .filter((artifact) => artifact?.status === "ready");
+
+    expect(readyArtifacts).toHaveLength(0);
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: expect.stringContaining("模型未返回合法 CompetitionLessonPlan JSON"),
+        }),
+      ]),
+    );
+    expect(chunks.at(-1)).toMatchObject({ type: "finish", finishReason: "error" });
   });
 
   it("html 文本流在非 PPT 结构时仍输出 ready html artifact", async () => {

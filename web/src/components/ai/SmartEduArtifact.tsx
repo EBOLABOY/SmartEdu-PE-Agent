@@ -16,10 +16,10 @@ import {
 } from "lucide-react";
 import React, { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import ThemeToggle from "@/components/layout/ThemeToggle";
 
 import {
   Artifact,
-  ArtifactAction,
   ArtifactActions,
   ArtifactContent,
   ArtifactDescription,
@@ -372,22 +372,12 @@ export default function SmartEduArtifact({
                 确认并生成大屏
               </Button>
             ) : null}
-            {hasHtml ? (
-              <ArtifactAction
-                disabled={isExporting}
-                icon={Download}
-                label={isExporting ? "导出中" : "导出大屏"}
-                onClick={downloadHtml}
-                tooltip={projectId ? "导出到云端并下载本地副本" : "导出本地大屏文件"}
-                type="button"
-                variant="outline"
-              />
-            ) : null}
+            <ThemeToggle compact />
           </ArtifactActions>
         </ArtifactHeader>
 
         <ArtifactContent className="flex min-h-0 flex-1 flex-col bg-transparent p-0">
-          <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col">
+          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col">
             <TabsContent className="m-0 h-full p-3 lg:p-4" value="lesson">
               <div className="h-full overflow-hidden rounded-2xl border border-border/80 bg-card/90 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)]">
                 {lessonDisplay.shouldShowWorkspace ? (
@@ -452,6 +442,10 @@ export default function SmartEduArtifact({
                         <h2 className="text-sm font-semibold">互动大屏预览</h2>
                         <p className="mt-0.5 text-xs text-muted-foreground">这里展示课堂投屏效果。</p>
                       </div>
+                      <Button disabled={isExporting} onClick={downloadHtml} size="sm" type="button" variant="outline" className="h-8 gap-1.5">
+                        <Download className="size-3.5" />
+                        {isExporting ? "导出中" : "导出大屏"}
+                      </Button>
                     </div>
                     <div className="min-h-0 flex-1">
                       <IframeSandbox key={lifecycle.htmlPreviewVersionId ?? html.length} htmlContent={html} />

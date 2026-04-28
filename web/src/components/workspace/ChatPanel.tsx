@@ -16,8 +16,15 @@ import {
   PromptInputTools,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
+import {
+  CHAT_ATTACHMENT_MAX_FILE_BYTES,
+  CHAT_ATTACHMENT_MAX_FILES,
+  getAttachmentErrorMessage,
+} from "@/components/workspace/chat-attachment-limits";
 import { StateNotice } from "@/components/ui/state-surface";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import { motion } from "motion/react";
+import { toast } from "sonner";
 
 type ChatStatus = "submitted" | "streaming" | "ready" | "error";
 
@@ -41,11 +48,11 @@ export default function ChatPanel({
   stop,
 }: ChatPanelProps) {
   return (
-    <aside className="z-40 flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-border/80 bg-card/70 [background-image:radial-gradient(circle_at_top_left,rgba(0,217,146,0.13),transparent_34%),linear-gradient(180deg,rgba(61,58,57,0.12),transparent_45%)]">
-      <div className="flex min-h-20 shrink-0 items-center justify-between border-b border-border/70 bg-card/90 px-4">
+    <aside className="z-40 flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-border/80 bg-card/95">
+      <div className="flex min-h-20 shrink-0 items-center justify-between border-b border-border/70 bg-card px-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="size-2 rounded-full bg-brand shadow-[0_0_14px_rgba(0,217,146,0.85)] ring-4 ring-brand/10" />
+            <span className="size-2 rounded-full bg-brand ring-4 ring-brand/10" />
             <h2 className="truncate font-semibold text-foreground text-sm">
               {projectTitle ?? "课堂创作对话"}
             </h2>
@@ -62,7 +69,7 @@ export default function ChatPanel({
           </div>
         </div>
         {isLoading ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-brand/20 bg-brand/10 px-2.5 py-1 font-medium text-brand text-xs">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2.5 py-1 font-medium text-brand text-xs">
             <span className="size-1.5 animate-pulse rounded-full bg-brand" />
             生成中
           </span>
@@ -91,38 +98,47 @@ export default function ChatPanel({
         <ConversationScrollButton className="bottom-5 border-border/80 bg-card/95 shadow-lg" />
       </Conversation>
 
-      <div className="shrink-0 border-t border-border/70 bg-card/90 p-3">
+      <div className="shrink-0 border-t border-border/80 bg-card p-4">
         <PromptInputProvider>
-          <PromptInput
-            className="relative rounded-2xl border border-border/80 bg-background/75 shadow-[0_18px_50px_-36px_rgba(0,217,146,0.55)] transition-colors focus-within:border-brand/45"
-            onSubmit={(message) => {
-              onSubmitPrompt(message);
-            }}
-          >
-            <PromptInputBody>
-              <PromptInputTextarea
-                className="min-h-24 max-h-40 overflow-y-auto px-4 pt-4 pb-1 text-foreground text-sm leading-6 placeholder:text-muted-foreground/70"
-                disabled={isLoading}
-                placeholder="描述要生成或修改的教案、大屏、课堂组织、评价与安全要求..."
-              />
-            </PromptInputBody>
-            <PromptInputFooter className="px-3 pt-1 pb-3">
-              <PromptInputTools className="min-w-0 overflow-hidden">
-                <span className="shrink-0 rounded-full bg-brand/10 px-2.5 py-1 font-medium text-[11px] text-brand">
-                  教案 / 大屏 / 复盘
-                </span>
-                <span className="truncate text-[11px] text-muted-foreground">
-                  Enter 发送，Shift + Enter 换行
-                </span>
-              </PromptInputTools>
-              <PromptInputSubmit
-                className="size-9 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-sm transition-colors hover:bg-brand/90 disabled:bg-muted disabled:text-muted-foreground"
-                onStop={stop}
-                size="icon-sm"
-                status={status}
-              />
-            </PromptInputFooter>
-          </PromptInput>
+          <motion.div layoutId="prompt-input-container">
+            <PromptInput
+              className="relative rounded-2xl border border-border/80 bg-background/75 shadow-xs transition-colors duration-200 focus-within:border-brand/50 focus-within:bg-card"
+              maxFiles={CHAT_ATTACHMENT_MAX_FILES}
+              maxFileSize={CHAT_ATTACHMENT_MAX_FILE_BYTES}
+              onError={(attachmentError) => {
+                toast.warning("附件未添加", {
+                  description: getAttachmentErrorMessage(attachmentError),
+                });
+              }}
+              onSubmit={(message) => {
+                onSubmitPrompt(message);
+              }}
+            >
+              <PromptInputBody>
+                <PromptInputTextarea
+                  className="min-h-20 max-h-40 overflow-y-auto px-4 pt-4 pb-1 text-foreground text-[15px] leading-relaxed placeholder:text-muted-foreground/50"
+                  disabled={isLoading}
+                  placeholder="描述要生成或修改的教案、大屏、课堂组织、评价与安全要求..."
+                />
+              </PromptInputBody>
+              <PromptInputFooter className="px-3 pt-1 pb-3">
+                <PromptInputTools className="min-w-0 overflow-hidden">
+                  <span className="shrink-0 rounded-full bg-brand/10 px-2.5 py-1 font-medium text-[11px] text-brand">
+                    教案 / 大屏 / 复盘
+                  </span>
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    Enter 发送，Shift + Enter 换行
+                  </span>
+                </PromptInputTools>
+                <PromptInputSubmit
+                  className="size-9 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-sm transition-all hover:bg-brand/90 disabled:bg-muted/50 disabled:text-muted-foreground"
+                  onStop={stop}
+                  size="icon-sm"
+                  status={status}
+                />
+              </PromptInputFooter>
+            </PromptInput>
+          </motion.div>
         </PromptInputProvider>
       </div>
     </aside>

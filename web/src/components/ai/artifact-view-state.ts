@@ -22,15 +22,14 @@ export function getLessonArtifactDisplayState(
   lifecycle: ArtifactLifecycle,
 ): LessonArtifactDisplayState {
   const hasLesson = Boolean(lifecycle.lessonPlan || lifecycle.lessonContent.trim());
+  const isStreamActive = lifecycle.stage === "lesson" && lifecycle.status === "streaming";
   const isPendingStream =
-    lifecycle.stage === "lesson" && lifecycle.status === "streaming" && !hasLesson;
+    isStreamActive && !hasLesson;
   const isJsonStream =
-    lifecycle.stage === "lesson" &&
-    lifecycle.status === "streaming" &&
+    isStreamActive &&
     lifecycle.activeArtifact?.contentType === "lesson-json" &&
     !lifecycle.lessonPlan;
-  const isStreamActive = isPendingStream || isJsonStream;
-  const shouldShowPrintFrame = Boolean(lifecycle.lessonPlan && !isStreamActive);
+  const shouldShowPrintFrame = Boolean(lifecycle.lessonPlan);
 
   return {
     hasLesson,

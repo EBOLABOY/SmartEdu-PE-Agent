@@ -22,6 +22,8 @@ export async function runHtmlScreenGenerationSkill(input: {
   workflow: LessonWorkflowOutput;
   lessonPlanLength: number;
   originalMessageCount: number;
+  plannedSectionCount?: number;
+  planningSource?: string;
   agentStream: AgentStreamRunner;
 }): Promise<{ result: MastraModelOutput<unknown>; modelMessageCount: number }> {
   const modelMessages = buildHtmlModelMessages();
@@ -47,6 +49,8 @@ export async function runHtmlScreenGenerationSkill(input: {
     originalMessageCount: input.originalMessageCount,
     modelMessageCount: modelMessages.length,
     lessonPlanLength: input.lessonPlanLength,
+    plannedSectionCount: input.plannedSectionCount,
+    planningSource: input.planningSource,
   });
 
   return {

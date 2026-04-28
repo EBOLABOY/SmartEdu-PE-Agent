@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -46,6 +45,13 @@ const useWebPreview = () => {
   }
 
   return context;
+};
+
+export type WebPreviewSandboxPolicy = "external-url" | "sandboxed-html";
+
+const WEB_PREVIEW_SANDBOX_BY_POLICY: Record<WebPreviewSandboxPolicy, string> = {
+  "external-url": "allow-scripts allow-same-origin allow-forms allow-popups allow-presentation",
+  "sandboxed-html": "allow-scripts",
 };
 
 export type WebPreviewProps = ComponentProps<"div"> & {
@@ -124,25 +130,23 @@ export const WebPreviewNavigationButton = ({
   children,
   ...props
 }: WebPreviewNavigationButtonProps) => (
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          className="h-8 w-8 p-0 hover:text-foreground"
-          disabled={disabled}
-          onClick={onClick}
-          size="sm"
-          variant="ghost"
-          {...props}
-        >
-          {children}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        <p>{tooltip}</p>
-      </TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <Button
+        className="h-8 w-8 p-0 hover:text-foreground"
+        disabled={disabled}
+        onClick={onClick}
+        size="sm"
+        variant="ghost"
+        {...props}
+      >
+        {children}
+      </Button>
+    </TooltipTrigger>
+    <TooltipContent>
+      <p>{tooltip}</p>
+    </TooltipContent>
+  </Tooltip>
 );
 
 export type WebPreviewUrlProps = ComponentProps<typeof Input>;
@@ -192,22 +196,26 @@ export const WebPreviewUrl = ({
 
 export type WebPreviewBodyProps = ComponentProps<"iframe"> & {
   loading?: ReactNode;
+  sandboxPolicy?: WebPreviewSandboxPolicy;
 };
 
 export const WebPreviewBody = ({
   className,
   loading,
+  sandbox,
+  sandboxPolicy = "external-url",
   src,
   ...props
 }: WebPreviewBodyProps) => {
   const { url } = useWebPreview();
+  const resolvedSrc = sandboxPolicy === "sandboxed-html" ? src : (src ?? url);
 
   return (
     <div className="flex-1">
       <iframe
         className={cn("size-full", className)}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
-        src={(src ?? url) || undefined}
+        sandbox={sandbox ?? WEB_PREVIEW_SANDBOX_BY_POLICY[sandboxPolicy]}
+        src={resolvedSrc || undefined}
         title="Preview"
         {...props}
       />

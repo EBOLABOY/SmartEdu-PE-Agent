@@ -25,6 +25,12 @@ export const lessonScreenSectionPlanSchema = z
     title: z.string().trim().min(1).max(120),
     durationSeconds: z.number().int().positive().max(14_400).optional(),
     supportModule: lessonScreenSupportModuleSchema,
+    sourceRowIndex: z.number().int().nonnegative().optional(),
+    objective: z.string().trim().min(1).max(240).optional(),
+    studentActions: z.array(z.string().trim().min(1).max(120)).min(1).max(3).optional(),
+    safetyCue: z.string().trim().min(1).max(160).optional(),
+    evaluationCue: z.string().trim().min(1).max(160).optional(),
+    visualIntent: z.string().trim().min(1).max(240).optional(),
     reason: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
@@ -54,6 +60,58 @@ export const peTeacherContextSchema = z
   .strict();
 
 export type PeTeacherContext = z.infer<typeof peTeacherContextSchema>;
+
+export const lessonIntakeFieldSchema = z.enum([
+  "grade",
+  "topic",
+  "duration",
+  "studentCount",
+  "venue",
+  "equipment",
+  "teachingLevel",
+  "objectives",
+  "constraints",
+]);
+
+export type LessonIntakeField = z.infer<typeof lessonIntakeFieldSchema>;
+
+export const lessonIntakeKnownInfoSchema = z
+  .object({
+    grade: z.string().trim().min(1).max(80).optional(),
+    teachingLevel: z.string().trim().min(1).max(80).optional(),
+    topic: z.string().trim().min(1).max(160).optional(),
+    durationMinutes: z.number().int().positive().max(240).optional(),
+    studentCount: z.number().int().positive().max(300).optional(),
+    venue: z.string().trim().min(1).max(160).optional(),
+    equipment: z.array(z.string().trim().min(1).max(120)).max(32).optional(),
+    objectives: z.array(z.string().trim().min(1).max(160)).max(5).optional(),
+    constraints: z.array(z.string().trim().min(1).max(160)).max(8).optional(),
+  })
+  .strict();
+
+export type LessonIntakeKnownInfo = z.infer<typeof lessonIntakeKnownInfoSchema>;
+
+export const lessonAuthoringMemorySchema = z
+  .object({
+    defaults: lessonIntakeKnownInfoSchema.default({}),
+    updatedAt: z.string().datetime().optional(),
+  })
+  .strict();
+
+export type LessonAuthoringMemory = z.infer<typeof lessonAuthoringMemorySchema>;
+
+export const lessonIntakeResultSchema = z
+  .object({
+    readyToGenerate: z.boolean(),
+    known: lessonIntakeKnownInfoSchema.optional(),
+    missing: z.array(lessonIntakeFieldSchema).max(9),
+    questions: z.array(z.string().trim().min(1).max(180)).max(5),
+    summary: z.string().trim().min(1).max(1200).optional(),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export type LessonIntakeResult = z.infer<typeof lessonIntakeResultSchema>;
 
 export const workflowTraceStatusSchema = z.enum(["success", "blocked", "running", "failed"]);
 

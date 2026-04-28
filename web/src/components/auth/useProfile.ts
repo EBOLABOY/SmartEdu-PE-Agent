@@ -30,21 +30,23 @@ export function useProfile({
     }
 
     let mounted = true;
+    const client = supabase;
+    const profileUserId = userId;
 
-    void Promise.resolve()
-      .then(() => {
+    async function loadProfile() {
+      try {
         if (!mounted) {
           return;
         }
 
         setIsProfileLoading(true);
-        return supabase
+
+        const result = await client
           .from("profiles")
           .select("display_name, avatar_url, school_name, teacher_name, teaching_grade, teaching_level")
-          .eq("id", userId)
+          .eq("id", profileUserId)
           .maybeSingle();
-      })
-      .then((result) => {
+
         if (!mounted || !result) {
           return;
         }
@@ -61,12 +63,14 @@ export function useProfile({
           teachingGrade: result.data?.teaching_grade ?? "",
           teachingLevel: result.data?.teaching_level ?? "",
         });
-      })
-      .finally(() => {
+      } finally {
         if (mounted) {
           setIsProfileLoading(false);
         }
-      });
+      }
+    }
+
+    void loadProfile();
 
     return () => {
       mounted = false;

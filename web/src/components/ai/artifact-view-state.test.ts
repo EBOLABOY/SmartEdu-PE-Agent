@@ -115,6 +115,42 @@ describe("artifact-view-state", () => {
     });
   });
 
+  it("uses the print frame for schema-valid streaming lesson drafts", () => {
+    const streamingDraftMessage = {
+      ...createReadyLessonMessage(),
+      id: "assistant-lesson-streaming-draft",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "lesson",
+            contentType: "lesson-json",
+            content: JSON.stringify({
+              ...DEFAULT_COMPETITION_LESSON_PLAN,
+              title: "教案生成中",
+            }),
+            isComplete: false,
+            status: "streaming",
+            source: "data-part",
+            updatedAt: "2026-04-25T12:10:00.000Z",
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([streamingDraftMessage], "streaming", false, []);
+    const displayState = getLessonArtifactDisplayState(lifecycle);
+
+    expect(displayState).toMatchObject({
+      hasLesson: true,
+      isStreamActive: true,
+      shouldShowPrintFrame: true,
+      shouldShowWorkspace: true,
+    });
+  });
+
   it("keeps the start guide before any lesson request exists", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, []);
     const displayState = getLessonArtifactDisplayState(lifecycle);

@@ -1,7 +1,16 @@
-import { createUIMessageStream, type FinishReason, type UIMessageChunk } from "ai";
+import {
+  createUIMessageStream,
+  type DeepPartial,
+  type FinishReason,
+  type UIMessageChunk,
+} from "ai";
 
 import { extractHtmlDocumentFromText, extractJsonObjectText } from "@/lib/artifact-protocol";
-import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
+import {
+  competitionLessonPlanSchema,
+  type CompetitionLessonPlan,
+} from "@/lib/competition-lesson-contract";
+import { buildCompetitionLessonDraft } from "@/lib/competition-lesson-draft";
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   type GenerationMode,
@@ -143,6 +152,7 @@ export function createStructuredAuthoringStreamAdapter({
   mode,
   originalMessages,
   chatPersistence,
+  lessonDraftStream,
   lessonPlan,
   persistence,
   projectId,
@@ -153,6 +163,7 @@ export function createStructuredAuthoringStreamAdapter({
   mode: GenerationMode;
   originalMessages: SmartEduUIMessage[];
   chatPersistence?: ProjectChatPersistence | null;
+  lessonDraftStream?: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
   lessonPlan?: string;
   persistence?: LessonAuthoringPersistence | null;
   projectId?: string;
@@ -203,6 +214,22 @@ export function createStructuredAuthoringStreamAdapter({
         });
       };
 
+      let latestLessonDraft = buildCompetitionLessonDraft();
+
+      const writeLessonDraftArtifact = (partial?: DeepPartial<CompetitionLessonPlan>) => {
+        latestLessonDraft = buildCompetitionLessonDraft(partial, latestLessonDraft);
+
+        writeArtifact(
+          buildArtifactData(workflow, {
+            content: JSON.stringify(latestLessonDraft),
+            contentType: "lesson-json",
+            isComplete: false,
+            status: "streaming",
+            title: latestLessonDraft.title,
+          }),
+        );
+      };
+
       const persistArtifact = async (artifact: StructuredArtifactData) => {
         if (!persistence || !projectId) {
           return;
@@ -244,17 +271,122 @@ export function createStructuredAuthoringStreamAdapter({
         });
       };
 
+      const writeStreamError = (step: string, errorText: string) => {
+        runtimeTrace.push(createTraceEntry(step, "failed", errorText));
+        writeTrace("failed");
+        writer.write({ type: "error", errorText });
+        finishStream("error");
+      };
+
+      const finalizeLessonArtifact = async () => {
+        const lessonText = rawText.trim();
+
+        if (!lessonText) {
+          writeStreamError("validate-lesson-output", "模型未返回可用的 CompetitionLessonPlan JSON 内容。");
+          return false;
+        }
+
+        const lessonJson = buildLessonJsonArtifactContent(lessonText);
+        const artifact = buildArtifactData(workflow, {
+          content: lessonJson.content,
+          contentType: lessonJson.contentType,
+          isComplete: true,
+          status: "ready",
+          title: lessonJson.title,
+          warningText: lessonJson.warningText,
+        });
+
+        writeArtifact(artifact);
+        await persistArtifact(artifact);
+        return true;
+      };
+
+      const finalizeHtmlArtifact = async () => {
+        const extraction = extractHtmlDocumentFromText(rawText);
+
+        if (!extraction.html.trim()) {
+          writeStreamError("extract-html-document", "模型响应中未提取到 HTML 文档，无法生成互动大屏。");
+          return false;
+        }
+
+        if (!extraction.htmlComplete) {
+          writeStreamError("extract-html-document", "模型 HTML 文档未完整关闭，已拒绝使用截断的大屏内容。");
+          return false;
+        }
+
+        const extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
+        const shouldUseFallback = !isPptStyleLessonHtml(extraction.html);
+        const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : extraction.html;
+        const fallbackWarning = shouldUseFallback
+          ? "模型 HTML 未满足课堂学习辅助大屏结构或学生理解支撑要求，系统已按已确认教案生成多页倒计时学习辅助大屏兜底版本。"
+          : undefined;
+
+        if (shouldUseFallback) {
+          runtimeTrace.push(
+            createTraceEntry(
+              "html-slideshow-fallback",
+              "success",
+              "已将不合格 HTML 替换为多页课堂倒计时学习辅助大屏。",
+            ),
+          );
+        }
+
+        const artifact = buildArtifactData(workflow, {
+          content: finalHtml,
+          isComplete: true,
+          status: "ready",
+          warningText: joinWarnings(extractedWarning, fallbackWarning) || undefined,
+        });
+
+        writeArtifact(artifact);
+        await persistArtifact(artifact);
+        return true;
+      };
+
+      const finalizeArtifact = async () => (mode === "lesson" ? finalizeLessonArtifact() : finalizeHtmlArtifact());
+
+      const consumeLessonDraftStream = async () => {
+        if (mode !== "lesson" || !lessonDraftStream) {
+          return;
+        }
+
+        writeLessonDraftArtifact();
+
+        for await (const partial of lessonDraftStream) {
+          if (hasFinished) {
+            return;
+          }
+
+          writeLessonDraftArtifact(partial);
+        }
+      };
+
+      const createLessonDraftTask = () => consumeLessonDraftStream().catch((error) => {
+        runtimeTrace.push(
+          createTraceEntry(
+            "lesson-draft-stream",
+            "blocked",
+            `教案草稿流已中断，最终 JSON 校验仍将继续：${
+              error instanceof Error ? error.message : "unknown-error"
+            }`,
+          ),
+        );
+      });
+
       writer.write({ type: "start" });
       writeTrace("workflow");
 
-      runtimeTrace.push(
+      if (!runtimeTrace.some((entry) => entry.step === "agent-stream-started")) {
+        runtimeTrace.push(
         createTraceEntry(
           "agent-stream-started",
           "running",
           mode === "html" ? "已开始生成互动大屏 HTML 文档流。" : "已开始流式生成 CompetitionLessonPlan JSON。",
         ),
-      );
+        );
+      }
       writeTrace("generation");
+      const lessonDraftTask = createLessonDraftTask();
 
       try {
         while (true) {
@@ -295,14 +427,16 @@ export function createStructuredAuthoringStreamAdapter({
                     ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
                   });
                 }
-                writeArtifact(
-                  buildArtifactData(workflow, {
-                    content: rawText,
-                    contentType: "lesson-json",
-                    isComplete: false,
-                    status: "streaming",
-                  }),
-                );
+                if (!lessonDraftStream) {
+                  writeArtifact(
+                    buildArtifactData(workflow, {
+                      content: rawText,
+                      contentType: "lesson-json",
+                      isComplete: false,
+                      status: "streaming",
+                    }),
+                  );
+                }
                 break;
               }
 
@@ -442,70 +576,11 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "finish": {
-              if (mode === "lesson") {
-                const lessonText = rawText.trim();
+              await lessonDraftTask;
+              const finalized = await finalizeArtifact();
 
-                if (!lessonText) {
-                  const errorText = "模型未返回可用的 CompetitionLessonPlan JSON 内容。";
-
-                  runtimeTrace.push(createTraceEntry("validate-lesson-output", "failed", errorText));
-                  writeTrace("failed");
-                  writer.write({ type: "error", errorText });
-                  finishStream("error");
-                  return;
-                }
-
-                const lessonJson = buildLessonJsonArtifactContent(lessonText);
-                const artifact = buildArtifactData(workflow, {
-                  content: lessonJson.content,
-                  contentType: lessonJson.contentType,
-                  isComplete: true,
-                  status: "ready",
-                  title: lessonJson.title,
-                  warningText: lessonJson.warningText,
-                });
-
-                writeArtifact(artifact);
-                await persistArtifact(artifact);
-              } else {
-                const extraction = extractHtmlDocumentFromText(rawText);
-
-                if (!extraction.html.trim()) {
-                  const errorText = "模型响应中未提取到 HTML 文档，无法生成互动大屏。";
-
-                  runtimeTrace.push(createTraceEntry("extract-html-document", "failed", errorText));
-                  writeTrace("failed");
-                  writer.write({ type: "error", errorText });
-                  finishStream("error");
-                  return;
-                }
-
-                const extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
-                const shouldUseFallback = !isPptStyleLessonHtml(extraction.html);
-                const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : extraction.html;
-                const fallbackWarning = shouldUseFallback
-                  ? "模型 HTML 未满足课堂学习辅助大屏结构或学生理解支撑要求，系统已按已确认教案生成多页倒计时学习辅助大屏兜底版本。"
-                  : undefined;
-
-                if (shouldUseFallback) {
-                  runtimeTrace.push(
-                    createTraceEntry(
-                      "html-slideshow-fallback",
-                      "success",
-                      "已将不合格 HTML 替换为多页课堂倒计时学习辅助大屏。",
-                    ),
-                  );
-                }
-
-                const artifact = buildArtifactData(workflow, {
-                  content: finalHtml,
-                  isComplete: true,
-                  status: "ready",
-                  warningText: joinWarnings(extractedWarning, fallbackWarning) || undefined,
-                });
-
-                writeArtifact(artifact);
-                await persistArtifact(artifact);
+              if (!finalized) {
+                return;
               }
 
               runtimeTrace.push(
@@ -527,8 +602,19 @@ export function createStructuredAuthoringStreamAdapter({
         }
 
         if (!hasFinished) {
+          await lessonDraftTask;
+          const finalized = await finalizeArtifact();
+
+          if (!finalized) {
+            return;
+          }
+
           runtimeTrace.push(
-            createTraceEntry("generation-stream-closed", "success", "流已自然结束，已按结构化协议关闭响应。"),
+            createTraceEntry(
+              "generation-stream-closed-without-finish",
+              "blocked",
+              "底层模型流未发送 finish chunk；系统已完成最终校验后再关闭响应。",
+            ),
           );
           writeTrace("completed");
           finishStream("stop");
@@ -541,6 +627,60 @@ export function createStructuredAuthoringStreamAdapter({
         writer.write({ type: "error", errorText });
         finishStream("error");
       }
+    },
+  });
+}
+
+export function createLessonClarificationStreamAdapter({
+  originalMessages,
+  chatPersistence,
+  projectId,
+  requestId,
+  workflow,
+  text,
+}: {
+  originalMessages: SmartEduUIMessage[];
+  chatPersistence?: ProjectChatPersistence | null;
+  projectId?: string;
+  requestId: string;
+  workflow: LessonWorkflowOutput;
+  text: string;
+}) {
+  const runtimeTrace: WorkflowTraceEntry[] = [...workflow.trace];
+
+  return createUIMessageStream<SmartEduUIMessage>({
+    originalMessages,
+    onFinish: async ({ responseMessage }) => {
+      if (!chatPersistence || !projectId) {
+        return;
+      }
+
+      try {
+        await chatPersistence.saveMessages({
+          projectId,
+          requestId,
+          messages: [responseMessage],
+        });
+      } catch (error) {
+        console.warn("[lesson-authoring] persist-clarification-message-failed", {
+          requestId,
+          message: error instanceof Error ? error.message : "unknown-error",
+        });
+      }
+    },
+    execute: ({ writer }) => {
+      const id = "lesson-intake-clarification";
+
+      writer.write({ type: "start" });
+      writer.write({
+        type: "data-trace",
+        id: "lesson-authoring-trace",
+        data: buildTraceData(workflow, requestId, runtimeTrace, "workflow"),
+      });
+      writer.write({ type: "text-start", id });
+      writer.write({ type: "text-delta", id, delta: text });
+      writer.write({ type: "text-end", id });
+      writer.write({ type: "finish", finishReason: "stop" });
     },
   });
 }

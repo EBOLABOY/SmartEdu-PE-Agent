@@ -2,6 +2,7 @@ import { createUIMessageStreamResponse, validateUIMessages } from "ai";
 
 import {
   chatRequestBodySchema,
+  STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   smartEduDataSchemas,
   type PeTeacherContext,
   type SmartEduUIMessage,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/api/ai-guard";
 import { CHAT_REQUEST_MAX_BYTES, jsonRequestErrorResponse, readJsonRequest } from "@/lib/api/request";
 import { createLessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
+import { createLessonMemoryPersistence } from "@/lib/persistence/lesson-memory-store";
 import { createProjectChatPersistence } from "@/lib/persistence/project-chat-store";
 import {
   ProjectAuthorizationError,
@@ -22,7 +24,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { LessonAuthoringError, streamLessonAuthoring } from "@/mastra/services/lesson_authoring";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const CHAT_RATE_LIMIT = 30;
 const CHAT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -149,6 +151,11 @@ export async function POST(request: Request) {
 
     const lessonPersistence = user ? createLessonAuthoringPersistence(supabase) : null;
     const chatPersistence = user ? createProjectChatPersistence(supabase, user.id) : null;
+    const memoryPersistence = user ? createLessonMemoryPersistence(supabase) : null;
+    const lessonMemory =
+      memoryPersistence && parsedBody.data.projectId
+        ? await memoryPersistence.loadMemory({ projectId: parsedBody.data.projectId })
+        : undefined;
     const profileContext = await loadUserProfileContext(supabase, user?.id);
     const mergedContext = {
       ...profileContext,
@@ -173,6 +180,8 @@ export async function POST(request: Request) {
       messages,
       persistence: lessonPersistence,
       chatPersistence,
+      memory: lessonMemory,
+      memoryPersistence,
       projectId: parsedBody.data.projectId,
       mode: parsedBody.data.mode,
       context: mergedContext,
@@ -195,9 +204,11 @@ export async function POST(request: Request) {
   return createUIMessageStreamResponse({
     stream: authoringResult.stream,
     headers: {
-      "x-smartedu-artifact-protocol": authoringResult.workflow.generationPlan.protocolVersion,
+      "cache-control": "no-cache, no-transform",
+      "x-smartedu-artifact-protocol": STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
       "x-smartedu-request-id": authoringResult.requestId,
-      "x-smartedu-response-transport": authoringResult.workflow.generationPlan.responseTransport,
+      "x-smartedu-response-transport": "structured-data-part",
+      "x-accel-buffering": "no",
     },
   });
 }

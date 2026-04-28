@@ -52,15 +52,56 @@ function buildLessonPlanSectionReason(module: LessonScreenSupportModule, row: Co
   return `${MODULE_REASON[module]}时间已从结构化教案解析为 ${row.time}。`;
 }
 
+function firstText(values: string[], fallback: string) {
+  return values.find((value) => value.trim().length > 0) ?? fallback;
+}
+
+function takeActionItems(row: CompetitionLessonPlanRow) {
+  return row.methods.students.slice(0, 3).map((item) => item.trim()).filter(Boolean);
+}
+
+function buildObjective(row: CompetitionLessonPlanRow) {
+  return `本页服务于“${firstText(row.content, row.structure)}”：让学生看屏后能明确任务、组织方式和完成标准。`;
+}
+
+function buildSafetyCue(row: CompetitionLessonPlanRow) {
+  return `注意${firstText(row.organization, "练习区域")}的间距和行进方向，按教师口令开始与停止。`;
+}
+
+function buildEvaluationCue(row: CompetitionLessonPlanRow) {
+  return `观察学生能否按“${firstText(row.content, row.structure)}”要求完成动作，并及时给出同伴合作反馈。`;
+}
+
+function buildVisualIntent(module: LessonScreenSupportModule, row: CompetitionLessonPlanRow) {
+  const title = firstText(row.content, row.structure);
+
+  switch (module) {
+    case "scoreboard":
+      return `为“${title}”绘制分组计分板，突出得分规则、挑战目标和即时反馈。`;
+    case "rotation":
+      return `为“${title}”绘制小组轮换路线，标清站点顺序、移动方向和等待区。`;
+    case "tacticalBoard":
+      return `为“${title}”绘制战术板或路线图，展示队员点位、移动箭头和关键配合时机。`;
+    case "formation":
+      return `为“${title}”绘制队形组织图，突出集合、练习边界和安全距离。`;
+  }
+}
+
 export function buildLessonScreenPlanFromLessonPlan(lessonPlan: CompetitionLessonPlan): LessonScreenPlan {
   return {
-    sections: lessonPlan.periodPlan.rows.map((row) => {
+    sections: lessonPlan.periodPlan.rows.map((row, index) => {
       const supportModule = selectSupportModule(row);
 
       return {
         title: row.content[0] ?? row.structure,
         durationSeconds: parseDurationSeconds(row.time),
         supportModule,
+        sourceRowIndex: index,
+        objective: buildObjective(row),
+        studentActions: takeActionItems(row),
+        safetyCue: buildSafetyCue(row),
+        evaluationCue: buildEvaluationCue(row),
+        visualIntent: buildVisualIntent(supportModule, row),
         reason: buildLessonPlanSectionReason(supportModule, row),
       };
     }),

@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+
+import type { FullOutput } from "@mastra/core/stream";
+
 import {
   ARTIFACT_JSON_REQUEST_MAX_BYTES,
   jsonRequestErrorResponse,
@@ -8,8 +12,15 @@ import {
   getAiRequestAuth,
   takeAiRateLimitToken,
 } from "@/lib/api/ai-guard";
-import { competitionLessonPatchRequestBodySchema } from "@/lib/competition-lesson-patch";
-import { runCompetitionLessonPatchSkill } from "@/mastra/skills";
+import {
+  competitionLessonPatchRequestBodySchema,
+  type CompetitionLessonPatch,
+} from "@/lib/competition-lesson-patch";
+import { mastra } from "@/mastra";
+import {
+  runCompetitionLessonPatchSkill,
+  type LessonPatchAgentRunner,
+} from "@/mastra/skills";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -67,8 +78,13 @@ export async function POST(request: Request) {
       );
     }
 
+    const patchAgent = mastra.getAgent("lessonPatchAgent");
+    const agentGenerate: LessonPatchAgentRunner = async (messages, options) =>
+      (await patchAgent.generate(messages, options)) as FullOutput<CompetitionLessonPatch>;
     const response = await runCompetitionLessonPatchSkill(parsedBody.data, {
-      modelId: process.env.AI_PATCH_MODEL ?? process.env.AI_MODEL ?? "gpt-4.1-mini",
+      agentGenerate,
+      maxSteps: 2,
+      requestId: randomUUID(),
     });
 
     return Response.json(response, {

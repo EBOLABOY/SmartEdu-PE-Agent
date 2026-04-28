@@ -25,7 +25,6 @@ import {
   Attachments,
   type AttachmentData,
 } from "@/components/ai-elements/attachments";
-import { MessageResponse } from "@/components/ai-elements/message";
 import {
   getAssistantCitationLabel,
   getAssistantCitationSources,
@@ -173,9 +172,9 @@ function MessageAttachments({ message }: { message: SmartEduUIMessage }) {
 
 function AssistantArtifactPart({ artifact }: { artifact: StructuredArtifactData }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-2">
-      <MessageResponse>{getArtifactSummary(artifact)}</MessageResponse>
-    </div>
+    <p className="text-[13px] text-muted-foreground leading-relaxed">
+      {getArtifactSummary(artifact)}
+    </p>
   );
 }
 
@@ -188,11 +187,10 @@ function AssistantTextParts({
 }) {
   const rawText = getFallbackText(message);
 
-  if (shouldHideAssistantText(message, rawText)) {
+  if (!rawText || shouldHideAssistantText(message, rawText)) {
     return null;
   }
 
-  const text = rawText || "正在生成...";
   const citationSources = getAssistantCitationSources(message);
   const citationLabel = getAssistantCitationLabel(message);
 
@@ -201,7 +199,7 @@ function AssistantTextParts({
       citationLabel={citationLabel}
       citationSources={citationSources}
       sources={sources}
-      text={text}
+      text={rawText}
     />
   );
 }

@@ -6,6 +6,7 @@ import {
 } from "@/lib/lesson-authoring-contract";
 
 import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "../agents/guangdong_competition_lesson_format";
+import { formatLessonScreenPlanForPrompt } from "../agents/html_screen_planner";
 import type { PromptSkill, PromptSkillWithInput } from "./types";
 
 type PeTeacherPromptOptions = {
@@ -36,6 +37,18 @@ const baseTeacherPersonaSkill: PromptSkill = {
 4. 每次修改都要说明改动位置、理由和可验证标准。`,
 };
 
+const lessonInputDefaultsSkill: PromptSkill = {
+  id: "lesson-input-defaults",
+  description: "定义教案生成前缺省信息处理：默认人数、自动课时、自动场地、自动器材。",
+  render: () => `
+教案输入缺省规则：
+1. 学生人数：如果用户未明确说明人数，meta.studentCount 必须按“40人”填写；如果用户明确调整人数，以用户本轮输入为准。
+2. 课时：不要因为用户未说明课时而追问。lesson 阶段必须根据年级、课程内容、教学环节复杂度和比赛教案格式，合理设计 periodPlan.rows 的运动时间，并同步 loadEstimate.chartPoints。
+3. 器材：不要因为用户未说明器材而追问。lesson 阶段必须根据课程内容、场地、默认 40 人或用户指定人数，自动填写 venueEquipment.equipment 的 3-4 条高频核心器材。
+4. 场地：场地应优先来自信息收集 Agent 或用户输入；如果仍缺失，必须选择与课程内容最匹配的单一核心教学场地，不要写多个场地。
+5. 自动补全的人数、课时、场地、器材不得与用户明确输入冲突。`,
+};
+
 const competitionLessonFormatSkill: PromptSkill = {
   id: "competition-lesson-format",
   description: "注入广东省比赛体育教案格式、JSON 字段和打印模板兼容约束。",
@@ -43,20 +56,21 @@ const competitionLessonFormatSkill: PromptSkill = {
 ${GUANGDONG_COMPETITION_LESSON_FORMAT}
 
 CompetitionLessonPlan JSON 字段硬约束：
-1. 根对象必须只包含 title、subtitle、teacher、meta、narrative、learningObjectives、keyDifficultPoints、flowSummary、evaluation、loadEstimate、venueEquipment、periodPlan。
-2. teacher 必须包含 school、name；如果用户未提供，使用“未提供学校”“未提供教师”，不得使用 XXX、示例学校或示例教师。
-3. meta 必须包含 topic、lessonNo、studentCount，可包含 grade、level；字段内容必须来自用户需求或合理补全。
-4. 正文块字段统一使用非空字符串数组，禁止输出单个字符串。每个数组项必须是语义完整的自然句或自然段，不要把短语拆成碎片。
-5. narrative.guidingThought、narrative.textbookAnalysis、narrative.studentAnalysis 必须是非空字符串数组；通常每个字段只写 1 项。
-6. learningObjectives 必须包含 sportAbility、healthBehavior、sportMorality 三维目标；这三个字段都必须是非空字符串数组。
-7. keyDifficultPoints 必须包含 studentLearning、teachingContent、teachingOrganization、teachingMethod 四类分析；这四个字段都必须是非空字符串数组。
-8. evaluation 必须正好三项，level 依次为“三颗星”“二颗星”“一颗星”，description 写评价方面。
-9. loadEstimate 必须包含 loadLevel、targetHeartRateRange、averageHeartRate、groupDensity、individualDensity、chartPoints、rationale；rationale 必须是非空字符串数组；chartPoints 为 5-8 个对象，每个对象包含 timeMinute、heartRate、label。
-10. venueEquipment.venue 必须是非空字符串数组且只写 1 条核心教学场地；venueEquipment.equipment 必须是非空字符串数组且只写 3-4 条直接支撑主教材学练的高频核心器材，并合并同类项，例如“羽毛球拍40把”“羽毛球80个”“球网4副”“标志桶32个”。禁止写急救包、任务卡、学习单、记分板、秒表、哨子、扩音器、等待区、观察通道等管理性、安全备用性或展示性物品，除非用户明确要求。
-11. periodPlan 必须包含 mainContent、safety、rows、homework、reflection；mainContent、safety、homework、reflection 都必须是非空字符串数组；safety 最多 3 条，每条不超过 34 个汉字。
-12. periodPlan.rows 至少包含准备部分、基本部分、结束部分；每行 structure 只能是这三者之一，content、methods.teacher、methods.students、organization 均为非空字符串数组。
-13. periodPlan.rows 的 time 必须统一使用“X分钟”或“X-Y分钟”格式，例如“2分钟”“8分钟”“10-12分钟”；禁止使用 2’、2'、2min、2, 或纯数字。
-14. 只输出 JSON 对象本体；不要输出代码围栏、注释、Markdown 表格、HTML、XML 或 artifact 标签。`,
+1. JSON 键名必须严格使用英文 schema 字段名，不得输出中文键名；例如课时计划行必须使用 intensity，不能使用“强度”作为键名。
+2. 根对象必须只包含 title、subtitle、teacher、meta、narrative、learningObjectives、keyDifficultPoints、flowSummary、evaluation、loadEstimate、venueEquipment、periodPlan。
+3. teacher 必须包含 school、name；如果用户未提供，使用“未提供学校”“未提供教师”，不得使用 XXX、示例学校或示例教师。
+4. meta 必须包含 topic、lessonNo、studentCount，可包含 grade、level；字段内容必须来自用户需求或合理补全。
+5. 正文块字段统一使用非空字符串数组，禁止输出单个字符串。每个数组项必须是语义完整的自然句或自然段，不要把短语拆成碎片。
+6. narrative.guidingThought、narrative.textbookAnalysis、narrative.studentAnalysis 必须是非空字符串数组；通常每个字段只写 1 项。
+7. learningObjectives 必须包含 sportAbility、healthBehavior、sportMorality 三维目标；这三个字段都必须是非空字符串数组。
+8. keyDifficultPoints 必须包含 studentLearning、teachingContent、teachingOrganization、teachingMethod 四类分析；这四个字段都必须是非空字符串数组。
+9. evaluation 必须正好三项，level 依次为“三颗星”“二颗星”“一颗星”，description 写评价方面。
+10. loadEstimate 必须包含 loadLevel、targetHeartRateRange、averageHeartRate、groupDensity、individualDensity、chartPoints、rationale；rationale 必须是非空字符串数组；chartPoints 为 5-8 个对象，每个对象包含 timeMinute、heartRate、label。
+11. venueEquipment.venue 必须是非空字符串数组且只写 1 条核心教学场地；venueEquipment.equipment 必须是非空字符串数组且只写 3-4 条直接支撑主教材学练的高频核心器材，并合并同类项，例如“羽毛球拍40把”“羽毛球80个”“球网4副”“标志桶32个”。禁止写急救包、任务卡、学习单、记分板、秒表、哨子、扩音器、等待区、观察通道等管理性、安全备用性或展示性物品，除非用户明确要求。
+12. periodPlan 必须包含 mainContent、safety、rows、homework、reflection；mainContent、safety、homework、reflection 都必须是非空字符串数组；safety 最多 3 条，每条不超过 34 个汉字。
+13. periodPlan.rows 至少包含准备部分、基本部分、结束部分；每行只能包含 structure、content、methods、organization、time、intensity；structure 只能是这三者之一，content、methods.teacher、methods.students、organization 均为非空字符串数组。
+14. periodPlan.rows 的 time 必须统一使用“X分钟”或“X-Y分钟”格式，例如“2分钟”“8分钟”“10-12分钟”；禁止使用 2’、2'、2min、2, 或纯数字。
+15. 只输出 JSON 对象本体；不要输出代码围栏、注释、Markdown 表格、HTML、XML 或 artifact 标签。`,
 };
 
 function renderScreenPlanPrompt(screenPlan?: LessonScreenPlan) {
@@ -73,13 +87,7 @@ function renderScreenPlanPrompt(screenPlan?: LessonScreenPlan) {
     return base;
   }
 
-  const sections = screenPlan.sections
-    .map((section, index) => {
-      const duration = section.durationSeconds ? `，durationSeconds=${section.durationSeconds}` : "";
-      const reason = section.reason ? `，理由：${section.reason}` : "";
-      return `${index + 1}. ${section.title}：supportModule=${section.supportModule}${duration}${reason}`;
-    })
-    .join("\n");
+  const sections = formatLessonScreenPlanForPrompt(screenPlan);
 
   return `${base}
 
@@ -167,6 +175,7 @@ ${contextLines.join("\n")}
 
 export const PE_TEACHER_SYSTEM_PROMPT = [
   baseTeacherPersonaSkill.render(),
+  lessonInputDefaultsSkill.render(),
   competitionLessonFormatSkill.render(),
 ].join("\n\n");
 
@@ -186,6 +195,7 @@ export function buildPeTeacherSystemPrompt(context?: PeTeacherContext, options?:
 
 export const peTeacherPromptSkills = {
   baseTeacherPersonaSkill,
+  lessonInputDefaultsSkill,
   competitionLessonFormatSkill,
   lessonAuthoringSkill,
   htmlScreenSkill,

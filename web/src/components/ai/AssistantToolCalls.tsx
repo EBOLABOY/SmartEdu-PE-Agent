@@ -11,13 +11,18 @@ import {
 import {
   Tool,
   ToolContent,
-  ToolHeader,
   ToolInput,
   ToolOutput,
   type ToolPart,
 } from "@/components/ai-elements/tool";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import { cn } from "@/lib/utils";
+import {
+  CheckCircle2,
+  Circle,
+  Loader2,
+  XCircle,
+} from "lucide-react";
 
 const TOOL_TITLES: Record<string, string> = {
   searchStandardsTool: "检索课程标准",
@@ -38,41 +43,71 @@ function humanizeToolName(name: string) {
 
 function getToolTitle(part: ToolPart) {
   const name = getToolName(part);
-
   return part.title ?? TOOL_TITLES[name] ?? humanizeToolName(name);
 }
 
-function shouldOpenToolByDefault(part: ToolPart) {
-  return (
-    part.state === "input-streaming" ||
-    part.state === "input-available" ||
-    part.state === "approval-requested" ||
-    part.state === "output-error"
-  );
+function ToolStatusDot({ state }: { state: ToolPart["state"] }) {
+  if (state === "output-error" || state === "output-denied") {
+    return <XCircle className="size-3.5 shrink-0 text-destructive" />;
+  }
+  if (state === "output-available" || state === "approval-responded") {
+    return <CheckCircle2 className="size-3.5 shrink-0 text-brand" />;
+  }
+  if (state === "input-streaming" || state === "input-available" || state === "approval-requested") {
+    return <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />;
+  }
+  return <Circle className="size-3 shrink-0 text-muted-foreground/50" />;
 }
 
+function getToolResultSummary(part: ToolPart): string | null {
+  if (part.errorText) return part.errorText;
+  if (!part.output) return null;
+  if (typeof part.output === "string") {
+    return part.output.length > 80 ? `${part.output.slice(0, 80)}…` : part.output;
+  }
+  if (typeof part.output === "object" && part.output !== null) {
+    const str = JSON.stringify(part.output);
+    return str.length > 80 ? `${str.slice(0, 80)}…` : str;
+  }
+  return null;
+}
+
+/**
+ * Timeline-style tool call item — Codex/Claude Code inspired.
+ * Reuses <Tool> (Collapsible), <ToolContent>, <ToolInput>, <ToolOutput> from ai-elements.
+ */
 export function AssistantToolPart({ className, part }: { className?: string; part: ToolPart }) {
-  const defaultOpen = shouldOpenToolByDefault(part);
-  const headerProps =
-    part.type === "dynamic-tool"
-      ? { toolName: part.toolName, type: part.type }
-      : { type: part.type };
+  const summary = getToolResultSummary(part);
 
   return (
     <Tool
       className={cn(
-        "mb-0 rounded-2xl border-border/70 bg-gradient-to-br from-background to-muted/35 shadow-sm",
+        "mb-0 border-0 rounded-none bg-transparent shadow-none",
         className,
       )}
-      defaultOpen={defaultOpen}
+      defaultOpen={false}
     >
-      <ToolHeader
-        className="px-3 py-2.5"
-        state={part.state}
-        title={getToolTitle(part)}
-        {...headerProps}
-      />
-      <ToolContent className="space-y-3 border-t border-border/60 bg-background/80 px-3 py-3">
+      {/* Clickable header — single line */}
+      <button
+        type="button"
+        className="flex w-full items-center gap-2.5 py-1 text-left group/tool-row"
+        data-collapsible-trigger=""
+      >
+        <ToolStatusDot state={part.state} />
+        <span className="min-w-0 truncate text-[13px] text-muted-foreground group-hover/tool-row:text-foreground transition-colors">
+          {getToolTitle(part)}
+        </span>
+      </button>
+
+      {/* Summary line (always visible, under the title) */}
+      {summary ? (
+        <p className="ml-6 truncate text-[11px] text-muted-foreground/70 leading-relaxed">
+          {summary}
+        </p>
+      ) : null}
+
+      {/* Expandable detail (reuses ai-elements) */}
+      <ToolContent className="ml-6 mt-1 space-y-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 text-xs">
         <ToolInput input={part.input} />
         <ToolOutput errorText={part.errorText} output={part.output} />
       </ToolContent>
@@ -81,17 +116,11 @@ export function AssistantToolPart({ className, part }: { className?: string; par
 }
 
 export function AssistantStepBoundary({ index }: { index: number }) {
-  if (index === 0) {
-    return null;
-  }
+  if (index === 0) return null;
 
   return (
-    <div className="flex items-center gap-2 px-1 text-[11px] text-muted-foreground">
-      <span className="h-px flex-1 bg-border/70" />
-      <span className="shrink-0 rounded-full border border-border/70 bg-background/80 px-2 py-0.5">
-        新一轮工具步骤
-      </span>
-      <span className="h-px flex-1 bg-border/70" />
+    <div className="flex items-center gap-2 py-1 text-[11px] text-muted-foreground/50">
+      <span className="h-px flex-1 bg-border/40" />
     </div>
   );
 }

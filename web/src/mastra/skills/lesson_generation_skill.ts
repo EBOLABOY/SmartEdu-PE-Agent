@@ -1,12 +1,16 @@
 import type { MastraModelOutput } from "@mastra/core/stream";
-import { Output, convertToModelMessages, streamText, stepCountIs, type UIMessageChunk } from "ai";
+import { toAISdkStream } from "@mastra/ai-sdk";
+import {
+  convertToModelMessages,
+  type DeepPartial,
+  type UIMessageChunk,
+} from "ai";
 
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
-import { createChatModel } from "@/mastra/models";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
@@ -21,10 +25,10 @@ type AgentStreamOptions = {
   };
 };
 
-export type AgentStreamRunner = (
+export type AgentStreamRunner<OUTPUT = unknown> = (
   messages: AgentModelMessages,
   options: AgentStreamOptions,
-) => Promise<MastraModelOutput<unknown>>;
+) => Promise<MastraModelOutput<OUTPUT>>;
 
 export type LessonStructuredGenerator = (options: {
   maxSteps: number;
@@ -38,7 +42,12 @@ export type LessonStructuredStreamer = (options: {
   messages: AgentModelMessages;
   modelId: string;
   system: string;
-}) => Promise<ReadableStream<UIMessageChunk>>;
+}) => Promise<LessonGenerationStreams | ReadableStream<UIMessageChunk>>;
+
+export type LessonGenerationStreams = {
+  partialOutputStream?: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
+  stream: ReadableStream<UIMessageChunk>;
+};
 
 const DEFAULT_LESSON_MODEL_ID = "gpt-4.1-mini";
 const MAX_MODEL_OPERATION_ATTEMPTS = 5;
@@ -112,50 +121,55 @@ export async function runModelOperationWithRetry<T>(
   throw lastError;
 }
 
-function getLessonModelId(modelId?: string) {
-  return modelId ?? process.env.AI_LESSON_MODEL ?? process.env.AI_MODEL ?? DEFAULT_LESSON_MODEL_ID;
+function normalizeLessonGenerationStreams(
+  output: LessonGenerationStreams | ReadableStream<UIMessageChunk>,
+): LessonGenerationStreams {
+  return output instanceof ReadableStream ? { stream: output } : output;
 }
 
-async function streamCompetitionLessonPlan({
+async function streamCompetitionLessonPlanWithMastraAgent({
+  agentStream,
   maxSteps,
   messages,
-  modelId,
   system,
+  toUIMessageStream,
 }: {
+  agentStream: AgentStreamRunner<CompetitionLessonPlan>;
   maxSteps: number;
   messages: AgentModelMessages;
-  modelId: string;
   system: string;
-}) {
-  const result = streamText({
-    model: createChatModel(modelId),
-    messages,
-    output: Output.object({
-      name: "CompetitionLessonPlan",
-      description: "A complete Guangdong competition PE lesson plan JSON object.",
-      schema: competitionLessonPlanSchema,
-    }),
+  toUIMessageStream?: (result: MastraModelOutput<CompetitionLessonPlan>) => ReadableStream<UIMessageChunk>;
+}): Promise<LessonGenerationStreams> {
+  const result = await agentStream(messages, {
+    system,
+    maxSteps,
     providerOptions: {
       openai: {
         store: true,
       },
     },
-    stopWhen: stepCountIs(maxSteps),
-    system,
   });
 
-  return result.toUIMessageStream<SmartEduUIMessage>({
-    sendStart: false,
-    sendFinish: true,
-  });
+  return {
+    stream:
+      toUIMessageStream?.(result) ??
+      (toAISdkStream(result, {
+        from: "agent",
+        version: "v6",
+        sendStart: false,
+        sendFinish: true,
+      }) as ReadableStream<UIMessageChunk>),
+  };
 }
 
 export async function runLessonGenerationSkill(input: {
+  agentStream?: AgentStreamRunner<CompetitionLessonPlan>;
   messages: SmartEduUIMessage[];
   modelId?: string;
   requestId: string;
   structuredStream?: LessonStructuredStreamer;
   structuredGenerate?: LessonStructuredGenerator;
+  toUIMessageStream?: (result: MastraModelOutput<CompetitionLessonPlan>) => ReadableStream<UIMessageChunk>;
   workflow: LessonWorkflowOutput;
 }) {
   const modelMessages = await convertToModelMessages(input.messages);
@@ -178,20 +192,37 @@ export async function runLessonGenerationSkill(input: {
             },
           });
         }
-      : streamCompetitionLessonPlan);
-  const stream = await runModelOperationWithRetry(
-    () =>
-      streamer({
-        maxSteps: input.workflow.generationPlan.maxSteps,
-        messages: modelMessages,
-        modelId: getLessonModelId(input.modelId),
-        system: input.workflow.system,
-      }),
-    { mode: "lesson", requestId: input.requestId },
+      : input.agentStream
+        ? (options: Parameters<LessonStructuredStreamer>[0]) =>
+            streamCompetitionLessonPlanWithMastraAgent({
+              agentStream: input.agentStream!,
+              maxSteps: options.maxSteps,
+              messages: options.messages,
+              system: options.system,
+              toUIMessageStream: input.toUIMessageStream,
+            })
+        : undefined);
+
+  if (!streamer) {
+    throw new Error("Lesson generation requires a Mastra Agent stream runner.");
+  }
+
+  const generationStreams = normalizeLessonGenerationStreams(
+    await runModelOperationWithRetry(
+      () =>
+        streamer({
+          maxSteps: input.workflow.generationPlan.maxSteps,
+          messages: modelMessages,
+          modelId: input.modelId ?? DEFAULT_LESSON_MODEL_ID,
+          system: input.workflow.system,
+        }),
+      { mode: "lesson", requestId: input.requestId },
+    ),
   );
 
   return {
     modelMessageCount: modelMessages.length,
-    stream,
+    partialOutputStream: generationStreams.partialOutputStream,
+    stream: generationStreams.stream,
   };
 }

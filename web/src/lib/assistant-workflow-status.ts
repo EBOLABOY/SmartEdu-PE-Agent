@@ -37,8 +37,10 @@ export type AssistantWorkflowState = {
 const STEP_TITLES: Record<string, string> = {
   "retrieve-standards-context": "检索课程标准",
   "resolve-standards-market": "解析课程标准市场",
+  "collect-lesson-requirements": "收集上课信息",
   "construct-generation-prompt": "构建生成提示",
   "plan-structured-delivery": "规划结构化输出",
+  "plan-html-screen-sections": "规划大屏分镜",
   "validate-generation-safety": "校验生成安全",
   "agent-stream-started": "启动模型生成",
   "validate-lesson-output": "校验教案输出",

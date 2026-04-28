@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildPeTeacherSystemPrompt, PE_TEACHER_SYSTEM_PROMPT } from "@/mastra/agents/pe_teacher";
+import { mastra } from "@/mastra";
 import { peTeacherPromptSkills } from "@/mastra/skills";
 
 describe("pe_teacher", () => {
@@ -17,7 +18,16 @@ describe("pe_teacher", () => {
       "competitionLessonFormatSkill",
       "htmlScreenSkill",
       "lessonAuthoringSkill",
+      "lessonInputDefaultsSkill",
     ]);
+  });
+
+  it("教案生成 Agent 不重复暴露课标检索工具", async () => {
+    const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
+    const globalTools = mastra.listTools();
+
+    expect(Object.keys(agentTools ?? {})).not.toContain("searchStandardsTool");
+    expect(globalTools).toHaveProperty("searchStandardsTool");
   });
 
   it("lesson 阶段要求流式输出 CompetitionLessonPlan JSON", () => {

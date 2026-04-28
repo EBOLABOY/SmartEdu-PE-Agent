@@ -126,11 +126,37 @@ const highlighterCache = new Map<
 >();
 const tokensCache = new Map<string, TokenizedCode>();
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
+const TOKENS_CACHE_MAX_ENTRIES = 256;
 
 const getTokensCacheKey = (code: string, language: BundledLanguage) => {
-  const start = code.slice(0, 100);
-  const end = code.length > 100 ? code.slice(-100) : "";
-  return `${language}:${code.length}:${start}:${end}`;
+  return `${language}:${code.length}:${code}`;
+};
+
+const getCachedTokens = (key: string) => {
+  const cached = tokensCache.get(key);
+
+  if (!cached) {
+    return null;
+  }
+
+  tokensCache.delete(key);
+  tokensCache.set(key, cached);
+  return cached;
+};
+
+const setCachedTokens = (key: string, value: TokenizedCode) => {
+  tokensCache.delete(key);
+  tokensCache.set(key, value);
+
+  while (tokensCache.size > TOKENS_CACHE_MAX_ENTRIES) {
+    const oldestKey = tokensCache.keys().next().value;
+
+    if (oldestKey === undefined) {
+      return;
+    }
+
+    tokensCache.delete(oldestKey);
+  }
 };
 
 const getHighlighter = (
@@ -172,7 +198,7 @@ export const highlightCode = (
   callback?: (result: TokenizedCode) => void
 ): TokenizedCode | null => {
   const tokensCacheKey = getTokensCacheKey(code, language);
-  const cached = tokensCache.get(tokensCacheKey);
+  const cached = getCachedTokens(tokensCacheKey);
 
   if (cached) {
     return cached;
@@ -204,7 +230,7 @@ export const highlightCode = (
         tokens: result.tokens,
       };
 
-      tokensCache.set(tokensCacheKey, tokenized);
+      setCachedTokens(tokensCacheKey, tokenized);
 
       const subs = subscribers.get(tokensCacheKey);
       if (subs) {

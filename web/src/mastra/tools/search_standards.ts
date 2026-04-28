@@ -247,14 +247,16 @@ export function buildStandardsContext(
   return searchStandards(query, options).context;
 }
 
+export const searchStandardsToolInputSchema = z.object({
+  query: z.string().describe("教师输入的课程主题、年级、运动项目、安全要求或评价要求。"),
+  limit: z.coerce.number().int().min(1).max(10).optional().describe("最多返回的课标条目数量，默认 6 条。"),
+  market: standardsMarketSchema.optional().describe("目标教育市场。当前仓库默认支持中国义务教育体育课标。"),
+});
+
 export const searchStandardsTool = createTool({
   id: "search-standards",
   description: "检索体育课程标准结构化条目，用于生成合规体育教案，并返回目标市场与语料解析信息。",
-  inputSchema: z.object({
-    query: z.string().describe("教师输入的课程主题、年级、运动项目、安全要求或评价要求。"),
-    limit: z.number().int().min(1).max(10).optional().describe("最多返回的课标条目数量，默认 6 条。"),
-    market: standardsMarketSchema.optional().describe("目标教育市场。当前仓库默认支持中国义务教育体育课标。"),
-  }),
+  inputSchema: searchStandardsToolInputSchema,
   outputSchema: z.object({
     requestedMarket: standardsMarketSchema,
     resolvedMarket: standardsMarketSchema,

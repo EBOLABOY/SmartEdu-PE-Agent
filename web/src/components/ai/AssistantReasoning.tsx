@@ -32,11 +32,11 @@ export function AssistantReasoning({ message }: { message: SmartEduUIMessage }) 
 
   return (
     <Reasoning
-      className="mt-3 mb-0 rounded-2xl border border-border/70 bg-background/70 p-3 shadow-sm"
+      className="mt-2 mb-0 rounded-lg border border-border/40 bg-muted/20 p-2.5 shadow-none"
       isStreaming={isReasoningStreaming(message)}
     >
       <ReasoningTrigger
-        className="rounded-xl px-0 py-0 text-xs"
+        className="rounded-lg px-0 py-0 text-xs"
         getThinkingMessage={(isStreaming, duration) => {
           if (isStreaming || duration === 0) {
             return <span className="text-muted-foreground">正在分析课堂需求</span>;
@@ -49,7 +49,7 @@ export function AssistantReasoning({ message }: { message: SmartEduUIMessage }) 
           );
         }}
       />
-      <ReasoningContent className="max-h-32 overflow-y-auto rounded-xl border border-border/50 bg-muted/30 p-2.5">
+      <ReasoningContent className="max-h-32 overflow-y-auto rounded-md border border-border/30 bg-background/50 p-2.5">
         {reasoningText}
       </ReasoningContent>
     </Reasoning>
