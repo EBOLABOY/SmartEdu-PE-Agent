@@ -24,20 +24,14 @@ import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-stor
 import { mastra } from "@/mastra";
 import { formatLessonScreenPlanForPrompt } from "@/mastra/agents/html_screen_planner";
 import {
-  formatLessonIntakeQuestions,
-  formatLessonIntakeResultForPrompt,
-} from "@/mastra/agents/lesson_intake";
-import {
   createLessonClarificationStreamAdapter,
   createStructuredAuthoringStreamAdapter,
   runHtmlScreenGenerationSkill,
   runHtmlScreenPlanningSkill,
   runLessonGenerationSkill,
-  runLessonIntakeSkill,
   type AgentStreamRunner,
   type HtmlScreenPlanAgentRunner,
   type HtmlScreenPlanningResult,
-  type LessonIntakeSkillResult,
 } from "@/mastra/skills";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 import {
@@ -115,48 +109,6 @@ function logLessonAuthoringTrace(trace: LessonAuthoringTrace) {
   });
 }
 
-function applyLessonIntake(
-  workflow: LessonWorkflowOutput,
-  intakeResult: LessonIntakeSkillResult,
-): LessonWorkflowOutput {
-  const intake = intakeResult.intake;
-  const memoryDetail = intakeResult.memoryUsed ? " 已使用项目教学记忆减少追问。" : "";
-  const traceEntry = {
-    step: "collect-lesson-requirements",
-    status: intake.readyToGenerate ? ("success" as const) : ("blocked" as const),
-    detail: intake.readyToGenerate
-      ? `信息收集 Agent 已确认可以生成教案：${intake.reason}${memoryDetail}`
-      : `信息收集 Agent 已阻止随机生成：${intake.reason}${memoryDetail}`,
-    timestamp: new Date().toISOString(),
-  };
-
-  if (!intake.readyToGenerate) {
-    return {
-      ...workflow,
-      safety: {
-        ...workflow.safety,
-        warnings: intakeResult.warning ? [...workflow.safety.warnings, intakeResult.warning] : workflow.safety.warnings,
-      },
-      trace: [...workflow.trace, traceEntry],
-    };
-  }
-
-  return {
-    ...workflow,
-    system: [
-      workflow.system,
-      "教案生成 Agent 启动前的信息收集结果：",
-      "你必须严格基于下列已确认信息生成教案；不得补写与其冲突的年级、课题、人数、课时、场地或器材。未确认学生人数时按 40 人生成；未确认课时、场地和器材时，根据课程内容、教学环节和安全要求自动匹配。",
-      formatLessonIntakeResultForPrompt(intake),
-    ].join("\n\n"),
-    safety: {
-      ...workflow.safety,
-      warnings: intakeResult.warning ? [...workflow.safety.warnings, intakeResult.warning] : workflow.safety.warnings,
-    },
-    trace: [...workflow.trace, traceEntry],
-  };
-}
-
 function applyHtmlScreenPlanning(
   workflow: LessonWorkflowOutput,
   planning: HtmlScreenPlanningResult,
@@ -199,7 +151,7 @@ function applyHtmlScreenPlanning(
 
 async function rememberLessonIntake(input: {
   context?: PeTeacherContext;
-  intakeResult: LessonIntakeSkillResult;
+  workflow: LessonWorkflowOutput;
   memoryPersistence?: LessonMemoryPersistence | null;
   projectId?: string;
   requestId: string;
@@ -208,9 +160,15 @@ async function rememberLessonIntake(input: {
     return;
   }
 
+  const intakeResult = input.workflow.decision.intakeResult;
+
+  if (!intakeResult) {
+    return;
+  }
+
   await input.memoryPersistence.rememberFromIntake({
     context: input.context,
-    intake: input.intakeResult.intake,
+    intake: intakeResult.intake,
     projectId: input.projectId,
     requestId: input.requestId,
   });
@@ -303,6 +261,9 @@ async function executeLessonAuthoringStream(input: {
       lessonPlan: request.lessonPlan,
       screenPlan: request.screenPlan,
       market: requestedMarket,
+      memory: request.memory,
+      messages: request.messages,
+      requestId,
     },
     {
       requestId,
@@ -311,6 +272,28 @@ async function executeLessonAuthoringStream(input: {
   );
 
   logLessonAuthoringTrace({ workflow, mode, query, requestId });
+
+  await rememberLessonIntake({
+    context: request.context,
+    workflow,
+    memoryPersistence: request.memoryPersistence,
+    projectId: request.projectId,
+    requestId,
+  });
+
+  if (workflow.decision.type === "clarify") {
+    writer.merge(
+      createLessonClarificationStreamAdapter({
+        originalMessages: request.messages,
+        chatPersistence: request.chatPersistence,
+        projectId: request.projectId,
+        requestId,
+        text: workflow.decision.text,
+        workflow,
+      }),
+    );
+    return;
+  }
 
   const agent = mastra.getAgent("peTeacherAgent");
   const agentStream: AgentStreamRunner = async (messages, options) =>
@@ -377,80 +360,38 @@ async function executeLessonAuthoringStream(input: {
       }),
     );
     return;
-  } else {
-    writeWorkflowTracePart(writer, workflow, requestId, "workflow", [
-      ...workflow.trace,
-      createWorkflowTraceEntry(
-        "collect-lesson-requirements",
-        "running",
-        "正在核对课题、年级、场地和器材等上课信息。",
-      ),
-    ]);
+  }
 
-    const lessonIntake = await runLessonIntakeSkill({
-      context: request.context,
-      maxSteps: workflow.generationPlan.maxSteps,
-      memory: request.memory,
-      messages: request.messages,
-      requestId,
-    });
+  const lessonAgentStream: AgentStreamRunner<CompetitionLessonPlan> = async (messages, options) =>
+    (await agent.stream(messages, options as never)) as MastraModelOutput<CompetitionLessonPlan>;
 
-    workflow = applyLessonIntake(workflow, lessonIntake);
-    writeWorkflowTracePart(writer, workflow, requestId, "workflow");
+  workflow = appendWorkflowTrace(
+    workflow,
+    createWorkflowTraceEntry("agent-stream-started", "running", "正在连接结构化教案生成模型流。"),
+  );
+  writeWorkflowTracePart(writer, workflow, requestId, "generation");
 
-    await rememberLessonIntake({
-      context: request.context,
-      intakeResult: lessonIntake,
-      memoryPersistence: request.memoryPersistence,
+  const lessonGeneration = await runLessonGenerationSkill({
+    agentStream: lessonAgentStream,
+    messages: request.messages,
+    requestId,
+    workflow,
+  });
+
+  writer.merge(
+    createStructuredAuthoringStreamAdapter({
+      originalMessages: request.messages,
+      chatPersistence: request.chatPersistence,
+      lessonDraftStream: lessonGeneration.partialOutputStream,
+      lessonPlan: request.lessonPlan,
+      mode,
+      persistence: request.persistence,
       projectId: request.projectId,
       requestId,
-    });
-
-    if (!lessonIntake.intake.readyToGenerate) {
-      writer.merge(
-        createLessonClarificationStreamAdapter({
-          originalMessages: request.messages,
-          chatPersistence: request.chatPersistence,
-          projectId: request.projectId,
-          requestId,
-          text: formatLessonIntakeQuestions(lessonIntake.intake),
-          workflow,
-        }),
-      );
-      return;
-    }
-
-    const lessonAgentStream: AgentStreamRunner<CompetitionLessonPlan> = async (messages, options) =>
-      (await agent.stream(messages, options as never)) as MastraModelOutput<CompetitionLessonPlan>;
-
-    workflow = appendWorkflowTrace(
       workflow,
-      createWorkflowTraceEntry("agent-stream-started", "running", "正在连接结构化教案生成模型流。"),
-    );
-    writeWorkflowTracePart(writer, workflow, requestId, "generation");
-
-    const lessonGeneration = await runLessonGenerationSkill({
-      agentStream: lessonAgentStream,
-      messages: request.messages,
-      requestId,
-      workflow,
-    });
-
-    writer.merge(
-      createStructuredAuthoringStreamAdapter({
-        originalMessages: request.messages,
-        chatPersistence: request.chatPersistence,
-        lessonDraftStream: lessonGeneration.partialOutputStream,
-        lessonPlan: request.lessonPlan,
-        mode,
-        persistence: request.persistence,
-        projectId: request.projectId,
-        requestId,
-        workflow,
-        stream: lessonGeneration.stream,
-      }),
-    );
-  }
+      stream: lessonGeneration.stream,
+    }),
+  );
 }
 
 export function streamLessonAuthoring(request: LessonAuthoringRequest) {

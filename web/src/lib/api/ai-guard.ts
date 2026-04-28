@@ -22,7 +22,7 @@ export async function getAiRequestAuth(): Promise<AiRequestAuth> {
   return { supabase, user };
 }
 
-export function takeAiRateLimitToken({
+export async function takeAiRateLimitToken({
   limit,
   request,
   userId,
@@ -33,7 +33,7 @@ export function takeAiRateLimitToken({
   userId?: string;
   windowMs: number;
 }) {
-  return takeRateLimitToken({
+  return await takeRateLimitToken({
     key: getRequestActorKey(request, userId),
     limit,
     windowMs,

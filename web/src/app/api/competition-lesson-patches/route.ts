@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const rateLimit = takeAiRateLimitToken({
+    const rateLimit = await takeAiRateLimitToken({
       limit: PATCH_RATE_LIMIT,
       request,
       userId: user?.id,

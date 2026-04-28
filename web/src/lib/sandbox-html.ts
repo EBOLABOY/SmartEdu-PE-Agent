@@ -1,12 +1,28 @@
+import {
+  getElementText,
+  getHtmlAttribute,
+  getHtmlElements,
+  hasJavascriptUrl,
+  injectHeadMeta,
+  isExternalHttpUrl,
+  parseHtmlDocument,
+} from "@/lib/html-inspection";
+
 export type SandboxSecurityReport = {
   blockedReasons: string[];
   warnings: string[];
 };
 
-const EXTERNAL_RESOURCE_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /<script[^>]+src\s*=\s*["']https?:\/\//i, reason: "检测到外部运行资源，已拒绝加载。" },
-  { pattern: /<link[^>]+href\s*=\s*["']https?:\/\//i, reason: "检测到外部样式资源，已拒绝加载。" },
-  { pattern: /<(img|audio|video|iframe)[^>]+src\s*=\s*["']https?:\/\//i, reason: "检测到外部媒体资源，已阻止预览。" },
+const EXTERNAL_RESOURCE_RULES: Array<{ attr: string; reason: string; tags: string[] }> = [
+  { tags: ["script"], attr: "src", reason: "检测到外部运行资源，已拒绝加载。" },
+  { tags: ["link"], attr: "href", reason: "检测到外部样式资源，已拒绝加载。" },
+  {
+    tags: ["img", "audio", "video", "iframe", "source", "track", "embed"],
+    attr: "src",
+    reason: "检测到外部媒体资源，已阻止预览。",
+  },
+  { tags: ["object"], attr: "data", reason: "检测到外部媒体资源，已阻止预览。" },
+  { tags: ["video"], attr: "poster", reason: "检测到外部媒体资源，已阻止预览。" },
 ];
 
 const ACTIVE_CAPABILITY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
@@ -18,6 +34,64 @@ const ACTIVE_CAPABILITY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\b(localStorage|sessionStorage)\b/i, reason: "检测到浏览器本地信息访问行为，已阻止预览。" },
   { pattern: /\bwindow\.open\s*\(/i, reason: "检测到新窗口打开行为，已阻止预览。" },
 ];
+
+type ParsedSandboxDocument = ReturnType<typeof parseHtmlDocument>;
+
+function collectExternalResourceReasons(document: ParsedSandboxDocument) {
+  const reasons: string[] = [];
+
+  for (const rule of EXTERNAL_RESOURCE_RULES) {
+    for (const tag of rule.tags) {
+      const hasExternalResource = getHtmlElements(document, tag).some((element) =>
+        isExternalHttpUrl(getHtmlAttribute(element, rule.attr)),
+      );
+
+      if (hasExternalResource) {
+        reasons.push(rule.reason);
+      }
+    }
+  }
+
+  return reasons;
+}
+
+function collectActiveCapabilitySources(document: ParsedSandboxDocument) {
+  const sources: string[] = [];
+
+  for (const scriptElement of getHtmlElements(document, "script")) {
+    sources.push(getElementText(scriptElement));
+  }
+
+  for (const element of getHtmlElements(document)) {
+    for (const attr of element.attrs) {
+      const attrName = attr.name.toLowerCase();
+
+      if (attrName.startsWith("on") || hasJavascriptUrl(attr.value)) {
+        sources.push(attr.value);
+      }
+    }
+  }
+
+  return sources;
+}
+
+function collectActiveCapabilityReasons(document: ParsedSandboxDocument) {
+  const sources = collectActiveCapabilitySources(document);
+
+  return ACTIVE_CAPABILITY_PATTERNS.filter(({ pattern }) =>
+    sources.some((source) => pattern.test(source)),
+  ).map(({ reason }) => reason);
+}
+
+function containsInteractiveCapability(document: ParsedSandboxDocument) {
+  if (getHtmlElements(document, "script").length > 0) {
+    return true;
+  }
+
+  return getHtmlElements(document).some((element) =>
+    element.attrs.some((attr) => attr.name.toLowerCase().startsWith("on")),
+  );
+}
 
 export function injectSandboxCsp(htmlContent: string) {
   const csp = [
@@ -31,22 +105,21 @@ export function injectSandboxCsp(htmlContent: string) {
     "base-uri 'none'",
     "form-action 'none'",
   ].join("; ");
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`;
 
-  if (/<head[\s>]/i.test(htmlContent)) {
-    return htmlContent.replace(/<head([^>]*)>/i, `<head$1>${meta}`);
-  }
-
-  return `<!DOCTYPE html><html lang="zh-CN"><head>${meta}<meta charset="utf-8"></head><body>${htmlContent}</body></html>`;
+  return injectHeadMeta(htmlContent, [
+    { name: "http-equiv", value: "Content-Security-Policy" },
+    { name: "content", value: csp },
+  ]);
 }
 
 export function analyzeSandboxHtml(htmlContent: string): SandboxSecurityReport {
+  const document = parseHtmlDocument(htmlContent);
   const blockedReasons = [
-    ...EXTERNAL_RESOURCE_PATTERNS.filter(({ pattern }) => pattern.test(htmlContent)).map(({ reason }) => reason),
-    ...ACTIVE_CAPABILITY_PATTERNS.filter(({ pattern }) => pattern.test(htmlContent)).map(({ reason }) => reason),
+    ...collectExternalResourceReasons(document),
+    ...collectActiveCapabilityReasons(document),
   ];
 
-  const warnings = /<script/i.test(htmlContent) ? ["当前大屏包含互动能力，将在受限环境下预览。"] : [];
+  const warnings = containsInteractiveCapability(document) ? ["当前大屏包含互动能力，将在受限环境下预览。"] : [];
 
   return {
     blockedReasons: Array.from(new Set(blockedReasons)),

@@ -1,13 +1,16 @@
 "use client";
 
 import { validateUIMessages } from "ai";
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 
 import {
+  type ArtifactVersionsResponse,
   type PersistenceState,
   type PersistedArtifactVersion,
   type PersistedProjectSummary,
+  type ProjectWorkspaceResponse,
   type SmartEduUIMessage,
   smartEduDataSchemas,
 } from "@/lib/lesson-authoring-contract";
@@ -35,6 +38,43 @@ interface UseWorkspaceProjectDataInput {
   setMessages: Dispatch<SetStateAction<SmartEduUIMessage[]>>;
 }
 
+type RestoredProjectWorkspace = ProjectWorkspaceResponse & {
+  restoredMessages: SmartEduUIMessage[];
+};
+
+function resolveSetState<T>(nextValue: SetStateAction<T>, currentValue: T) {
+  return typeof nextValue === "function"
+    ? (nextValue as (value: T) => T)(currentValue)
+    : nextValue;
+}
+
+async function requestRestoredProjectWorkspace(projectId: string): Promise<RestoredProjectWorkspace> {
+  const payload = await requestProjectWorkspace(projectId);
+  const restoredMessages = payload.messages.length
+    ? await validateUIMessages<SmartEduUIMessage>({
+        messages: payload.messages.map((message) => message.uiMessage),
+        dataSchemas: smartEduDataSchemas,
+      })
+    : [];
+
+  return {
+    ...payload,
+    restoredMessages,
+  };
+}
+
+function buildArtifactVersionsResponse(
+  versions: PersistedArtifactVersion[],
+  projectId: string,
+  current?: ArtifactVersionsResponse,
+): ArtifactVersionsResponse {
+  return {
+    projectId: current?.projectId ?? projectId,
+    versions,
+    persistence: current?.persistence ?? UNKNOWN_PERSISTENCE_STATE,
+  };
+}
+
 export function useWorkspaceProjectData({
   authRevision,
   messagesLength,
@@ -42,47 +82,64 @@ export function useWorkspaceProjectData({
   setLessonConfirmed,
   setMessages,
 }: UseWorkspaceProjectDataInput) {
-  const [persistedVersionsState, setPersistedVersionsState] = useState<PersistedArtifactVersion[]>([]);
-  const [projectsState, setProjectsState] = useState<PersistedProjectSummary[]>(EMPTY_PROJECTS);
-  const [projectDirectoryPersistenceState, setProjectDirectoryPersistenceState] =
-    useState<PersistenceState>(UNKNOWN_PERSISTENCE_STATE);
   const [currentProjectState, setCurrentProjectState] = useState<PersistedProjectSummary | null>(null);
-  const [isArtifactHistoryLoadingState, setIsArtifactHistoryLoadingState] = useState(
-    () => Boolean(projectId),
+  const [isArtifactHistoryLoadingState, setIsArtifactHistoryLoadingState] = useState(false);
+  const projectDirectoryKey = ["project-directory", authRevision] as const;
+  const artifactVersionsKey = projectId ? (["artifact-versions", projectId] as const) : null;
+  const projectWorkspaceKey =
+    projectId && messagesLength === 0 ? (["project-workspace", projectId] as const) : null;
+
+  const {
+    data: projectDirectoryPayload,
+    isLoading: isProjectDirectoryLoadingState,
+    mutate: mutateProjectDirectory,
+  } = useSWR(projectDirectoryKey, () => requestProjectDirectory(), {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  });
+
+  const {
+    data: artifactVersionsPayload,
+    isLoading: isArtifactVersionsLoading,
+    isValidating: isArtifactVersionsValidating,
+    mutate: mutateArtifactVersions,
+  } = useSWR(
+    artifactVersionsKey,
+    ([, targetProjectId]) => requestArtifactVersions(targetProjectId),
+    {
+      onError: (historyError) => {
+        toast.error("历史版本加载失败", {
+          description: historyError instanceof Error ? historyError.message : "请稍后重试。",
+        });
+      },
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    },
   );
-  const [isWorkspaceLoadingState, setIsWorkspaceLoadingState] = useState(() => Boolean(projectId));
-  const [isProjectDirectoryLoadingState, setIsProjectDirectoryLoadingState] = useState(false);
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    const loadProjectDirectory = async () => {
-      setIsProjectDirectoryLoadingState(true);
-
-      try {
-        const payload = await requestProjectDirectory(controller.signal);
-        setProjectsState(payload.projects);
-        setProjectDirectoryPersistenceState(payload.persistence);
-      } catch {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setProjectsState(EMPTY_PROJECTS);
-        setProjectDirectoryPersistenceState(UNKNOWN_PERSISTENCE_STATE);
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsProjectDirectoryLoadingState(false);
-        }
-      }
-    };
-
-    void loadProjectDirectory();
-
-    return () => {
-      controller.abort();
-    };
-  }, [authRevision]);
+  const {
+    data: projectWorkspacePayload,
+    isLoading: isWorkspaceLoadingState,
+  } = useSWR(
+    projectWorkspaceKey,
+    ([, targetProjectId]) => requestRestoredProjectWorkspace(targetProjectId),
+    {
+      onError: (projectWorkspaceError) => {
+        setMessages([]);
+        setCurrentProjectState(null);
+        toast.error("项目恢复失败", {
+          description: projectWorkspaceError instanceof Error ? projectWorkspaceError.message : "请稍后重试。",
+        });
+      },
+      onSuccess: (payload) => {
+        setCurrentProjectState(payload.project);
+        setMessages(payload.restoredMessages);
+        setLessonConfirmed(false);
+      },
+      revalidateOnFocus: false,
+      shouldRetryOnError: false,
+    },
+  );
 
   const refreshArtifactVersions = useCallback(
     async (
@@ -97,15 +154,22 @@ export function useWorkspaceProjectData({
 
       try {
         const payload = await requestArtifactVersions(targetProjectId, options?.signal);
-        setPersistedVersionsState(payload.versions);
+
+        if (targetProjectId === projectId) {
+          await mutateArtifactVersions(payload, { revalidate: false });
+        }
+
         return payload.versions;
       } catch (historyError) {
         if (options?.signal?.aborted) {
           return null;
         }
 
-        if (!options?.preserveOnError) {
-          setPersistedVersionsState([]);
+        if (!options?.preserveOnError && targetProjectId === projectId) {
+          await mutateArtifactVersions(
+            (current) => buildArtifactVersionsResponse([], targetProjectId, current),
+            { revalidate: false },
+          );
         }
 
         if (!options?.silent) {
@@ -121,70 +185,21 @@ export function useWorkspaceProjectData({
         }
       }
     },
-    [],
+    [mutateArtifactVersions, projectId],
   );
 
-  useEffect(() => {
-    if (!projectId) {
-      return;
-    }
-
-    const controller = new AbortController();
-
-    void Promise.resolve().then(() =>
-      refreshArtifactVersions(projectId, { signal: controller.signal }),
-    );
-
-    return () => {
-      controller.abort();
-    };
-  }, [projectId, refreshArtifactVersions]);
-
-  useEffect(() => {
-    if (!projectId || messagesLength > 0) {
-      return;
-    }
-
-    const controller = new AbortController();
-
-    const loadWorkspaceHistory = async () => {
-      setIsWorkspaceLoadingState(true);
-
-      try {
-        const payload = await requestProjectWorkspace(projectId, controller.signal);
-        const restoredMessages = payload.messages.length
-          ? await validateUIMessages<SmartEduUIMessage>({
-              messages: payload.messages.map((message) => message.uiMessage),
-              dataSchemas: smartEduDataSchemas,
-            })
-          : [];
-
-        setCurrentProjectState(payload.project);
-        setMessages(restoredMessages);
-        setLessonConfirmed(false);
-      } catch (workspaceError) {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setMessages([]);
-        setCurrentProjectState(null);
-        toast.error("项目恢复失败", {
-          description: workspaceError instanceof Error ? workspaceError.message : "请稍后重试。",
-        });
-      } finally {
-        if (!controller.signal.aborted) {
-          setIsWorkspaceLoadingState(false);
-        }
-      }
-    };
-
-    void loadWorkspaceHistory();
-
-    return () => {
-      controller.abort();
-    };
-  }, [messagesLength, projectId, setLessonConfirmed, setMessages]);
+  const setPersistedVersions = useCallback(
+    (nextValue: SetStateAction<PersistedArtifactVersion[]>) => {
+      void mutateArtifactVersions(
+        (current) => {
+          const nextVersions = resolveSetState(nextValue, current?.versions ?? EMPTY_PERSISTED_VERSIONS);
+          return buildArtifactVersionsResponse(nextVersions, projectId ?? "", current);
+        },
+        { revalidate: false },
+      );
+    },
+    [mutateArtifactVersions, projectId],
+  );
 
   const createPersistentProject = async (title: string) => {
     try {
@@ -192,10 +207,19 @@ export function useWorkspaceProjectData({
       const nextProject = payload.project;
 
       setCurrentProjectState(nextProject);
-      setProjectsState((projects) => {
-        const restProjects = projects.filter((project) => project.id !== nextProject.id);
-        return [nextProject, ...restProjects];
-      });
+      void mutateProjectDirectory(
+        (current) => {
+          const restProjects = (current?.projects ?? EMPTY_PROJECTS).filter(
+            (project) => project.id !== nextProject.id,
+          );
+
+          return {
+            projects: [nextProject, ...restProjects],
+            persistence: payload.persistence,
+          };
+        },
+        { revalidate: false },
+      );
 
       return nextProject.id;
     } catch (createProjectError) {
@@ -210,28 +234,34 @@ export function useWorkspaceProjectData({
   const deletePersistentProject = async (targetProjectId: string) => {
     const payload = await requestDeleteProject(targetProjectId);
 
-    setProjectsState(payload.projects);
-    setProjectDirectoryPersistenceState(payload.persistence);
+    void mutateProjectDirectory(payload, { revalidate: false });
     setCurrentProjectState((project) => (project?.id === targetProjectId ? null : project));
 
     return payload.projects;
   };
+
+  const projects = projectDirectoryPayload?.projects ?? EMPTY_PROJECTS;
+  const projectDirectoryPersistence =
+    projectDirectoryPayload?.persistence ?? UNKNOWN_PERSISTENCE_STATE;
 
   return {
     createPersistentProject,
     deletePersistentProject,
     currentProject:
       currentProjectState ??
-      (projectId ? projectsState.find((project) => project.id === projectId) ?? null : null),
-    isArtifactHistoryLoading: projectId ? isArtifactHistoryLoadingState : false,
+      projectWorkspacePayload?.project ??
+      (projectId ? projects.find((project) => project.id === projectId) ?? null : null),
+    isArtifactHistoryLoading: projectId
+      ? isArtifactHistoryLoadingState || isArtifactVersionsLoading || isArtifactVersionsValidating
+      : false,
     isProjectDirectoryLoading: isProjectDirectoryLoadingState,
     isWorkspaceLoading: projectId && messagesLength === 0 ? isWorkspaceLoadingState : false,
-    persistedVersions: projectId ? persistedVersionsState : EMPTY_PERSISTED_VERSIONS,
-    projectDirectoryPersistence: projectDirectoryPersistenceState,
-    projects: projectsState,
+    persistedVersions: projectId ? artifactVersionsPayload?.versions ?? EMPTY_PERSISTED_VERSIONS : EMPTY_PERSISTED_VERSIONS,
+    projectDirectoryPersistence,
+    projects,
     refreshArtifactVersions,
     setArtifactHistoryLoading: setIsArtifactHistoryLoadingState,
     setCurrentProject: setCurrentProjectState,
-    setPersistedVersions: setPersistedVersionsState,
+    setPersistedVersions,
   };
 }

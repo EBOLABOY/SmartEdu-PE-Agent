@@ -42,6 +42,9 @@ const baseWorkflow = {
     forbiddenCapabilities: [],
     warnings: [],
   },
+  decision: {
+    type: "generate",
+  },
   trace: [],
 } satisfies LessonWorkflowOutput;
 

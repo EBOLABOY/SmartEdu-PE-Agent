@@ -31,9 +31,39 @@ const mocks = vi.hoisted(() => {
     runHtmlScreenGenerationSkill: vi.fn(),
     runHtmlScreenPlanningSkill: vi.fn(),
     runLessonGenerationSkill: vi.fn(),
-    runLessonIntakeSkill: vi.fn(),
   };
 });
+
+const readyIntakeResult = {
+  intake: {
+    readyToGenerate: true,
+    known: {
+      grade: "五年级",
+      topic: "篮球行进间运球",
+    },
+    missing: [],
+    questions: [],
+    summary: "五年级篮球行进间运球。",
+    reason: "年级和课题已明确。",
+  },
+  modelMessageCount: 1,
+  source: "agent" as const,
+};
+
+const clarifyIntakeResult = {
+  intake: {
+    readyToGenerate: false,
+    known: {
+      topic: "篮球课",
+    },
+    missing: ["grade" as const],
+    questions: ["本次课是几年级？"],
+    reason: "缺少年级。",
+  },
+  memoryUsed: true,
+  modelMessageCount: 1,
+  source: "agent" as const,
+};
 
 const workflow = {
   system: "system prompt",
@@ -66,7 +96,27 @@ const workflow = {
     forbiddenCapabilities: [],
     warnings: [],
   },
+  decision: {
+    type: "generate",
+    intakeResult: readyIntakeResult,
+  },
   trace: [],
+} satisfies LessonWorkflowOutput;
+
+const clarificationWorkflow = {
+  ...workflow,
+  decision: {
+    type: "clarify",
+    text: "请先补充：\n1. 本次课是几年级？",
+    intakeResult: clarifyIntakeResult,
+  },
+  trace: [
+    {
+      step: "collect-lesson-requirements",
+      status: "blocked",
+      detail: "缺少年级。",
+    },
+  ],
 } satisfies LessonWorkflowOutput;
 
 async function readChunks(stream: ReadableStream<UIMessageChunk>) {
@@ -97,36 +147,35 @@ vi.mock("@/mastra/skills", () => ({
   runHtmlScreenGenerationSkill: mocks.runHtmlScreenGenerationSkill,
   runHtmlScreenPlanningSkill: mocks.runHtmlScreenPlanningSkill,
   runLessonGenerationSkill: mocks.runLessonGenerationSkill,
-  runLessonIntakeSkill: mocks.runLessonIntakeSkill,
 }));
+
+function mockWorkflowResult(result: LessonWorkflowOutput) {
+  const start = vi.fn(async () => ({
+    result,
+    status: "success",
+  }));
+
+  mocks.getWorkflow.mockReturnValue({
+    createRun: vi.fn(async () => ({
+      start,
+    })),
+  });
+
+  return start;
+}
 
 describe("lesson authoring service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getWorkflow.mockReturnValue({
-      createRun: vi.fn(async () => ({
-        start: vi.fn(async () => ({
-          result: workflow,
-          status: "success",
-        })),
-      })),
+    mockWorkflowResult(workflow);
+    mocks.runLessonGenerationSkill.mockResolvedValue({
+      partialOutputStream: undefined,
+      stream: mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
     });
   });
 
-  it("asks clarification questions instead of generating a lesson when intake is incomplete", async () => {
-    mocks.runLessonIntakeSkill.mockResolvedValue({
-      intake: {
-        readyToGenerate: false,
-        known: {
-          topic: "篮球课",
-        },
-        missing: ["grade"],
-        questions: ["本次课是几年级？"],
-        reason: "缺少年级。",
-      },
-      modelMessageCount: 1,
-      source: "agent",
-    });
+  it("asks clarification questions from workflow decision instead of generating a lesson", async () => {
+    mockWorkflowResult(clarificationWorkflow);
     const { streamLessonAuthoring } = await import("./lesson_authoring");
 
     const result = await streamLessonAuthoring({
@@ -162,26 +211,12 @@ describe("lesson authoring service", () => {
     );
   });
 
-  it("passes project memory into lesson intake and saves the updated memory", async () => {
+  it("passes project memory into workflow and saves the updated memory from workflow decision", async () => {
     const memoryPersistence = {
       loadMemory: vi.fn(),
       rememberFromIntake: vi.fn(),
     };
-    const intake = {
-      readyToGenerate: false,
-      known: {
-        topic: "篮球行进间运球",
-      },
-      missing: ["grade"],
-      questions: ["本次课是几年级？"],
-      reason: "缺少年级。",
-    };
-    mocks.runLessonIntakeSkill.mockResolvedValue({
-      intake,
-      memoryUsed: true,
-      modelMessageCount: 1,
-      source: "agent",
-    });
+    const start = mockWorkflowResult(workflow);
     const { streamLessonAuthoring } = await import("./lesson_authoring");
 
     const result = await streamLessonAuthoring({
@@ -204,18 +239,25 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    expect(mocks.runLessonIntakeSkill).toHaveBeenCalledWith(
+    expect(start).toHaveBeenCalledWith(
       expect.objectContaining({
-        memory: expect.objectContaining({
-          defaults: expect.objectContaining({
-            grade: "五年级",
+        inputData: expect.objectContaining({
+          memory: expect.objectContaining({
+            defaults: expect.objectContaining({
+              grade: "五年级",
+            }),
           }),
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              id: "user-2",
+            }),
+          ]),
         }),
       }),
     );
     expect(memoryPersistence.rememberFromIntake).toHaveBeenCalledWith(
       expect.objectContaining({
-        intake,
+        intake: readyIntakeResult.intake,
         projectId: "00000000-0000-4000-8000-000000000001",
       }),
     );
