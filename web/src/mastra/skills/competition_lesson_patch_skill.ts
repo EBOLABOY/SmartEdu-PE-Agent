@@ -57,7 +57,7 @@ function extractToolResultCandidate(toolResult: unknown) {
 
   if (isRecord(payload)) {
     if (payload.isError) {
-      throw new CompetitionLessonPatchError("教案修改工具执行失败。");
+      throw new CompetitionLessonPatchError("课时计划修改工具执行失败。");
     }
 
     if ("result" in payload) {
@@ -98,14 +98,14 @@ export function extractSemanticLessonUpdates(result: FullOutput<unknown>): Compe
   const candidates = extractToolResultCandidates(result);
 
   if (candidates.length === 0) {
-    throw new CompetitionLessonPatchError("模型没有调用任何教案修改工具。");
+    throw new CompetitionLessonPatchError("模型没有调用任何课时计划修改工具。");
   }
 
   return candidates.map((candidate) => {
     const parsed = competitionLessonSemanticUpdateActionSchema.safeParse(candidate);
 
     if (!parsed.success) {
-      throw new CompetitionLessonPatchError("教案修改工具返回结构不合法。");
+      throw new CompetitionLessonPatchError("课时计划修改工具返回结构不合法。");
     }
 
     return parsed.data;

@@ -7,7 +7,11 @@ describe("prompt-intent", () => {
     expect(classifyPromptIntent("把热身时间改为 8 分钟，并增加安全提示")).toBe("patch-lesson");
   });
 
-  it("keeps screen generation instructions on generate intent", () => {
+  it("keeps new lesson-plan wording on generate intent", () => {
+    expect(classifyPromptIntent("我确认课时计划无误，请生成互动大屏")).toBe("generate");
+  });
+
+  it("keeps legacy lesson wording on generate intent", () => {
     expect(classifyPromptIntent("我确认教案无误，请生成互动大屏")).toBe("generate");
   });
 

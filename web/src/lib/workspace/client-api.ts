@@ -118,13 +118,13 @@ export async function requestDeleteProject(projectId: string): Promise<ProjectDi
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(getResponseError(payload, "删除历史教案失败。"));
+    throw new Error(getResponseError(payload, "删除历史课时计划失败。"));
   }
 
   const parsedPayload = projectDirectoryResponseSchema.safeParse(payload);
 
   if (!parsedPayload.success) {
-    throw new Error("删除历史教案响应结构不合法。");
+    throw new Error("删除历史课时计划响应结构不合法。");
   }
 
   return parsedPayload.data;
@@ -176,13 +176,13 @@ export async function requestCompetitionLessonPatch(input: {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(getResponseError(payload, "结构化教案局部修改失败。"));
+    throw new Error(getResponseError(payload, "结构化课时计划局部修改失败。"));
   }
 
   const parsedPayload = competitionLessonPatchResponseSchema.safeParse(payload);
 
   if (!parsedPayload.success) {
-    throw new Error("结构化教案局部修改响应结果不合法。");
+    throw new Error("结构化课时计划局部修改响应结果不合法。");
   }
 
   return parsedPayload.data;
@@ -208,13 +208,13 @@ export async function requestSaveLessonArtifactVersion(
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(getResponseError(payload, "保存教案版本失败。"));
+    throw new Error(getResponseError(payload, "保存课时计划版本失败。"));
   }
 
   const parsedPayload = artifactVersionsResponseSchema.safeParse(payload);
 
   if (!parsedPayload.success) {
-    throw new Error("保存教案版本响应结构不合法。");
+    throw new Error("保存课时计划版本响应结构不合法。");
   }
 
   return parsedPayload.data;

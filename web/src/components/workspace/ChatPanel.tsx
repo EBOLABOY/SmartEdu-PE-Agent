@@ -59,11 +59,11 @@ export default function ChatPanel({
           </div>
           <p className="mt-1 truncate text-muted-foreground text-xs">
             {projectTitle
-              ? "项目历史已恢复，可继续修改教案、互动大屏或课堂节奏。"
-              : "输入课堂目标，系统会生成结构化教案并同步右侧工作台。"}
+              ? "项目历史已恢复，可继续修改课时计划、互动大屏或课堂节奏。"
+              : "输入课堂目标，系统会生成结构化课时计划并同步右侧工作台。"}
           </p>
           <div className="mt-2 hidden gap-1.5 text-[10px] text-muted-foreground 2xl:flex">
-            <span className="rounded-full border border-border/70 bg-background/55 px-2 py-0.5">教案</span>
+            <span className="rounded-full border border-border/70 bg-background/55 px-2 py-0.5">课时计划</span>
             <span className="rounded-full border border-border/70 bg-background/55 px-2 py-0.5">安全</span>
             <span className="rounded-full border border-border/70 bg-background/55 px-2 py-0.5">大屏</span>
           </div>
@@ -118,13 +118,13 @@ export default function ChatPanel({
                 <PromptInputTextarea
                   className="min-h-20 max-h-40 overflow-y-auto px-4 pt-4 pb-1 text-foreground text-[15px] leading-relaxed placeholder:text-muted-foreground/50"
                   disabled={isLoading}
-                  placeholder="描述要生成或修改的教案、大屏、课堂组织、评价与安全要求..."
+                  placeholder="描述要生成或修改的课时计划、大屏、课堂组织、评价与安全要求..."
                 />
               </PromptInputBody>
               <PromptInputFooter className="px-3 pt-1 pb-3">
                 <PromptInputTools className="min-w-0 overflow-hidden">
                   <span className="shrink-0 rounded-full bg-brand/10 px-2.5 py-1 font-medium text-[11px] text-brand">
-                    教案 / 大屏 / 复盘
+                    课时计划 / 大屏 / 复盘
                   </span>
                   <span className="truncate text-[11px] text-muted-foreground">
                     Enter 发送，Shift + Enter 换行

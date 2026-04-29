@@ -6,7 +6,7 @@ describe("competition-lesson-draft", () => {
   it("builds a schema-valid default draft before the model emits partial output", () => {
     const draft = buildCompetitionLessonDraft();
 
-    expect(draft.title).toBe("教案生成中");
+    expect(draft.title).toBe("课时计划生成中");
     expect(draft.periodPlan.rows).toHaveLength(3);
     expect(draft.evaluation.map((item) => item.level)).toEqual(["三颗星", "二颗星", "一颗星"]);
   });
@@ -76,7 +76,7 @@ describe("competition-lesson-draft", () => {
       title: "",
     } as unknown as Parameters<typeof buildCompetitionLessonDraft>[0]);
 
-    expect(draft.title).toBe("教案生成中");
+    expect(draft.title).toBe("课时计划生成中");
     expect(draft.teacher.name).toBe("正在生成");
     expect(draft.teacher.school).toBe("正在生成");
     expect(draft.learningObjectives.sportAbility).toEqual(["能稳定完成正手发高远球"]);

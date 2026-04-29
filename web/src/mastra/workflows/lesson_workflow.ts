@@ -240,9 +240,9 @@ function createGenerationUiHints(mode: GenerationMode): UiHint[] {
 function getIntentDisplayLabel(intent: LessonIntent["intent"]) {
   switch (intent) {
     case "generate_lesson":
-      return "生成新教案";
+      return "生成新课时计划";
     case "patch_lesson":
-      return "修改现有教案";
+      return "修改现有课时计划";
     case "generate_html":
       return "生成互动大屏";
     case "consult_standards":
@@ -398,8 +398,8 @@ function buildIntentClarificationText(intentResult: LessonIntent) {
   return [
     "我还不能直接执行当前请求。",
     "请明确你是要：",
-    "1. 生成一份新的体育教案；",
-    "2. 修改当前已确认教案；",
+    "1. 生成一份新的体育课时计划；",
+    "2. 修改当前已确认课时计划；",
     "3. 生成互动大屏；",
     "4. 咨询课标、安全或评价依据。",
     `当前判断依据：${intentResult.reason}`,
@@ -407,7 +407,7 @@ function buildIntentClarificationText(intentResult: LessonIntent) {
 }
 
 function buildPatchRequiresLessonText() {
-  return "要修改现有教案，请先提供一份已确认的结构化教案，再说明你想调整的部分。";
+  return "要修改现有课时计划，请先提供一份已确认的结构化课时计划，再说明你想调整的部分。";
 }
 
 function buildStandardsConsultationText(standardsContext: string) {
@@ -415,7 +415,7 @@ function buildStandardsConsultationText(standardsContext: string) {
     "以下是与当前问题最相关的课标与教学依据：",
     standardsContext,
     "",
-    "如果你愿意，我可以继续基于这些依据生成教案，或对现有教案做合规性核对。",
+    "如果你愿意，我可以继续基于这些依据生成课时计划，或对现有课时计划做合规性核对。",
   ].join("\n");
 }
 
@@ -425,8 +425,8 @@ function buildIntakePromptParts(intakeResult?: LessonIntakeSkillResult) {
   }
 
   return [
-    "教案生成 Agent 启动前的信息收集结果：",
-    "你必须严格基于下列已确认信息生成教案；不得补写与其冲突的年级、课题、人数、课时、场地或器材。未确认学生人数时按 40 人生成；未确认课时、场地和器材时，根据课程内容、教学环节和安全要求自动匹配。",
+    "课时计划生成 Agent 启动前的信息收集结果：",
+    "你必须严格基于下列已确认信息生成课时计划；不得补写与其冲突的年级、课题、人数、课时、场地或器材。未确认学生人数时按 40 人生成；未确认课时、场地和器材时，根据课程内容、教学环节和安全要求自动匹配。",
     formatLessonIntakeResultForPrompt(intakeResult.intake),
   ];
 }
@@ -449,7 +449,7 @@ function buildWorkflowWarnings(inputData: {
 function createClassifyIntentStep(runLessonIntent: LessonIntentRunner) {
   return createStep({
     id: "classify-intent",
-    description: "识别当前请求是生成教案、修改教案、生成互动大屏、咨询课标，还是需要先澄清。",
+    description: "识别当前请求是生成课时计划、修改课时计划、生成互动大屏、咨询课标，还是需要先澄清。",
     inputSchema: lessonWorkflowInputSchema,
     outputSchema: intentClassificationOutputSchema,
     execute: async ({ inputData, runId }) => {
@@ -479,7 +479,7 @@ function createClassifyIntentStep(runLessonIntent: LessonIntentRunner) {
 function createCollectLessonRequirementsStep(runLessonIntake: LessonIntakeRunner) {
   return createStep({
     id: "collect-lesson-requirements",
-    description: "在正式生成体育教案前核对年级、课题等必要信息，并决定追问或继续生成。",
+    description: "在正式生成体育课时计划前核对年级、课题等必要信息，并决定追问或继续生成。",
     inputSchema: intentClassificationOutputSchema,
     outputSchema: intakeCollectionOutputSchema,
     execute: async ({ inputData, runId }) => {
@@ -507,7 +507,7 @@ function createCollectLessonRequirementsStep(runLessonIntake: LessonIntakeRunner
             "collect-lesson-requirements",
             intakeResult.intake.readyToGenerate ? "success" : "blocked",
             intakeResult.intake.readyToGenerate
-              ? `信息收集 Agent 已确认可以生成教案：${intakeResult.intake.reason}${memoryDetail}`
+              ? `信息收集 Agent 已确认可以生成课时计划：${intakeResult.intake.reason}${memoryDetail}`
               : `信息收集 Agent 已阻止随机生成：${intakeResult.intake.reason}${memoryDetail}`,
           ),
         ],
@@ -523,7 +523,7 @@ const prepareClarificationResponseStep = createStep({
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
     if (!inputData.intakeResult) {
-      throw new Error("缺少教案信息收集结果，无法生成追问。");
+      throw new Error("缺少课时计划信息收集结果，无法生成追问。");
     }
 
     const standards = buildDeferredStandardsWorkflowFields(inputData);
@@ -551,7 +551,7 @@ const prepareClarificationResponseStep = createStep({
         createTraceEntry(
           "prepare-clarification-response",
           "blocked",
-          "信息不足，工作流已停止正式教案生成并返回必要追问。",
+          "信息不足，工作流已停止正式课时计划生成并返回必要追问。",
         ),
       ],
     };
@@ -633,7 +633,7 @@ const prepareStandardsConsultationResponseStep = createStep({
 
 const preparePatchResponseStep = createStep({
   id: "prepare-patch-response",
-  description: "识别为已确认教案修改请求后，跳过 intake 并转入结构化补丁链路。",
+  description: "识别为已确认课时计划修改请求后，跳过 intake 并转入结构化补丁链路。",
   inputSchema: intakeCollectionOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
@@ -661,7 +661,7 @@ const preparePatchResponseStep = createStep({
           createTraceEntry(
             "prepare-patch-response",
             "blocked",
-            "识别到教案修改意图，但当前请求未携带已确认教案，已改为返回补充提示。",
+            "识别到课时计划修改意图，但当前请求未携带已确认课时计划，已改为返回补充提示。",
           ),
         ],
       };
@@ -687,7 +687,7 @@ const preparePatchResponseStep = createStep({
         createTraceEntry(
           "prepare-patch-response",
           "success",
-          "已识别为现有教案局部修改请求，跳过 intake 并转入结构化补丁链路。",
+          "已识别为现有课时计划局部修改请求，跳过 intake 并转入结构化补丁链路。",
         ),
       ],
     };
@@ -709,7 +709,7 @@ const constructPromptStep = createStep({
         screenPlan: inputData.screenPlan,
       }),
       ...buildIntakePromptParts(inputData.intakeResult),
-      "课程标准检索策略：searchStandardsTool 已挂载给当前 Agent。生成新教案或需要核对课标依据时调用该工具；只做局部改写且用户未要求课标核对时，可以跳过工具。",
+      "课程标准检索策略：searchStandardsTool 已挂载给当前 Agent。生成新课时计划或需要核对课标依据时调用该工具；只做局部改写且用户未要求课标核对时，可以跳过工具。",
       `\n目标市场：${standards.standards.resolvedMarket}`,
       `可用课标语料：${standards.standards.displayName}`,
       `官方状态：${standards.standards.officialStatus}`,
@@ -765,7 +765,7 @@ const validateSafetyStep = createStep({
     const resolvedMode = inputData.generationPlan.mode;
 
     if (resolvedMode === "html" && !inputData.lessonPlan?.trim()) {
-      throw new Error("生成互动大屏前必须提供已确认教案。请先完成教案确认，再进入 HTML 生成阶段。");
+      throw new Error("生成互动大屏前必须提供已确认课时计划。请先完成课时计划确认，再进入 HTML 生成阶段。");
     }
 
     return {
@@ -817,7 +817,7 @@ const mergeWorkflowBranchStep = createStep({
       inputData["prepare-generation-response"];
 
     if (!output) {
-      throw new Error("教案工作流没有命中可执行分支。");
+      throw new Error("课时计划工作流没有命中可执行分支。");
     }
 
     return output;

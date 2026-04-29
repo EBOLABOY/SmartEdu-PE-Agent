@@ -12,7 +12,7 @@ function buildHtmlModelMessages() {
     {
       role: "user" as const,
       content:
-        "请基于系统消息中的已确认教案和结构化大屏模块计划，生成课堂学习辅助大屏 HTML，并在每个内容页写入 data-support-module。",
+        "请基于系统消息中的已确认课时计划和结构化大屏模块计划，生成课堂学习辅助大屏 HTML，并在每个内容页写入 data-support-module。",
     },
   ] as AgentModelMessages;
 }

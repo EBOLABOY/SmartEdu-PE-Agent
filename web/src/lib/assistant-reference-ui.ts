@@ -27,7 +27,7 @@ const STARTER_SUGGESTIONS = [
 ];
 
 const LESSON_READY_SUGGESTIONS = [
-  "我已确认教案无误，请生成互动大屏",
+  "我已确认课时计划无误，请生成互动大屏",
   "强化安全提示和分层评价",
   "把练习密度调整得更高一些",
 ];

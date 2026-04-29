@@ -22,7 +22,7 @@ export default function AccountPageClient() {
 
   return (
     <AuthPageShell
-      description="这里是账号后台，可维护教师资料、邮箱、安全设置、团队和邀请。资料会作为后续教案生成的默认上下文。"
+      description="这里是账号后台，可维护教师资料、邮箱、安全设置、团队和邀请。资料会作为后续课时计划生成的默认上下文。"
       title="账号后台"
     >
       <AuthPanel initialTab={inviteToken ? "workspace" : initialTab} inviteToken={inviteToken} />

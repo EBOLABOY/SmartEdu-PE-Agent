@@ -241,9 +241,9 @@ export const agentLessonGenerationSchema = z
       .trim()
       .min(1)
       .describe(
-        "教案生成前的设计草稿：先梳理核心教学目标、重难点拆解、准备/基本/结束三部分时间分配和环节设计思路。",
+        "课时计划生成前的设计草稿：先梳理核心教学目标、重难点拆解、准备/基本/结束三部分时间分配和环节设计思路。",
       ),
-    lessonPlan: competitionLessonPlanSchema.describe("最终可持久化和渲染的 CompetitionLessonPlan 教案数据。"),
+    lessonPlan: competitionLessonPlanSchema.describe("最终可持久化和渲染的 CompetitionLessonPlan 课时计划数据。"),
   })
   .strict();
 

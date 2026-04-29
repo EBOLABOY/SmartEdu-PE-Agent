@@ -19,12 +19,12 @@ export default function ArtifactTextViewer({
 }: ArtifactTextViewerProps) {
   const normalizedContent = content.trim();
   const resolvedEmptyTitle =
-    emptyTitle ?? (isStreaming ? "等待 JSON 首包" : "等待教案生成");
+    emptyTitle ?? (isStreaming ? "等待 JSON 首包" : "等待课时计划生成");
   const resolvedEmptyDescription =
     emptyDescription ??
     (isStreaming
       ? "请求已进入模型流。收到第一段 JSON 后，这里会直接追加显示，不再切换到生成动画。"
-      : "请输入课程主题，系统会先生成可审阅的结构化教案；确认教案无误后，再生成互动大屏。");
+      : "请输入课程主题，系统会先生成可审阅的结构化课时计划；确认课时计划无误后，再生成互动大屏。");
 
   return (
     <AutoScrollArea

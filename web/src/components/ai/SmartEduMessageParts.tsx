@@ -66,8 +66,8 @@ function isTracePart(
 function getArtifactSummary(artifact: StructuredArtifactData) {
   if (artifact.stage === "lesson") {
     return artifact.status === "ready"
-      ? "教案已生成，完整内容已放在右侧教案预览中。你可以继续提出修改意见，或确认后生成互动大屏。"
-      : "正在生成教案，完整内容会实时同步到右侧教案预览。";
+      ? "课时计划已生成，完整内容已放在右侧课时计划预览中。你可以继续提出修改意见，或确认后生成互动大屏。"
+      : "正在生成课时计划，完整内容会实时同步到右侧课时计划预览。";
   }
 
   return artifact.status === "ready"

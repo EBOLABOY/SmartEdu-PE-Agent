@@ -31,7 +31,7 @@ describe("artifact-protocol", () => {
       chatRequestBodySchema.safeParse({
         messages: [],
         mode: "html",
-        lessonPlan: "## 十、课时计划（教案）",
+        lessonPlan: "## 十、课时计划",
         screenPlan,
       }).success,
     ).toBe(true);
@@ -68,7 +68,7 @@ describe("artifact-protocol", () => {
     expect(extraction.htmlComplete).toBe(false);
   });
 
-  it("能从结构化 lesson-json data part 中解析流式教案", () => {
+  it("能从结构化 lesson-json data part 中解析流式课时计划", () => {
     const message: SmartEduUIMessage = {
       id: "assistant-lesson",
       role: "assistant",
@@ -100,7 +100,7 @@ describe("artifact-protocol", () => {
     expect(extracted.html).toBe("");
   });
 
-  it("能从带代码围栏和说明的流式 lesson-json 中提前解析教案", () => {
+  it("能从带代码围栏和说明的流式 lesson-json 中提前解析课时计划", () => {
     const message: SmartEduUIMessage = {
       id: "assistant-lesson-fenced",
       role: "assistant",
@@ -112,7 +112,7 @@ describe("artifact-protocol", () => {
             protocolVersion: "structured-v1",
             stage: "lesson",
             contentType: "lesson-json",
-            content: `下面是结构化教案 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
+            content: `下面是结构化课时计划 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
             isComplete: false,
             status: "streaming",
             source: "data-part",
@@ -146,7 +146,7 @@ describe("artifact-protocol", () => {
         },
         {
           type: "text",
-          text: "教案生成中。",
+          text: "课时计划生成中。",
         },
       ],
     };

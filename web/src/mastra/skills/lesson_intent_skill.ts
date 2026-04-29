@@ -55,8 +55,8 @@ function buildIntentSystemPrompt() {
     "你是体育教学智能体的入口意图分类器。",
     "你只能在以下意图中四选一并返回结构化对象：clarify、generate_lesson、patch_lesson、generate_html、consult_standards。",
     "判定规则：",
-    "1. 用户要求写新教案、补全完整教案、重新生成教案，使用 generate_lesson。",
-    "2. 用户要求修改、调整、补充、删改现有教案，且当前已有 lessonPlan，可使用 patch_lesson。",
+    "1. 用户要求写新课时计划、补全完整课时计划、重新生成课时计划，或仍沿用“教案”说法表达同类诉求时，使用 generate_lesson。",
+    "2. 用户要求修改、调整、补充、删改现有课时计划，或修改现有教案，且当前已有 lessonPlan，可使用 patch_lesson。",
     "3. 用户要求生成互动大屏、课堂投屏 HTML、页面、课件，使用 generate_html。",
     "4. 用户主要在咨询课标、安全性、是否合规、教学依据、评价依据，而不是要求生成成品，使用 consult_standards。",
     "5. 用户意图过于模糊、缺少任务方向，或只是泛泛追问下一步怎么做，使用 clarify。",
@@ -84,7 +84,7 @@ export async function generateLessonIntentWithAiSdk({
         role: "user",
         content: [
           `当前 UI 模式提示：${mode}`,
-          `当前是否已有已确认教案：${lessonPlan?.trim() ? "是" : "否"}`,
+          `当前是否已有已确认课时计划：${lessonPlan?.trim() ? "是" : "否"}`,
           "请基于完整对话与当前状态，返回本轮最合适的意图分类。",
         ].join("\n"),
       },
@@ -127,7 +127,7 @@ function inferLessonIntentHeuristically(input: {
     return {
       intent: "patch_lesson",
       confidence: 0.82,
-      reason: "当前已有教案，且用户表达的是局部修改或补充意图。",
+      reason: "当前已有课时计划，且用户表达的是局部修改或补充意图。",
     };
   }
 
@@ -142,7 +142,10 @@ function inferLessonIntentHeuristically(input: {
     };
   }
 
-  if (!normalized || /这个|那个|看一下|看看|先帮我/.test(input.query) && !/教案|大屏|课标|标准/.test(input.query)) {
+  if (
+    (!normalized || /这个|那个|看一下|看看|先帮我/.test(input.query)) &&
+    !/(课时计划|教案|大屏|课标|标准)/.test(input.query)
+  ) {
     return {
       intent: "clarify",
       confidence: 0.62,
@@ -153,7 +156,7 @@ function inferLessonIntentHeuristically(input: {
   return {
     intent: "generate_lesson",
     confidence: 0.74,
-    reason: "默认视为生成新教案请求。",
+    reason: "默认视为生成新课时计划请求。",
   };
 }
 

@@ -4,7 +4,7 @@ import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contra
 import { buildCompetitionLessonPrintHtml } from "@/lib/competition-lesson-print-document";
 
 describe("competition-lesson-print-document", () => {
-  it("会生成独立可打印的 A4 教案 HTML 文档", () => {
+  it("会生成独立可打印的 A4 课时计划 HTML 文档", () => {
     const html = buildCompetitionLessonPrintHtml(DEFAULT_COMPETITION_LESSON_PLAN);
 
     expect(html).toContain("<!DOCTYPE html>");

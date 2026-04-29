@@ -138,7 +138,7 @@ export default function NativeLessonScreen({
           <MonitorFallbackIcon />
           <h2 className="mt-5 text-2xl font-black">暂无大屏数据</h2>
           <p className="mt-3 text-sm leading-6 text-emerald-100/70">
-            当前教案还没有可渲染的结构化课堂环节。先生成并校验教案，再预览原生大屏。
+            当前课时计划还没有可渲染的结构化课堂环节。先生成并校验课时计划，再预览原生大屏。
           </p>
         </div>
       </div>

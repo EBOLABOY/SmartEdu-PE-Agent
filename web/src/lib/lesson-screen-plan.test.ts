@@ -69,7 +69,7 @@ const LESSON_PLAN = {
 };
 
 describe("lesson-screen-plan", () => {
-  it("会从结构化教案 JSON 构建互动大屏结构化计划", () => {
+  it("会从结构化课时计划 JSON 构建互动大屏结构化计划", () => {
     const plan = buildLessonScreenPlanFromLessonPlan(LESSON_PLAN);
 
     expect(plan.sections).toHaveLength(5);

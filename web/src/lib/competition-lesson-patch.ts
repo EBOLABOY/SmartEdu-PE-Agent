@@ -593,7 +593,7 @@ export function applySemanticLessonUpdatesWithTrace(
 
   if (!parsedNextPlan.success) {
     throw new CompetitionLessonPatchError(
-      `语义修改应用后教案结构不合法：${parsedNextPlan.error.issues.map((issue) => issue.path.join(".")).join("、")}`,
+      `语义修改应用后课时计划结构不合法：${parsedNextPlan.error.issues.map((issue) => issue.path.join(".")).join("、")}`,
     );
   }
 
@@ -682,7 +682,7 @@ function getParent(root: unknown, path: string) {
   const segments = parseJsonPointer(path);
 
   if (segments.length === 0) {
-    throw new CompetitionLessonPatchError("不允许替换整份教案对象。");
+    throw new CompetitionLessonPatchError("不允许替换整份课时计划对象。");
   }
 
   const key = segments.at(-1);
@@ -793,7 +793,7 @@ export function applyCompetitionLessonPatch(
 
   if (!parsedNextPlan.success) {
     throw new CompetitionLessonPatchError(
-      `patch 应用后教案结构不合法：${parsedNextPlan.error.issues.map((issue) => issue.path.join(".")).join("、")}`,
+      `patch 应用后课时计划结构不合法：${parsedNextPlan.error.issues.map((issue) => issue.path.join(".")).join("、")}`,
     );
   }
 

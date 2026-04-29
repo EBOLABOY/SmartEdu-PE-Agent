@@ -49,7 +49,7 @@ export async function DELETE(
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    return Response.json({ error: "当前会话未登录，无法删除历史教案。" }, { status: 401 });
+    return Response.json({ error: "当前会话未登录，无法删除历史课时计划。" }, { status: 401 });
   }
 
   try {
@@ -92,7 +92,7 @@ export async function DELETE(
 
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "删除历史教案失败。",
+        error: error instanceof Error ? error.message : "删除历史课时计划失败。",
       },
       { status: 500 },
     );

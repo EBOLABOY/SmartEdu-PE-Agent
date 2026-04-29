@@ -23,8 +23,8 @@ describe("lesson intake skill", () => {
           venue: "篮球场",
         },
         missing: [],
-        questions: [],
-        summary: "五年级篮球行进间运球，学生人数默认40人，篮球场，课时和器材由教案生成 Agent 自动匹配。",
+        clarifications: [],
+        summary: "五年级篮球行进间运球，学生人数默认40人，篮球场，课时和器材由课时计划生成 Agent 自动匹配。",
         reason: "年级、课程内容和场地已明确。",
     });
 
@@ -55,7 +55,24 @@ describe("lesson intake skill", () => {
           topic: "篮球课",
         },
         missing: ["grade", "duration", "venue", "equipment"],
-        questions: ["本次课是几年级？", "课时多长？", "使用什么场地？", "需要哪些器材？"],
+        clarifications: [
+          {
+            field: "grade",
+            question: "本次课是几年级？",
+          },
+          {
+            field: "duration",
+            question: "课时多长？",
+          },
+          {
+            field: "venue",
+            question: "使用什么场地？",
+          },
+          {
+            field: "equipment",
+            question: "需要哪些器材？",
+          },
+        ],
         summary: "篮球课。",
         reason: "Agent 误判为可以生成。",
     });
@@ -69,10 +86,15 @@ describe("lesson intake skill", () => {
 
     expect(result.intake.readyToGenerate).toBe(false);
     expect(result.intake.missing).toEqual(["grade"]);
-    expect(result.intake.questions).toEqual(["本次课是几年级或哪个水平段？"]);
+    expect(result.intake.clarifications).toEqual([
+      {
+        field: "grade",
+        question: "本次课是几年级？",
+      },
+    ]);
   });
 
-  it("offers selectable course topics when the user did not provide lesson content", async () => {
+  it("passes through the model-generated topic clarification when lesson content is missing", async () => {
     const generateIntake = vi.fn().mockResolvedValue({
         readyToGenerate: false,
         known: {
@@ -80,7 +102,12 @@ describe("lesson intake skill", () => {
           venue: "篮球场",
         },
         missing: ["topic"],
-        questions: ["具体要上的体育课程内容是什么？"],
+        clarifications: [
+          {
+            field: "topic",
+            question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 篮球原地双手胸前传接球；3. 篮球传切配合；4. 篮球运球急停急起。",
+          },
+        ],
         reason: "缺少具体课程内容。",
     });
 
@@ -99,9 +126,12 @@ describe("lesson intake skill", () => {
 
     expect(result.intake.readyToGenerate).toBe(false);
     expect(result.intake.missing).toEqual(["topic"]);
-    expect(result.intake.questions.join("\n")).toContain("请选择本次课程内容");
-    expect(result.intake.questions.join("\n")).toContain("篮球行进间运球");
-    expect(result.intake.questions.join("\n")).toContain("篮球传切配合");
+    expect(result.intake.clarifications).toEqual([
+      {
+        field: "topic",
+        question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 篮球原地双手胸前传接球；3. 篮球传切配合；4. 篮球运球急停急起。",
+      },
+    ]);
   });
 
   it("does not block generation when only venue is missing", async () => {
@@ -112,7 +142,12 @@ describe("lesson intake skill", () => {
           topic: "篮球行进间运球",
         },
         missing: ["venue"],
-        questions: ["本次课使用什么场地？"],
+        clarifications: [
+          {
+            field: "venue",
+            question: "本次课使用什么场地？",
+          },
+        ],
         reason: "Agent 错误地把场地当成必填字段。",
     });
 
@@ -131,8 +166,8 @@ describe("lesson intake skill", () => {
 
     expect(result.intake.readyToGenerate).toBe(true);
     expect(result.intake.missing).toEqual([]);
-    expect(result.intake.questions).toEqual([]);
-    expect(result.intake.summary).toContain("场地由教案生成 Agent 根据课程内容自动匹配");
+    expect(result.intake.clarifications).toEqual([]);
+    expect(result.intake.summary).toContain("场地由课时计划生成 Agent 根据课程内容自动匹配");
     expect(result.intake.known?.venue).toBeUndefined();
   });
 
@@ -141,7 +176,20 @@ describe("lesson intake skill", () => {
         readyToGenerate: false,
         known: {},
         missing: ["grade", "topic", "venue"],
-        questions: ["本次课是几年级？", "具体上什么内容？", "使用什么场地？"],
+        clarifications: [
+          {
+            field: "grade",
+            question: "本次课是几年级？",
+          },
+          {
+            field: "topic",
+            question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒。",
+          },
+          {
+            field: "venue",
+            question: "使用什么场地？",
+          },
+        ],
         reason: "Agent 没有正确利用用户资料。",
     });
 
@@ -164,11 +212,12 @@ describe("lesson intake skill", () => {
     expect(result.memoryUsed).toBe(false);
     expect(result.intake.readyToGenerate).toBe(false);
     expect(result.intake.missing).toEqual(["topic"]);
-    expect(result.intake.questions).toHaveLength(1);
-    expect(result.intake.questions.join("\n")).toContain("请选择本次课程内容");
-    expect(result.intake.questions.join("\n")).toContain("篮球行进间运球");
-    expect(result.intake.questions.join("\n")).not.toContain("几年级");
-    expect(result.intake.questions.join("\n")).not.toContain("场地");
+    expect(result.intake.clarifications).toEqual([
+      {
+        field: "topic",
+        question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒。",
+      },
+    ]);
     expect(result.intake.known).toMatchObject({
       grade: "五年级",
       studentCount: 40,
@@ -188,9 +237,9 @@ describe("lesson intake skill", () => {
 
     expect(result.source).toBe("safe-fallback");
     expect(result.intake.readyToGenerate).toBe(false);
-    expect(result.intake.questions.join("\n")).toContain("几年级");
-    expect(result.intake.questions.join("\n")).toContain("课程内容");
-    expect(result.intake.questions.join("\n")).not.toContain("场地");
+    expect(result.intake.clarifications.map((item) => item.question).join("\n")).toContain("几年级");
+    expect(result.intake.clarifications.map((item) => item.question).join("\n")).toContain("课程内容");
+    expect(result.intake.clarifications.map((item) => item.question).join("\n")).not.toContain("场地");
     expect(result.warning).toContain("model unavailable");
   });
 
@@ -210,10 +259,10 @@ describe("lesson intake skill", () => {
     expect(result.source).toBe("safe-fallback");
     expect(result.intake.readyToGenerate).toBe(false);
     expect(result.intake.missing).toEqual(["topic"]);
-    expect(result.intake.questions).toHaveLength(1);
-    expect(result.intake.questions.join("\n")).toContain("请选择本次课程内容");
-    expect(result.intake.questions.join("\n")).not.toContain("几年级");
-    expect(result.intake.questions.join("\n")).not.toContain("场地");
+    expect(result.intake.clarifications).toHaveLength(1);
+    expect(result.intake.clarifications.map((item) => item.question).join("\n")).toContain("请选择本次课程内容");
+    expect(result.intake.clarifications.map((item) => item.question).join("\n")).not.toContain("几年级");
+    expect(result.intake.clarifications.map((item) => item.question).join("\n")).not.toContain("场地");
   });
 
   it("uses project memory and default 40 students to reduce repeated clarification questions", async () => {
@@ -223,7 +272,12 @@ describe("lesson intake skill", () => {
           topic: "篮球行进间运球",
         },
         missing: ["grade", "duration", "studentCount", "venue", "equipment"],
-        questions: ["请补充年级、课时、人数、场地和器材。"],
+        clarifications: [
+          {
+            field: "grade",
+            question: "请补充年级、课时、人数、场地和器材。",
+          },
+        ],
         reason: "当前消息只提供了课程内容。",
     });
 
@@ -249,7 +303,7 @@ describe("lesson intake skill", () => {
 
     expect(result.memoryUsed).toBe(true);
     expect(result.intake.readyToGenerate).toBe(true);
-    expect(result.intake.questions).toEqual([]);
+    expect(result.intake.clarifications).toEqual([]);
     expect(result.intake.known).toMatchObject({
       grade: "五年级",
       topic: "篮球行进间运球",

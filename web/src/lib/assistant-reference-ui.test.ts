@@ -83,7 +83,7 @@ describe("assistant-reference-ui", () => {
         hasLessonPlan: true,
         isLoading: false,
       }),
-    ).toContain("我已确认教案无误，请生成互动大屏");
+    ).toContain("我已确认课时计划无误，请生成互动大屏");
 
     expect(
       getAssistantSuggestions({

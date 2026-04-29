@@ -133,7 +133,7 @@ function getWorkflowFailureMessage(result: { status: string; error?: unknown }) 
     return result.error.message;
   }
 
-  return `体育教案工作流执行失败，状态：${result.status}。`;
+  return `体育课时计划工作流执行失败，状态：${result.status}。`;
 }
 
 function logLessonAuthoringTrace(trace: LessonAuthoringTrace) {
@@ -162,7 +162,7 @@ function applyHtmlScreenPlanning(
     planning.source === "agent"
       ? "HTML 分镜规划 Agent"
       : planning.source === "deterministic-fallback"
-        ? "结构化教案确定性解析"
+        ? "结构化课时计划确定性解析"
         : planning.source === "seed-fallback"
           ? "前端初始大屏计划"
           : "最小安全兜底计划";
@@ -306,8 +306,8 @@ function createRepairSuccessUiHint(): UiHint {
     action: "show_toast",
     params: {
       level: "success",
-      title: "教案已自动修复",
-      description: "检测到教案中存在未完成字段，系统已自动完善并替换占位符。",
+      title: "课时计划已自动修复",
+      description: "检测到课时计划中存在未完成字段，系统已自动完善并替换占位符。",
     },
   };
 }
@@ -320,7 +320,7 @@ function writeAuthoringFailure(input: {
   requestedMarket: StandardsMarket;
   writer: UIMessageStreamWriter<SmartEduUIMessage>;
 }) {
-  const errorText = input.error instanceof Error ? input.error.message : "体育教案生成服务异常。";
+  const errorText = input.error instanceof Error ? input.error.message : "体育课时计划生成服务异常。";
   const state = createLessonWorkflowTraceState({
     query: input.query || "lesson authoring",
     mode: input.mode,
@@ -448,7 +448,7 @@ async function executeLessonAuthoringStream(input: {
     const additionalInstructions = buildIntentExecutionHandover(workflow);
 
     if (!confirmedLessonPlan) {
-      throw new LessonAuthoringError("当前修改请求缺少已确认的结构化教案，无法执行局部补丁。");
+      throw new LessonAuthoringError("当前修改请求缺少已确认的结构化课时计划，无法执行局部补丁。");
     }
 
     const patchAgent = mastra.getAgent("lessonPatchAgent");
@@ -457,7 +457,7 @@ async function executeLessonAuthoringStream(input: {
 
     workflow = appendWorkflowTrace(
       workflow,
-      createWorkflowTraceEntry("lesson-patch-started", "running", "正在执行结构化教案补丁。"),
+      createWorkflowTraceEntry("lesson-patch-started", "running", "正在执行结构化课时计划补丁。"),
     );
     writeWorkflowTracePart(writer, workflow, requestId, "generation");
 
@@ -480,7 +480,7 @@ async function executeLessonAuthoringStream(input: {
         "lesson-patch-finished",
         "success",
         patchResponse.patchSummary ??
-          `已完成 ${patchResponse.patch.operations.length} 处结构化教案修改。`,
+          `已完成 ${patchResponse.patch.operations.length} 处结构化课时计划修改。`,
       ),
     );
     writeWorkflowTracePart(writer, workflow, requestId, "generation");
@@ -589,7 +589,7 @@ async function executeLessonAuthoringStream(input: {
   };
 
   recordLessonTrace(
-    createWorkflowTraceEntry("agent-stream-started", "running", "正在连接结构化教案生成模型流。"),
+    createWorkflowTraceEntry("agent-stream-started", "running", "正在连接结构化课时计划生成模型流。"),
   );
 
   const lessonGeneration = await runLessonGenerationWithRepair({

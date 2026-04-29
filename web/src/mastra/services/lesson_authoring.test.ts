@@ -64,7 +64,7 @@ const readyIntakeResult = {
       topic: "篮球行进间运球",
     },
     missing: [],
-    questions: [],
+    clarifications: [],
     summary: "五年级篮球行进间运球。",
     reason: "年级和课题已明确。",
   },
@@ -79,7 +79,12 @@ const clarifyIntakeResult = {
       topic: "篮球课",
     },
     missing: ["grade" as const],
-    questions: ["本次课是几年级？"],
+    clarifications: [
+      {
+        field: "grade" as const,
+        question: "本次课是几年级？",
+      },
+    ],
     reason: "缺少年级。",
   },
   memoryUsed: true,
@@ -228,7 +233,7 @@ describe("lesson authoring service", () => {
         {
           id: "user-1",
           role: "user",
-          parts: [{ type: "text", text: "帮我写一个篮球课教案" }],
+          parts: [{ type: "text", text: "帮我写一个篮球课课时计划" }],
         },
       ],
       mode: "lesson",
@@ -359,7 +364,7 @@ describe("lesson authoring service", () => {
       onTrace?.({
         step: "lesson-repair-started",
         status: "running",
-        detail: "正在自动完善结构化教案。",
+        detail: "正在自动完善结构化课时计划。",
       });
       onTrace?.({
         step: "lesson-repair-finished",
@@ -380,7 +385,7 @@ describe("lesson authoring service", () => {
         {
           id: "user-4",
           role: "user",
-          parts: [{ type: "text", text: "生成一份五年级足球教案" }],
+          parts: [{ type: "text", text: "生成一份五年级足球课时计划" }],
         },
       ],
       mode: "lesson",
@@ -407,7 +412,7 @@ describe("lesson authoring service", () => {
                 action: "show_toast",
                 params: expect.objectContaining({
                   level: "success",
-                  title: "教案已自动修复",
+                  title: "课时计划已自动修复",
                 }),
               }),
             ]),
@@ -455,7 +460,7 @@ describe("lesson authoring service", () => {
       decision: {
         type: "generate",
         intentResult: createIntentResult("generate_html", {
-          reason: "教师已经确认教案，当前目标是生成课堂互动大屏。",
+          reason: "教师已经确认课时计划，当前目标是生成课堂互动大屏。",
         }),
       },
     });

@@ -47,8 +47,8 @@ describe("artifact-ui-hints", () => {
           action: "show_toast",
           params: {
             level: "success",
-            title: "已切换到教案",
-            description: "当前正在展示结构化教案。",
+            title: "已切换到课时计划",
+            description: "当前正在展示结构化课时计划。",
           },
         },
         {
@@ -75,8 +75,8 @@ describe("artifact-ui-hints", () => {
     expect(setView).toHaveBeenCalledWith("lesson");
     expect(showToast).toHaveBeenCalledWith({
       level: "success",
-      title: "已切换到教案",
-      description: "当前正在展示结构化教案。",
+      title: "已切换到课时计划",
+      description: "当前正在展示结构化课时计划。",
     });
     expect(triggerPrint).toHaveBeenCalledWith("lesson");
     expect(scrollToTarget).toHaveBeenCalledWith("artifact-content");

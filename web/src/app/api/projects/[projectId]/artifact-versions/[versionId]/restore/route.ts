@@ -35,7 +35,7 @@ function buildRestoreUiHints(
     ];
   }
 
-  const versionTitle = restoredVersion.title ?? "教案版本";
+  const versionTitle = restoredVersion.title ?? "课时计划版本";
   const isLesson = restoredVersion.stage === "lesson";
 
   return [
@@ -45,7 +45,7 @@ function buildRestoreUiHints(
         level: "success",
         title: "版本已恢复",
         description: isLesson
-          ? `已将\u201c${versionTitle}\u201d恢复为当前教案版本，原互动大屏已失效，请重新生成。`
+          ? `已将\u201c${versionTitle}\u201d恢复为当前课时计划版本，原互动大屏已失效，请重新生成。`
           : `已将\u201c${versionTitle}\u201d恢复为当前互动大屏版本。`,
       },
     },

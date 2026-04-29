@@ -5,7 +5,7 @@
  * 桥接到现有 Supabase conversations/messages 表。
  *
  * 核心映射：
- * - threadId  → projectId（一个"项目"即一个独立的教案生命周期）
+ * - threadId  → projectId（一个"项目"即一个独立的课时计划生命周期）
  * - resourceId → userId（Supabase auth user ID）
  *
  * 阶段规划：

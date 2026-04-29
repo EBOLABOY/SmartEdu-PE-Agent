@@ -8,7 +8,7 @@ import {
 } from "@/lib/competition-lesson-contract";
 
 describe("competition-lesson-contract", () => {
-  it("默认教案符合统一后的字符串数组正文块契约", () => {
+  it("默认课时计划符合统一后的字符串数组正文块契约", () => {
     const parsed = competitionLessonPlanSchema.parse(DEFAULT_COMPETITION_LESSON_PLAN);
 
     expect(parsed.learningObjectives.sportAbility).toEqual(["XXX"]);

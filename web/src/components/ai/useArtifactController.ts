@@ -99,7 +99,7 @@ export function useArtifactController(input: UseArtifactControllerInput) {
 
   const downloadHtmlLocally = () => {
     if (!downloadBlob) {
-      toast.warning("暂无可导出的大屏文件", { description: "请先确认教案并生成互动大屏。" });
+      toast.warning("暂无可导出的大屏文件", { description: "请先确认课时计划并生成互动大屏。" });
       return;
     }
 
@@ -114,7 +114,7 @@ export function useArtifactController(input: UseArtifactControllerInput) {
   const downloadHtml = () => {
     void (async () => {
       if (!downloadBlob) {
-        toast.warning("暂无可导出的大屏文件", { description: "请先确认教案并生成互动大屏。" });
+        toast.warning("暂无可导出的大屏文件", { description: "请先确认课时计划并生成互动大屏。" });
         return;
       }
 

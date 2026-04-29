@@ -11,7 +11,7 @@ const STREAMING_TEXT = "正在生成";
 
 const STREAMING_COMPETITION_LESSON_DRAFT: CompetitionLessonPlan = {
   ...DEFAULT_COMPETITION_LESSON_PLAN,
-  title: "教案生成中",
+  title: "课时计划生成中",
   subtitle: "——正在生成",
   teacher: {
     school: STREAMING_TEXT,

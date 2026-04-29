@@ -1,7 +1,7 @@
 export const GUANGDONG_COMPETITION_LESSON_FORMAT = `
-广东省比赛体育教案标准规范：
+广东省比赛体育课时计划标准规范：
 参考文件：材料/XXX.pdf；当前系统打印模板参考材料/模板.html 实现。
-目标：lesson 阶段生成的 lessonPlan 必须贴近参赛教案的展示格式、段落层级、字号感与表格组织。
+目标：lesson 阶段生成的 lessonPlan 必须贴近参赛课时计划的展示格式、段落层级、字号感与表格组织。
 
 版式与章节顺序：
 1. 顶部标题区：课题主标题、水平/年级副标题、授课教师与学校。
@@ -13,7 +13,7 @@ export const GUANGDONG_COMPETITION_LESSON_FORMAT = `
 7. 六、教学流程：用简洁流程线串联主要游戏或练习环节。
 8. 七、学习评价：evaluation 字段依次呈现“三颗星、二颗星、一颗星”。
 9. 八、运动负荷预计：包含群体运动密度、个体运动密度、平均心率和负荷依据。
-10. 九、课时计划(教案)：periodPlan、venueEquipment、loadEstimate 字段共同组成 8 列综合表格。
+10. 九、课时计划：periodPlan、venueEquipment、loadEstimate 字段共同组成 8 列综合表格。
 
 课时计划表格结构：
 1. 表头信息区包含主题、课次、学生人数、主要学习内容、安全保障、场地器材。
@@ -42,7 +42,7 @@ export const GUANGDONG_COMPETITION_LESSON_FORMAT = `
 输出协议：
 1. 你必须直接返回满足 AgentLessonGeneration schema 的结构化数据。
 2. 顶层字段只包含 _thinking_process 与 lessonPlan。
-3. _thinking_process 写教案设计草稿：目标、重难点、三段时间分配和环节思路。
+3. _thinking_process 写课时计划设计草稿：目标、重难点、三段时间分配和环节思路。
 4. lessonPlan 写最终 CompetitionLessonPlan 数据，最终由系统校验并渲染为正式打印版。
 
 结构化数据示例参考：

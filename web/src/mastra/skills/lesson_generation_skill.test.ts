@@ -313,7 +313,7 @@ describe("generation skills", () => {
       {
         id: "user-1",
         role: "user",
-        parts: [{ type: "text", text: "生成五年级篮球行进间运球教案" }],
+        parts: [{ type: "text", text: "生成五年级篮球行进间运球课时计划" }],
       },
     ] as SmartEduUIMessage[];
 
@@ -356,7 +356,7 @@ describe("generation skills", () => {
       {
         id: "user-1",
         role: "user",
-        parts: [{ type: "text", text: "生成五年级篮球行进间运球教案" }],
+        parts: [{ type: "text", text: "生成五年级篮球行进间运球课时计划" }],
       },
     ] as SmartEduUIMessage[];
 

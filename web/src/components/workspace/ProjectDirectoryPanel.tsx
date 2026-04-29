@@ -132,7 +132,7 @@ export default function ProjectDirectoryPanel({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除历史教案？</DialogTitle>
+            <DialogTitle>删除历史课时计划？</DialogTitle>
             <DialogDescription>
               {pendingDeleteProject
                 ? `“${pendingDeleteProject.title}”会从历史列表中隐藏，已保存的版本记录不会被物理清除。`

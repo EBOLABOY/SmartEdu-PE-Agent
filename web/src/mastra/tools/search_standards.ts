@@ -61,7 +61,7 @@ export const searchStandardsToolInputSchema = z.object({
 
 export const searchStandardsTool = createTool({
   id: "search-standards",
-  description: "检索体育课程标准结构化条目，用于生成合规体育教案，并返回目标市场与语料解析信息。",
+  description: "检索体育课程标准结构化条目，用于生成合规体育课时计划，并返回目标市场与语料解析信息。",
   inputSchema: searchStandardsToolInputSchema,
   outputSchema: z.object({
     requestedMarket: standardsMarketSchema,

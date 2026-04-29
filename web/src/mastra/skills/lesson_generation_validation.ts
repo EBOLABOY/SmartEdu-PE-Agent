@@ -43,7 +43,7 @@ function collectTextValidationIssues(
     if (!normalized) {
       issues.push({
         code: "empty-text",
-        message: `${path} 为空，不能作为正式教案内容。`,
+        message: `${path} 为空，不能作为正式课时计划内容。`,
         path,
       });
       return;

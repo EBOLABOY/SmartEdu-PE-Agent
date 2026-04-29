@@ -129,7 +129,7 @@ describe("artifact-view-state", () => {
             contentType: "lesson-json",
             content: JSON.stringify({
               ...DEFAULT_COMPETITION_LESSON_PLAN,
-              title: "教案生成中",
+              title: "课时计划生成中",
             }),
             isComplete: false,
             status: "streaming",

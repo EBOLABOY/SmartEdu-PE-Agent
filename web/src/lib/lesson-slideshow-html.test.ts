@@ -9,7 +9,7 @@ import { buildLessonSlideshowHtml, extractLessonSlides, isPptStyleLessonHtml } f
 
 const LESSON_PLAN = `# 篮球传切配合课
 
-## 十、课时计划（教案）
+## 十、课时计划
 | 课的结构 | 具体教学内容 | 教与学的方法 | 组织形式 | 运动时间 |
 | --- | --- | --- | --- | --- |
 | 课堂常规 | 集合整队，宣布本课目标和安全要求 | 教师讲解，学生回应 | 四列横队 | 1 分钟 |
@@ -24,7 +24,7 @@ const LESSON_PLAN = `# 篮球传切配合课
 `;
 
 describe("lesson-slideshow-html", () => {
-  it("会从教案表格中提取分环节幻灯片和时间", () => {
+  it("会从课时计划表格中提取分环节幻灯片和时间", () => {
     const slides = extractLessonSlides(LESSON_PLAN);
 
     expect(slides).toHaveLength(5);
@@ -97,7 +97,7 @@ describe("lesson-slideshow-html", () => {
 
   it("会识别不合格的单页 HTML", () => {
     expect(
-      isPptStyleLessonHtml("<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>单页教案</h1></body></html>"),
+      isPptStyleLessonHtml("<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>单页课时计划</h1></body></html>"),
     ).toBe(false);
   });
 
@@ -120,7 +120,7 @@ describe("lesson-slideshow-html", () => {
   });
 
   it("会报告不合格的课堂大屏 HTML", () => {
-    const report = analyzeLessonScreenHtml("<!DOCTYPE html><html><body><h1>单页教案</h1></body></html>");
+    const report = analyzeLessonScreenHtml("<!DOCTYPE html><html><body><h1>单页课时计划</h1></body></html>");
 
     expect(report.errors.join(" ")).toContain("lang=\"zh-CN\"");
     expect(report.errors.join(" ")).toContain("课堂大屏至少需要");

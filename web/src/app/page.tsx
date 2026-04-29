@@ -9,7 +9,7 @@ function WorkspaceFallback() {
         <div className="mx-auto size-10 animate-pulse rounded-2xl bg-brand/15" />
         <h1 className="mt-4 text-base font-semibold text-foreground">正在打开课堂工作台</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          正在恢复项目、会话和教案状态。
+          正在恢复项目、会话和课时计划状态。
         </p>
       </div>
     </main>

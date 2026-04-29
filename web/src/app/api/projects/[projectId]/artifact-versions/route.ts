@@ -18,7 +18,7 @@ import {
 
 export const runtime = "nodejs";
 
-const GENERIC_LESSON_ARTIFACT_TITLES = new Set(["XXX", "教案 Artifact"]);
+const GENERIC_LESSON_ARTIFACT_TITLES = new Set(["XXX", "课时计划 Artifact"]);
 
 function persistenceUnavailableResponse(projectId: string, reason: string) {
   return Response.json(
@@ -50,7 +50,7 @@ function resolveLessonArtifactTitle(...candidates: Array<string | undefined>) {
     );
 
   if (!title) {
-    return "教案 Artifact";
+    return "课时计划 Artifact";
   }
 
   if (title.length <= 120) {
@@ -172,7 +172,7 @@ export async function POST(
   if (!parsedBody.success) {
     return Response.json(
       {
-        error: "保存教案版本请求体结构不合法。",
+        error: "保存课时计划版本请求体结构不合法。",
         details: parsedBody.error.flatten(),
       },
       { status: 400 },
@@ -195,7 +195,7 @@ export async function POST(
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    return Response.json({ error: "当前会话未登录，无法保存教案版本。" }, { status: 401 });
+    return Response.json({ error: "当前会话未登录，无法保存课时计划版本。" }, { status: 401 });
   }
 
   const requestId = crypto.randomUUID();
@@ -242,7 +242,7 @@ export async function POST(
   } catch (error) {
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "保存教案版本失败。",
+        error: error instanceof Error ? error.message : "保存课时计划版本失败。",
       },
       { status: 500 },
     );

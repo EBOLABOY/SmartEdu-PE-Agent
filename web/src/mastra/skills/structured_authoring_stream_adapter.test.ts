@@ -512,7 +512,7 @@ describe("structured authoring stream adapter", () => {
       originalMessages: [],
       requestId: "request-2",
       workflow,
-      lessonPlan: "## 十、课时计划（教案）\n| 课堂常规 | 1分钟 |",
+      lessonPlan: "## 十、课时计划\n| 课堂常规 | 1分钟 |",
       stream: createChunkStream([
         { type: "text-start", id: "text-1" },
         { type: "text-delta", id: "text-1", delta: "<!DOCTYPE html><html lang=\"zh-CN\"><body>普通页面</body></html>" },

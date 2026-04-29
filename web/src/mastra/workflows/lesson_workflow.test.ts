@@ -24,7 +24,7 @@ function createReadyIntake() {
         studentCount: 40,
       },
       missing: [],
-      questions: [],
+      clarifications: [],
       summary: "五年级篮球行进间运球，学生人数默认 40 人。",
       reason: "年级和课题已明确。",
     },
@@ -41,7 +41,12 @@ function createClarifyIntake() {
         topic: "篮球课",
       },
       missing: ["grade" as const],
-      questions: ["本次课是几年级？"],
+      clarifications: [
+        {
+          field: "grade" as const,
+          question: "本次课是几年级？",
+        },
+      ],
       reason: "缺少年级。",
     },
     memoryUsed: true,
@@ -88,7 +93,7 @@ describe("lesson-workflow", () => {
       return;
     }
     expect(result.result.decision.intakeResult?.intake.summary).toContain("五年级篮球行进间运球");
-    expect(result.result.system).toContain("教案生成 Agent 启动前的信息收集结果");
+    expect(result.result.system).toContain("课时计划生成 Agent 启动前的信息收集结果");
     expect(result.result.system).toContain("searchStandardsTool 已挂载给当前 Agent");
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
     expect(result.result.generationPlan.protocolVersion).toBe("structured-v1");
@@ -117,10 +122,10 @@ describe("lesson-workflow", () => {
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
-        query: "帮我写一个篮球课教案",
+        query: "帮我写一个篮球课课时计划",
         mode: "lesson",
         market: "cn-compulsory-2022",
-        messages: [createUserMessage("帮我写一个篮球课教案")],
+        messages: [createUserMessage("帮我写一个篮球课课时计划")],
         memory: {
           defaults: {
             grade: "五年级",
@@ -162,7 +167,7 @@ describe("lesson-workflow", () => {
     );
   });
 
-  it("会拦截未确认教案的 HTML 生成，且不运行 lesson intake", async () => {
+  it("会拦截未确认课时计划的 HTML 生成，且不运行 lesson intake", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_html"));
     const runLessonIntake = vi.fn();
     const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
@@ -179,7 +184,7 @@ describe("lesson-workflow", () => {
     expect(result.status).toBe("failed");
 
     if (result.status === "failed" && result.error instanceof Error) {
-      expect(result.error.message).toContain("必须提供已确认教案");
+      expect(result.error.message).toContain("必须提供已确认课时计划");
     }
   });
 
@@ -193,7 +198,7 @@ describe("lesson-workflow", () => {
         query: "请生成课堂学习辅助大屏",
         mode: "html",
         market: "cn-compulsory-2022",
-        lessonPlan: "## 十、课时计划（教案）\n| 比赛展示 | 6 分钟 |",
+        lessonPlan: "## 十、课时计划\n| 比赛展示 | 6 分钟 |",
         screenPlan: {
           sections: [
             {
@@ -237,10 +242,10 @@ describe("lesson-workflow", () => {
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
-        query: "这份五年级篮球教案是否符合课标和安全要求？",
+        query: "这份五年级篮球课时计划是否符合课标和安全要求？",
         mode: "lesson",
         market: "cn-compulsory-2022",
-        messages: [createUserMessage("这份五年级篮球教案是否符合课标和安全要求？")],
+        messages: [createUserMessage("这份五年级篮球课时计划是否符合课标和安全要求？")],
       },
     });
 
@@ -264,7 +269,7 @@ describe("lesson-workflow", () => {
 
   it("入口意图置信度较低时会附带提示性 toast hint", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(
-      createIntentResult("patch_lesson", "用户似乎想修改现有教案中的安全要求。", 0.41),
+      createIntentResult("patch_lesson", "用户似乎想修改现有课时计划中的安全要求。", 0.41),
     );
     const runLessonIntake = vi.fn();
     const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
@@ -274,7 +279,7 @@ describe("lesson-workflow", () => {
         query: "把安全部分看看改一下",
         mode: "lesson",
         market: "cn-compulsory-2022",
-        lessonPlan: "{\"title\":\"示例教案\"}",
+        lessonPlan: "{\"title\":\"示例课时计划\"}",
         messages: [createUserMessage("把安全部分看看改一下")],
       },
     });
@@ -292,7 +297,7 @@ describe("lesson-workflow", () => {
           params: {
             level: "info",
             title: "我对本轮意图的理解还不够确定",
-            description: "当前先按“修改现有教案”处理；如果理解有误，请直接纠正我。",
+            description: "当前先按“修改现有课时计划”处理；如果理解有误，请直接纠正我。",
           },
         },
       ]),

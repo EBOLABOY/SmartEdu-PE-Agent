@@ -29,7 +29,7 @@ type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row
 const MAX_PROJECT_DISPLAY_TITLE_LENGTH = 160;
 const GENERIC_ARTIFACT_TITLES = new Set([
   "XXX",
-  "教案 Artifact",
+  "课时计划 Artifact",
   "互动大屏 Artifact",
 ]);
 

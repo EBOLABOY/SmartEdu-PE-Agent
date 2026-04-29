@@ -105,7 +105,7 @@ function buildArtifactData(
     source: "data-part",
     title:
       options.title ??
-      (workflow.generationPlan.mode === "html" ? "互动大屏 Artifact" : "教案 Artifact"),
+      (workflow.generationPlan.mode === "html" ? "互动大屏 Artifact" : "课时计划 Artifact"),
     ...(options.warningText ? { warningText: options.warningText } : {}),
     updatedAt: nowIsoString(),
   };
@@ -316,7 +316,7 @@ export function createStructuredAuthoringStreamAdapter({
           } catch (error) {
             writeStreamError(
               "lesson-repair-failed",
-              error instanceof Error ? error.message : "结构化教案自动修复失败。",
+              error instanceof Error ? error.message : "结构化课时计划自动修复失败。",
             );
             return false;
           }
@@ -325,7 +325,7 @@ export function createStructuredAuthoringStreamAdapter({
         if (trustedLessonOutput === undefined) {
           writeStreamError(
             "validate-lesson-output",
-            "模型未返回可用的结构化教案对象；系统已禁止回退到原始文本 JSON 解析。",
+            "模型未返回可用的结构化课时计划对象；系统已禁止回退到原始文本 JSON 解析。",
           );
           return false;
         }
@@ -362,7 +362,7 @@ export function createStructuredAuthoringStreamAdapter({
         const shouldUseFallback = !isPptStyleLessonHtml(extraction.html);
         const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : extraction.html;
         const fallbackWarning = shouldUseFallback
-          ? "模型 HTML 未满足课堂学习辅助大屏结构或学生理解支撑要求，系统已按已确认教案生成多页倒计时学习辅助大屏兜底版本。"
+          ? "模型 HTML 未满足课堂学习辅助大屏结构或学生理解支撑要求，系统已按已确认课时计划生成多页倒计时学习辅助大屏兜底版本。"
           : undefined;
 
         if (shouldUseFallback) {
@@ -379,7 +379,7 @@ export function createStructuredAuthoringStreamAdapter({
             params: {
               level: "warning",
               title: "互动大屏已自动替换",
-              description: "模型 HTML 未满足课堂辅助要求，系统已按教案生成兜底版本。",
+              description: "模型 HTML 未满足课堂辅助要求，系统已按课时计划生成兜底版本。",
             },
           });
         }
@@ -419,7 +419,7 @@ export function createStructuredAuthoringStreamAdapter({
           createTraceEntry(
             "lesson-draft-stream",
             "blocked",
-            `教案草稿流已中断，最终 JSON 校验仍将继续：${
+            `课时计划草稿流已中断，最终 JSON 校验仍将继续：${
               error instanceof Error ? error.message : "unknown-error"
             }`,
           ),
@@ -646,7 +646,7 @@ export function createStructuredAuthoringStreamAdapter({
                 createTraceEntry(
                   "generation-finished",
                   "success",
-                  mode === "html" ? "HTML Artifact 已完成结构化封装。" : "教案 Artifact 已完成结构化封装。",
+                  mode === "html" ? "HTML Artifact 已完成结构化封装。" : "课时计划 Artifact 已完成结构化封装。",
                 ),
               );
               writeTrace("completed");
@@ -679,7 +679,7 @@ export function createStructuredAuthoringStreamAdapter({
           finishStream("stop");
         }
       } catch (error) {
-        const errorText = error instanceof Error ? error.message : "体育教案生成流异常。";
+        const errorText = error instanceof Error ? error.message : "体育课时计划生成流异常。";
 
         runtimeTrace.push(createTraceEntry("generation-stream-exception", "failed", errorText));
         writeTrace("failed");

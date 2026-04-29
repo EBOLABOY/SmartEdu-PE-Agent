@@ -2,6 +2,7 @@ import {
   lessonAuthoringMemorySchema,
   lessonIntakeResultSchema,
   type LessonAuthoringMemory,
+  type LessonIntakeClarification,
   type LessonIntakeField,
   type LessonIntakeKnownInfo,
   type LessonIntakeResult,
@@ -14,18 +15,6 @@ const REQUIRED_LESSON_FIELDS: LessonIntakeField[] = [
 ];
 const AUTO_GENERATED_LESSON_FIELDS = new Set<LessonIntakeField>(["duration", "studentCount", "venue", "equipment"]);
 const DEFAULT_STUDENT_COUNT = 40;
-
-const FIELD_QUESTIONS: Record<LessonIntakeField, string> = {
-  grade: "本次课是几年级或哪个水平段？",
-  topic: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒；5. 跳绳节奏与组合练习。",
-  duration: "本次课时长多少分钟？",
-  studentCount: "本次课大约有多少名学生？",
-  venue: "本次课使用什么场地？",
-  equipment: "本次课需要哪些主要器材？",
-  teachingLevel: "本次课对应哪个水平段？",
-  objectives: "本次课最想达成哪些学习目标？",
-  constraints: "本次课有哪些安全、场地、器材或学生差异方面的限制？",
-};
 
 function normalizeText(value?: string) {
   const normalized = value?.replace(/\s+/g, " ").trim();
@@ -154,42 +143,15 @@ function buildLessonSummary(known: LessonIntakeKnownInfo) {
     known.grade,
     known.teachingLevel,
     known.topic,
-    known.durationMinutes ? `${known.durationMinutes}分钟` : "课时由教案生成 Agent 自动匹配",
+    known.durationMinutes ? `${known.durationMinutes}分钟` : "课时由课时计划生成 Agent 自动匹配",
     `${known.studentCount ?? DEFAULT_STUDENT_COUNT}人`,
-    known.venue ?? "场地由教案生成 Agent 根据课程内容自动匹配",
-    known.equipment?.length ? `器材限制/指定：${known.equipment.join("、")}` : "器材由教案生成 Agent 自动配置",
+    known.venue ?? "场地由课时计划生成 Agent 根据课程内容自动匹配",
+    known.equipment?.length ? `器材限制/指定：${known.equipment.join("、")}` : "器材由课时计划生成 Agent 自动配置",
     known.objectives?.length ? `目标：${known.objectives.join("、")}` : undefined,
     known.constraints?.length ? `限制：${known.constraints.join("、")}` : undefined,
   ].filter(Boolean);
 
   return parts.length ? parts.join("；") : undefined;
-}
-
-function buildTopicQuestion(known: LessonIntakeKnownInfo) {
-  const venue = known.venue ?? "";
-  const gradePrefix = known.grade ? `${known.grade}可以选择` : "可以选择";
-
-  if (/篮球|球场/.test(venue)) {
-    return `请选择本次课程内容，或直接改写：${gradePrefix} 1. 篮球行进间运球；2. 篮球原地双手胸前传接球；3. 篮球传切配合；4. 篮球运球急停急起。`;
-  }
-
-  if (/足球/.test(venue)) {
-    return `请选择本次课程内容，或直接改写：${gradePrefix} 1. 足球脚内侧传接球；2. 足球运球绕杆；3. 足球停球与传球衔接；4. 小场地传抢配合。`;
-  }
-
-  if (/田径|操场|跑道/.test(venue)) {
-    return `请选择本次课程内容，或直接改写：${gradePrefix} 1. 接力跑交接棒；2. 快速跑起跑与加速；3. 立定跳远起跳与落地；4. 跨越式跳高助跑起跳。`;
-  }
-
-  if (/室内|体育馆/.test(venue)) {
-    return `请选择本次课程内容，或直接改写：${gradePrefix} 1. 跳绳节奏与组合练习；2. 体能循环练习；3. 篮球原地传接球；4. 武术基本手型与步型。`;
-  }
-
-  return FIELD_QUESTIONS.topic;
-}
-
-function questionForMissingField(field: LessonIntakeField, known: LessonIntakeKnownInfo) {
-  return field === "topic" ? buildTopicQuestion(known) : FIELD_QUESTIONS[field];
 }
 
 export function buildLessonAuthoringMemoryPatch(input: {
@@ -243,9 +205,9 @@ export function formatLessonAuthoringMemoryForPrompt(memory?: LessonAuthoringMem
     defaults.objectives?.length ? `- 常用目标倾向：${defaults.objectives.join("、")}` : null,
     defaults.constraints?.length ? `- 已知限制：${defaults.constraints.join("、")}` : null,
     "- 学生人数未明确时默认 40 人。",
-    "- 课时由教案生成 Agent 根据内容和环节自动匹配。",
-    "- 场地未明确时由教案生成 Agent 根据课程内容自动匹配。",
-    "- 器材由教案生成 Agent 根据课程内容、场地和人数自动配置。",
+    "- 课时由课时计划生成 Agent 根据内容和环节自动匹配。",
+    "- 场地未明确时由课时计划生成 Agent 根据课程内容自动匹配。",
+    "- 器材由课时计划生成 Agent 根据课程内容、场地和人数自动配置。",
   ].filter(Boolean);
 
   return lines.join("\n");
@@ -253,6 +215,19 @@ export function formatLessonAuthoringMemoryForPrompt(memory?: LessonAuthoringMem
 
 function uniqueFields(fields: LessonIntakeField[]) {
   return Array.from(new Set(fields));
+}
+
+function keepClarificationsForRemainingMissing(
+  clarifications: LessonIntakeClarification[],
+  remainingMissing: LessonIntakeField[],
+) {
+  if (!clarifications.length || !remainingMissing.length) {
+    return [];
+  }
+
+  const remainingSet = new Set(remainingMissing);
+
+  return clarifications.filter((item) => remainingSet.has(item.field));
 }
 
 export function fillLessonIntakeWithMemory(
@@ -287,13 +262,14 @@ export function fillLessonIntakeWithMemory(
   const readyToGenerate = missing.length === 0 && (parsed.readyToGenerate || requiredReady);
   const summary = parsed.summary ?? (readyToGenerate ? buildLessonSummary(known) : undefined);
   const reason = memoryUsed ? `${parsed.reason} 已使用项目教学记忆补齐缺失字段。` : parsed.reason;
+  const clarifications = readyToGenerate ? [] : keepClarificationsForRemainingMissing(parsed.clarifications, missing);
 
   return {
     intake: lessonIntakeResultSchema.parse({
       ...parsed,
       known,
       missing,
-      questions: readyToGenerate ? [] : missing.map((field) => questionForMissingField(field, known)),
+      clarifications,
       readyToGenerate,
       summary,
       reason,

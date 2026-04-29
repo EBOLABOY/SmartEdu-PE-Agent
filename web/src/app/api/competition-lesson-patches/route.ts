@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   if (!parsedBody.success) {
     return Response.json(
       {
-        error: "结构化教案局部修改请求体不合法。",
+        error: "结构化课时计划局部修改请求体不合法。",
         details: parsedBody.error.flatten(),
       },
       { status: 400 },
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
 
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "结构化教案局部修改失败。",
+        error: error instanceof Error ? error.message : "结构化课时计划局部修改失败。",
       },
       { status: 502 },
     );

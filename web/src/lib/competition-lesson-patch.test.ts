@@ -9,7 +9,7 @@ import {
 } from "@/lib/competition-lesson-patch";
 
 describe("competition-lesson-patch", () => {
-  it("按 JSON Pointer 替换单个教案字段且不修改原对象", () => {
+  it("按 JSON Pointer 替换单个课时计划字段且不修改原对象", () => {
     const original = DEFAULT_COMPETITION_LESSON_PLAN;
     const next = applyCompetitionLessonPatch(original, {
       operations: [
@@ -71,7 +71,7 @@ describe("competition-lesson-patch", () => {
     ).toThrow(CompetitionLessonPatchError);
   });
 
-  it("拒绝应用后不符合教案 schema 的 patch", () => {
+  it("拒绝应用后不符合课时计划 schema 的 patch", () => {
     expect(() =>
       applyCompetitionLessonPatch(DEFAULT_COMPETITION_LESSON_PLAN, {
         operations: [

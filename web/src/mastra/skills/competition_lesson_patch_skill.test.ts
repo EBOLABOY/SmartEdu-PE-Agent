@@ -31,7 +31,7 @@ describe("competition lesson patch skill", () => {
       action: "update_lesson_meta",
       payload: {
         title: "篮球行进间运球课",
-        reason: "按用户要求修改教案标题。",
+        reason: "按用户要求修改课时计划标题。",
       },
     };
     const agentGenerate = vi.fn().mockResolvedValue(fullOutputFromToolResults([semanticUpdate]));
@@ -56,7 +56,7 @@ describe("competition lesson patch skill", () => {
           op: "replace",
           path: "/title",
           value: "篮球行进间运球课",
-          reason: "按用户要求修改教案标题。",
+          reason: "按用户要求修改课时计划标题。",
         },
       ],
     });

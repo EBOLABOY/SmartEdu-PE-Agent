@@ -93,6 +93,15 @@ export const lessonIntakeKnownInfoSchema = z
 
 export type LessonIntakeKnownInfo = z.infer<typeof lessonIntakeKnownInfoSchema>;
 
+export const lessonIntakeClarificationSchema = z
+  .object({
+    field: lessonIntakeFieldSchema,
+    question: z.string().trim().min(1).max(180),
+  })
+  .strict();
+
+export type LessonIntakeClarification = z.infer<typeof lessonIntakeClarificationSchema>;
+
 export const lessonAuthoringMemorySchema = z
   .object({
     defaults: lessonIntakeKnownInfoSchema.default({}),
@@ -107,7 +116,7 @@ export const lessonIntakeResultSchema = z
     readyToGenerate: z.boolean(),
     known: lessonIntakeKnownInfoSchema.optional(),
     missing: z.array(lessonIntakeFieldSchema).max(9),
-    questions: z.array(z.string().trim().min(1).max(180)).max(5),
+    clarifications: z.array(lessonIntakeClarificationSchema).max(5).default([]),
     summary: z.string().trim().min(1).max(1200).optional(),
     reason: z.string().trim().min(1).max(500),
   })

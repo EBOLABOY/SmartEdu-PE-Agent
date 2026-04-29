@@ -147,7 +147,7 @@ function createLocalPatchMessages(input: {
             isComplete: true,
             status: "ready",
             source: "data-part",
-            title: "教案 Artifact",
+            title: "课时计划 Artifact",
             updatedAt: now,
           },
         },
@@ -361,8 +361,8 @@ function AppContent() {
           const currentLessonPlan = effectiveArtifactLifecycle.lessonPlan;
 
           if (!currentLessonPlan) {
-            toast.warning("当前教案尚未完成结构化校验", {
-              description: "请等待 JSON 教案生成完成并切换为正式打印版后，再发起局部修改。",
+            toast.warning("当前课时计划尚未完成结构化校验", {
+              description: "请等待 JSON 课时计划生成完成并切换为正式打印版后，再发起局部修改。",
             });
             return;
           }
@@ -395,11 +395,11 @@ function AppContent() {
             setPersistedVersions(payload.versions);
           }
 
-          toast.success("已按对话修改教案", {
+          toast.success("已按对话修改课时计划", {
             description: `${summary}。右侧正式打印版已更新。`,
           });
         } catch (patchError) {
-          toast.error("教案局部修改失败", {
+          toast.error("课时计划局部修改失败", {
             description: patchError instanceof Error ? patchError.message : "请稍后重试。",
           });
         }
@@ -437,7 +437,7 @@ function AppContent() {
     const screenPlan = buildLessonScreenPlanFromLessonPlan(currentLessonPlan);
 
     await sendMessage(
-      { text: "我已确认教案无误，请基于该教案生成互动大屏。" },
+      { text: "我已确认课时计划无误，请基于该课时计划生成互动大屏。" },
       { body: withProjectContext({ mode: "html", lessonPlan: lessonPlanJson, screenPlan }) },
     );
   };
@@ -491,11 +491,11 @@ function AppContent() {
           handleResetWorkspace();
         }
 
-        toast.success("历史教案已删除", {
+        toast.success("历史课时计划已删除", {
           description: `“${project.title}”已从历史列表隐藏。`,
         });
       } catch (deleteError) {
-        toast.error("删除历史教案失败", {
+        toast.error("删除历史课时计划失败", {
           description: deleteError instanceof Error ? deleteError.message : "请稍后重试。",
         });
       } finally {
@@ -651,12 +651,12 @@ function AppContent() {
                     <BrandLogo className="size-8" priority />
                   </div>
                   <h1 className="text-4xl font-black tracking-tight text-foreground md:text-5xl lg:text-[56px] leading-[1.1]">今天准备哪节<span className="text-brand">体育课</span>？</h1>
-                  <p className="mx-auto max-w-lg text-[15px] leading-relaxed text-muted-foreground">直接描述课程条件，系统会先生成可审阅教案。需要找旧教案时，展开左侧栏查看历史记录。</p>
+                  <p className="mx-auto max-w-lg text-[15px] leading-relaxed text-muted-foreground">直接描述课程条件，系统会先生成可审阅课时计划。需要找旧课时计划时，展开左侧栏查看历史记录。</p>
                 </div>
                 <motion.form layoutId="prompt-input-container" className="group relative flex min-h-[72px] w-full items-center gap-2 rounded-2xl border border-border/80 bg-card/60 px-4 py-2 shadow-lg backdrop-blur-sm transition-colors focus-within:border-brand/50 focus-within:bg-card" onSubmit={(event) => { event.preventDefault(); const input = (event.currentTarget.elements.namedItem("prompt") as HTMLInputElement); if (input.value.trim()) handleStart(input.value.trim()); }}>
                   <Button aria-label="补充课程条件" className="shrink-0 rounded-xl bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground" size="icon" type="button"><Plus className="size-5" /></Button>
                   <input name="prompt" aria-label="课程主题" className="h-14 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/50" placeholder="描述你的体育课，例如：三年级篮球运球接力，40人，半场，40分钟" type="text" />
-                  <Button aria-label="生成教案" className="size-11 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-sm hover:bg-brand/90" size="icon" type="submit"><MessageSquareText className="size-[22px]" /></Button>
+                  <Button aria-label="生成课时计划" className="size-11 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-sm hover:bg-brand/90" size="icon" type="submit"><MessageSquareText className="size-[22px]" /></Button>
                 </motion.form>
               </motion.div>
             </motion.main>

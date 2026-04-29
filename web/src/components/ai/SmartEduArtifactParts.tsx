@@ -38,7 +38,7 @@ export function LessonStartGuide() {
         </div>
         <h2 className="mt-5 text-xl font-semibold text-foreground">开始创建体育课</h2>
         <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-          在左侧输入课程主题，AI 会先生成可审阅教案。确认教案后，再生成适合课堂投屏的互动大屏。
+          在左侧输入课程主题，AI 会先生成可审阅课时计划。确认课时计划后，再生成适合课堂投屏的互动大屏。
         </p>
         <StateSurface className="mt-6 text-left" density="compact" tone="brand">
           示例：三年级篮球运球接力，40 人，20 个篮球，半个篮球场，课堂时长 40 分钟。
@@ -58,8 +58,8 @@ export function CanvasPendingGuide({ hasLesson }: { hasLesson: boolean }) {
         <h2 className="mt-4 text-lg font-semibold text-foreground">互动大屏尚未生成</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           {hasLesson
-            ? "请先确认教案，系统会继续生成课堂投屏画面。"
-            : "请先在左侧输入课程主题，生成并确认教案后，这里会显示课堂投屏画面。"}
+            ? "请先确认课时计划，系统会继续生成课堂投屏画面。"
+            : "请先在左侧输入课程主题，生成并确认课时计划后，这里会显示课堂投屏画面。"}
         </p>
       </div>
     </div>
@@ -117,7 +117,7 @@ export function VersionItem({
           <div className="min-w-0">
             <h3 className="truncate text-sm font-medium text-foreground">{snapshot.title}</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {snapshot.stage === "lesson" ? "教案" : "互动大屏"} · v{snapshot.version}
+              {snapshot.stage === "lesson" ? "课时计划" : "互动大屏"} · v{snapshot.version}
             </p>
           </div>
           <StatusBadge label={STATUS_LABELS[snapshot.status]} status={snapshot.status} />

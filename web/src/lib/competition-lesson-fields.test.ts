@@ -7,7 +7,7 @@ import {
 } from "@/lib/competition-lesson-fields";
 
 describe("competition-lesson-fields", () => {
-  it("只暴露 JSON Pointer 格式的结构化教案字段路径", () => {
+  it("只暴露 JSON Pointer 格式的结构化课时计划字段路径", () => {
     expect(COMPETITION_LESSON_EDITABLE_FIELDS.length).toBeGreaterThan(8);
 
     COMPETITION_LESSON_EDITABLE_FIELDS.forEach((field) => {

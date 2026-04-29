@@ -13,7 +13,7 @@ import {
 export const updateLessonMetaTool = createTool({
   id: "update_lesson_meta",
   description:
-    "当用户要求修改教案标题、副标题、教师、学校、课题、课次、人数、年级或水平段等基础信息时调用。",
+    "当用户要求修改课时计划标题、副标题、教师、学校、课题、课次、人数、年级或水平段等基础信息时调用。",
   inputSchema: updateLessonMetaPayloadSchema,
   outputSchema: z
     .object({

@@ -525,7 +525,7 @@ export default function CompetitionLessonPrintView({ lesson }: CompetitionLesson
             {lesson.loadEstimate.averageHeartRate}。{joinTextBlock(lesson.loadEstimate.rationale)}
           </p>
         </Section>
-        <Section title="九、课时计划(教案)">
+        <Section title="九、课时计划">
           <LessonPlanTable lesson={lesson} />
         </Section>
       </section>

@@ -23,7 +23,12 @@ describe("lesson authoring memory", () => {
         topic: "篮球行进间运球",
       },
       missing: ["grade", "duration", "studentCount", "venue", "equipment"],
-      questions: ["请补充年级、课时、人数、场地和器材。"],
+      clarifications: [
+        {
+          field: "grade",
+          question: "请补充年级、课时、人数、场地和器材。",
+        },
+      ],
       reason: "当前消息缺少常规授课条件。",
     };
 
@@ -32,7 +37,7 @@ describe("lesson authoring memory", () => {
     expect(result.memoryUsed).toBe(true);
     expect(result.intake.readyToGenerate).toBe(true);
     expect(result.intake.missing).toEqual([]);
-    expect(result.intake.questions).toEqual([]);
+    expect(result.intake.clarifications).toEqual([]);
     expect(result.intake.known).toMatchObject({
       grade: "五年级",
       topic: "篮球行进间运球",
@@ -52,7 +57,12 @@ describe("lesson authoring memory", () => {
         venue: "足球场",
       },
       missing: ["duration", "studentCount", "equipment"],
-      questions: ["请补充课时、人数和器材。"],
+      clarifications: [
+        {
+          field: "duration",
+          question: "请补充课时、人数和器材。",
+        },
+      ],
       reason: "缺少自动生成字段。",
     };
 
@@ -81,7 +91,7 @@ describe("lesson authoring memory", () => {
           equipment: ["篮球36个", "标志桶12个"],
         },
         missing: [],
-        questions: [],
+        clarifications: [],
         summary: "五年级篮球行进间运球。",
         reason: "信息完整。",
       },
@@ -101,7 +111,7 @@ describe("lesson authoring memory", () => {
     expect(merged?.updatedAt).toBe("2026-04-28T04:00:00.000Z");
   });
 
-  it("turns missing topic into selectable course content options", () => {
+  it("keeps the model-generated topic clarification intact", () => {
     const intake: LessonIntakeResult = {
       readyToGenerate: false,
       known: {
@@ -109,16 +119,19 @@ describe("lesson authoring memory", () => {
         venue: "篮球场",
       },
       missing: ["topic"],
-      questions: ["具体上什么内容？"],
+      clarifications: [
+        {
+          field: "topic",
+          question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 篮球原地双手胸前传接球；3. 篮球传切配合；4. 篮球运球急停急起。",
+        },
+      ],
       reason: "缺少课程内容。",
     };
 
     const result = fillLessonIntakeWithMemory(intake);
 
     expect(result.intake.readyToGenerate).toBe(false);
-    expect(result.intake.questions.join("\n")).toContain("请选择本次课程内容");
-    expect(result.intake.questions.join("\n")).toContain("篮球行进间运球");
-    expect(result.intake.questions.join("\n")).toContain("篮球传切配合");
+    expect(result.intake.clarifications).toEqual(intake.clarifications);
   });
 
   it("does not ask again for facts already provided by current teacher context", () => {
@@ -126,7 +139,20 @@ describe("lesson authoring memory", () => {
       readyToGenerate: false,
       known: {},
       missing: ["grade", "topic", "venue"],
-      questions: ["请补充年级、课程内容和场地。"],
+      clarifications: [
+        {
+          field: "grade",
+          question: "本次课是几年级？",
+        },
+        {
+          field: "topic",
+          question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒。",
+        },
+        {
+          field: "venue",
+          question: "使用什么场地？",
+        },
+      ],
       reason: "Agent 未正确使用上下文。",
     };
 
@@ -137,10 +163,7 @@ describe("lesson authoring memory", () => {
     expect(result.memoryUsed).toBe(false);
     expect(result.intake.readyToGenerate).toBe(false);
     expect(result.intake.missing).toEqual(["topic"]);
-    expect(result.intake.questions).toHaveLength(1);
-    expect(result.intake.questions.join("\n")).toContain("请选择本次课程内容");
-    expect(result.intake.questions.join("\n")).not.toContain("几年级");
-    expect(result.intake.questions.join("\n")).not.toContain("场地");
+    expect(result.intake.clarifications).toEqual([intake.clarifications[1]]);
     expect(result.intake.known).toMatchObject({
       grade: "五年级",
       studentCount: 40,
@@ -156,7 +179,12 @@ describe("lesson authoring memory", () => {
         topic: "篮球行进间运球",
       },
       missing: ["venue"],
-      questions: ["本次课使用什么场地？"],
+      clarifications: [
+        {
+          field: "venue",
+          question: "本次课使用什么场地？",
+        },
+      ],
       reason: "Agent 错误地把场地当成必填字段。",
     };
 
@@ -164,8 +192,8 @@ describe("lesson authoring memory", () => {
 
     expect(result.intake.readyToGenerate).toBe(true);
     expect(result.intake.missing).toEqual([]);
-    expect(result.intake.questions).toEqual([]);
-    expect(result.intake.summary).toContain("场地由教案生成 Agent 根据课程内容自动匹配");
+    expect(result.intake.clarifications).toEqual([]);
+    expect(result.intake.summary).toContain("场地由课时计划生成 Agent 根据课程内容自动匹配");
     expect(result.intake.known?.venue).toBeUndefined();
   });
 });

@@ -49,7 +49,7 @@ function selectSupportModule(row: CompetitionLessonPlanRow): LessonScreenSupport
 }
 
 function buildLessonPlanSectionReason(module: LessonScreenSupportModule, row: CompetitionLessonPlanRow) {
-  return `${MODULE_REASON[module]}时间已从结构化教案解析为 ${row.time}。`;
+  return `${MODULE_REASON[module]}时间已从结构化课时计划解析为 ${row.time}。`;
 }
 
 function firstText(values: string[], fallback: string) {

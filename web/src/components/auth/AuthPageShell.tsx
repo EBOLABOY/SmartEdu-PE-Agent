@@ -34,9 +34,9 @@ export default function AuthPageShell({ children, description, title }: AuthPage
               </p>
             </div>
             <div className="rounded-3xl border border-border/70 bg-background/70 p-5 text-sm leading-7 text-muted-foreground shadow-sm backdrop-blur">
-              <p className="font-medium text-foreground">资料会自动参与教案生成</p>
+              <p className="font-medium text-foreground">资料会自动参与课时计划生成</p>
               <p className="mt-2">
-                保存教师姓名、学校名称、任教年级和水平学段后，正式教案模板会自动填入“授课教师”和“水平·年级”。
+                保存教师姓名、学校名称、任教年级和水平学段后，正式课时计划模板会自动填入“授课教师”和“水平·年级”。
               </p>
             </div>
           </div>

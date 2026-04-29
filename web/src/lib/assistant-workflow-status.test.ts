@@ -44,7 +44,7 @@ describe("assistant-workflow-status", () => {
     const state = buildAssistantWorkflowState(message);
 
     expect(state.isStreaming).toBe(true);
-    expect(state.title).toBe("生成结构化教案");
+    expect(state.title).toBe("生成结构化课时计划");
     expect(state.status).toBe("active");
     expect(state.details).toEqual([
       expect.objectContaining({
@@ -133,7 +133,7 @@ describe("assistant-workflow-status", () => {
               {
                 step: "lesson-repair-started",
                 status: "running",
-                detail: "正在自动完善结构化教案。",
+                detail: "正在自动完善结构化课时计划。",
               },
             ],
           },
@@ -146,7 +146,7 @@ describe("assistant-workflow-status", () => {
     expect(state.details).toEqual([
       expect.objectContaining({
         status: "active",
-        title: "自动修复教案",
+        title: "自动修复课时计划",
       }),
     ]);
   });

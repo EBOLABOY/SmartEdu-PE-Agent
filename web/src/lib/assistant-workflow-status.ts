@@ -43,11 +43,11 @@ const STEP_TITLES: Record<string, string> = {
   "plan-html-screen-sections": "规划大屏分镜",
   "validate-generation-safety": "校验生成安全",
   "agent-stream-started": "启动模型生成",
-  "validate-lesson-output": "校验教案输出",
-  "lesson-repair-started": "自动修复教案",
+  "validate-lesson-output": "校验课时计划输出",
+  "lesson-repair-started": "自动修复课时计划",
   "lesson-repair-finished": "完成自动修复",
-  "lesson-repair-failed": "教案修复失败",
-  "convert-lesson-json-artifact": "转换结构化教案",
+  "lesson-repair-failed": "课时计划修复失败",
+  "convert-lesson-json-artifact": "转换结构化课时计划",
   "extract-html-document": "提取 HTML 文档",
   "html-slideshow-fallback": "生成大屏兜底版本",
   "persist-artifact-version": "保存 Artifact 版本",
@@ -96,9 +96,9 @@ function toDetailTitle(step: string) {
 
 function normalizeDetail(detail: string) {
   return detail
-    .replaceAll("CompetitionLessonPlan JSON", "结构化教案 JSON")
+    .replaceAll("CompetitionLessonPlan JSON", "结构化课时计划 JSON")
     .replaceAll("Artifact", "版本")
-    .replaceAll("lesson-json", "教案 JSON")
+    .replaceAll("lesson-json", "课时计划 JSON")
     .replaceAll("html", "HTML");
 }
 
@@ -158,14 +158,14 @@ function getTitle(input: {
   }
 
   if (input.phase === "generation") {
-    return input.mode === "html" ? "生成互动大屏" : "生成结构化教案";
+    return input.mode === "html" ? "生成互动大屏" : "生成结构化课时计划";
   }
 
   if (input.phase === "completed" || input.status === "complete") {
-    return input.mode === "html" ? "互动大屏已完成" : "结构化教案已完成";
+    return input.mode === "html" ? "互动大屏已完成" : "结构化课时计划已完成";
   }
 
-  return input.mode === "html" ? "互动大屏工作流" : "教案工作流";
+  return input.mode === "html" ? "互动大屏工作流" : "课时计划工作流";
 }
 
 function getBadge(status: AssistantWorkflowState["status"]) {
@@ -203,10 +203,10 @@ function getDescription(input: {
     : "尚无课标引用";
 
   if (input.mode === "html") {
-    return `正在把已确认教案转换为可预览互动大屏。${marketText}，${standardsText}。`;
+    return `正在把已确认课时计划转换为可预览互动大屏。${marketText}，${standardsText}。`;
   }
 
-  return `正在把课堂需求转换为结构化教案。${marketText}，${standardsText}。`;
+  return `正在把课堂需求转换为结构化课时计划。${marketText}，${standardsText}。`;
 }
 
 export function buildAssistantWorkflowState(message: SmartEduUIMessage): AssistantWorkflowState {

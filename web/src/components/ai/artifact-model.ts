@@ -100,7 +100,7 @@ function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): Artif
       version.title ??
       (version.stage === "html"
         ? `大屏版本 ${version.versionNumber}`
-        : `教案版本 ${version.versionNumber}`),
+        : `课时计划版本 ${version.versionNumber}`),
     content: normalizeLessonVersionContent(version.content, version.contentType),
     contentType: version.contentType,
     lessonPlan,
@@ -183,7 +183,7 @@ export function buildArtifactLifecycle(
       liveVersions.push({
         id: `${messageId}-lesson`,
         stage: "lesson",
-        title: extracted.title ?? `教案版本 ${version}`,
+        title: extracted.title ?? `课时计划版本 ${version}`,
         content: extracted.lessonContent,
         contentType: extracted.artifact?.contentType,
         lessonPlan: extracted.lessonPlan,

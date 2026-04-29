@@ -40,7 +40,7 @@ const CompetitionLessonPrintFrame = forwardRef<CompetitionLessonPrintFrameHandle
         className="h-full w-full border-0 bg-slate-200"
         ref={iframeRef}
         srcDoc={printHtml}
-        title="正式打印版教案预览"
+        title="正式打印版课时计划预览"
       />
     );
   },

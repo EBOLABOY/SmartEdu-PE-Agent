@@ -136,7 +136,7 @@ export default function ProfileTab({
         </div>
       </div>
       <p className="text-xs leading-5 text-muted-foreground">
-        保存后，后续生成教案会自动填入“授课教师：学校 姓名”和“——水平·年级”。
+        保存后，后续生成课时计划会自动填入“授课教师：学校 姓名”和“——水平·年级”。
       </p>
       <div className="space-y-2">
         <label className="text-xs font-medium text-muted-foreground" htmlFor="avatar-url">

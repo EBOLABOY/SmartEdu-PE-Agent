@@ -54,7 +54,7 @@ const PERSISTED_VERSIONS: PersistedArtifactVersion[] = [
 ];
 
 describe("artifact-model", () => {
-  it("会在无实时消息时回放持久化的教案与大屏", () => {
+  it("会在无实时消息时回放持久化的课时计划与大屏", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, PERSISTED_VERSIONS);
 
     expect(lifecycle.lessonContent).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
@@ -69,7 +69,7 @@ describe("artifact-model", () => {
     expect(lifecycle.versions).toHaveLength(2);
   });
 
-  it("会在仅教案为当前版本时优先展示当前教案并清空大屏", () => {
+  it("会在仅课时计划为当前版本时优先展示当前课时计划并清空大屏", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, [
       {
         ...PERSISTED_VERSIONS[0],
@@ -136,7 +136,7 @@ describe("artifact-model", () => {
             protocolVersion: "structured-v1",
             stage: "lesson",
             contentType: "lesson-json",
-            content: `下面是结构化教案 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
+            content: `下面是结构化课时计划 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
             isComplete: false,
             status: "streaming",
             source: "data-part",
@@ -361,7 +361,7 @@ describe("artifact-model", () => {
     const userMessage = {
       id: "user-lesson",
       role: "user",
-      parts: [{ type: "text", text: "请重新生成一份新教案" }],
+      parts: [{ type: "text", text: "请重新生成一份新课时计划" }],
     } as SmartEduUIMessage;
 
     const lifecycle = buildArtifactLifecycle([userMessage], "submitted", false, PERSISTED_VERSIONS);

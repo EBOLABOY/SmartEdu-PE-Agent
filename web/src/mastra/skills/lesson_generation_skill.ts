@@ -174,7 +174,7 @@ async function streamCompetitionLessonPlanWithMastraAgent({
     structuredOutput: {
       schema: agentLessonGenerationSchema,
       instructions:
-        "请先填写 _thinking_process 作为教案设计草稿，再把最终可渲染教案写入 lessonPlan。除 schema 字段外不要输出 Markdown、HTML、XML、代码围栏或解释文字。",
+        "请先填写 _thinking_process 作为课时计划设计草稿，再把最终可渲染课时计划写入 lessonPlan。除 schema 字段外不要输出 Markdown、HTML、XML、代码围栏或解释文字。",
       jsonPromptInjection: true,
     },
   });

@@ -199,7 +199,7 @@ export async function POST(request: Request) {
         : 500;
 
     return Response.json(
-      { error: error instanceof Error ? error.message : "体育教案生成服务异常。" },
+      { error: error instanceof Error ? error.message : "体育课时计划生成服务异常。" },
       { status },
     );
   }

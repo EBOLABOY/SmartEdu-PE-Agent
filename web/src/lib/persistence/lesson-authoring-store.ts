@@ -32,7 +32,7 @@ export async function saveArtifactVersionWithSupabase(
   const { error } = await supabase.rpc("create_artifact_version", {
     target_project_id: projectId,
     artifact_stage: artifact.stage,
-    artifact_title: artifact.title ?? (artifact.stage === "html" ? "互动大屏 Artifact" : "教案 Artifact"),
+    artifact_title: artifact.title ?? (artifact.stage === "html" ? "互动大屏 Artifact" : "课时计划 Artifact"),
     artifact_content_type: artifact.contentType,
     artifact_content: artifact.content,
     artifact_status: artifact.status,

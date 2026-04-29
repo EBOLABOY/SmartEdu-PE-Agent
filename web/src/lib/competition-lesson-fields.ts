@@ -17,7 +17,7 @@ export const COMPETITION_LESSON_EDITABLE_FIELDS: CompetitionLessonEditableField[
     group: "基础信息",
     label: "课题主标题",
     path: "/title",
-    description: "修改教案顶部居中的主标题。",
+    description: "修改课时计划顶部居中的主标题。",
     read: (lesson) => lesson.title,
   },
   {

@@ -106,8 +106,8 @@ async function buildIntakeModelMessages(input: {
     {
       role: "user" as const,
       content: [
-        "请基于以上完整对话、用户资料和项目教学记忆，判断现在是否可以生成正式体育教案。",
-        "如果信息不足，只提出必要追问；不要生成教案。",
+        "请基于以上完整对话、用户资料和项目教学记忆，判断现在是否可以生成正式体育课时计划。",
+        "如果信息不足，只提出必要追问；不要生成课时计划。",
         "项目教学记忆只能补齐默认值，本轮用户明确说明必须优先。",
         "",
         contextToPrompt(input.context, input.memory),
@@ -127,9 +127,15 @@ function buildSafeFallbackIntake(
       readyToGenerate: false,
       known: {},
       missing: ["grade", "topic"],
-      questions: [
-        "本次课是几年级或哪个水平段？",
-        "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒；5. 跳绳节奏与组合练习。",
+      clarifications: [
+        {
+          field: "grade",
+          question: "本次课是几年级或哪个水平段？",
+        },
+        {
+          field: "topic",
+          question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒；5. 跳绳节奏与组合练习。",
+        },
       ],
       reason: "信息收集 Agent 不可用时，系统不能猜测年级和课程内容，必须先追问。",
     },
@@ -153,21 +159,9 @@ function normalizeIntakeResult(
 ): { intake: LessonIntakeResult; memoryUsed: boolean } {
   const filled = fillLessonIntakeWithMemory(lessonIntakeResultSchema.parse(result), memory, context);
   const parsed = filled.intake;
-  const questions = parsed.questions.length
-    ? parsed.questions
-    : [
-        "请补充本次课的年级或水平段。",
-        "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒；5. 跳绳节奏与组合练习。",
-      ];
 
   if (!parsed.readyToGenerate) {
-    return {
-      intake: {
-        ...parsed,
-        questions,
-      },
-      memoryUsed: filled.memoryUsed,
-    };
+    return filled;
   }
 
   if (parsed.missing.length || !parsed.summary?.trim()) {
@@ -175,7 +169,6 @@ function normalizeIntakeResult(
       intake: {
         ...parsed,
         readyToGenerate: false,
-        questions,
         reason: `${parsed.reason} 信息收集结果仍存在缺失字段或缺少教学 brief，已阻止生成。`,
       },
       memoryUsed: filled.memoryUsed,

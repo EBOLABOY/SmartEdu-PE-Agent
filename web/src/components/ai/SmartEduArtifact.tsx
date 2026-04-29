@@ -76,7 +76,7 @@ const VIEW_OPTIONS: Array<{
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
-  { value: "lesson", label: "教案", icon: FileText },
+  { value: "lesson", label: "课时计划", icon: FileText },
   { value: "canvas", label: "画布", icon: MonitorPlay },
   { value: "versions", label: "版本", icon: History },
 ];
@@ -90,7 +90,7 @@ function LessonStartGuide() {
         </div>
         <h2 className="mt-5 text-xl font-semibold text-foreground">开始创建体育课</h2>
         <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-          在左侧输入课程主题，AI 会先生成可审阅教案。确认教案后，再生成适合课堂投屏的互动大屏。
+          在左侧输入课程主题，AI 会先生成可审阅课时计划。确认课时计划后，再生成适合课堂投屏的互动大屏。
         </p>
         <StateSurface className="mt-6 text-left" density="compact" tone="brand">
           示例：三年级篮球运球接力，40 人，20 个篮球，半个篮球场，课堂时长 40 分钟。
@@ -110,8 +110,8 @@ function CanvasPendingGuide({ hasLesson }: { hasLesson: boolean }) {
         <h2 className="mt-4 text-lg font-semibold text-foreground">互动大屏尚未生成</h2>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
           {hasLesson
-            ? "请先确认教案，系统会继续生成课堂投屏画面。"
-            : "请先在左侧输入课程主题，生成并确认教案后，这里会显示课堂投屏画面。"}
+            ? "请先确认课时计划，系统会继续生成课堂投屏画面。"
+            : "请先在左侧输入课程主题，生成并确认课时计划后，这里会显示课堂投屏画面。"}
         </p>
       </div>
     </div>
@@ -169,7 +169,7 @@ function VersionItem({
           <div className="min-w-0">
             <h3 className="truncate text-sm font-medium text-foreground">{snapshot.title}</h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              {snapshot.stage === "lesson" ? "教案" : "互动大屏"} · v{snapshot.version}
+              {snapshot.stage === "lesson" ? "课时计划" : "互动大屏"} · v{snapshot.version}
             </p>
           </div>
           <StatusBadge label={STATUS_LABELS[snapshot.status]} status={snapshot.status} />
@@ -237,7 +237,7 @@ export default function SmartEduArtifact({
             <ArtifactTitle className="shrink-0">体育课创作工作台</ArtifactTitle>
             <StatusBadge label={STATUS_LABELS[lifecycle.status]} status={lifecycle.status} />
             <ArtifactDescription className="hidden truncate text-xs 2xl:block">
-              先生成教案，确认后自动生成课堂互动大屏。
+              先生成课时计划，确认后自动生成课堂互动大屏。
             </ArtifactDescription>
           </div>
 
@@ -270,7 +270,7 @@ export default function SmartEduArtifact({
           {isLoading ? (
             <div className="hidden items-center gap-2 rounded-full border border-brand/25 bg-brand/10 px-3 py-1.5 text-xs font-medium text-brand xl:inline-flex">
               <span className="size-2 animate-pulse rounded-full bg-brand" />
-              {lifecycle.stage === "html" ? "正在生成互动大屏" : "正在生成教案"}
+              {lifecycle.stage === "html" ? "正在生成互动大屏" : "正在生成课时计划"}
             </div>
           ) : null}
 
@@ -294,7 +294,7 @@ export default function SmartEduArtifact({
                     <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/75 bg-background/35 px-3 py-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <h2 className="shrink-0 text-sm font-semibold text-foreground">
-                          {lessonDisplay.isStreamActive ? "教案 JSON 流" : "教案预览"}
+                          {lessonDisplay.isStreamActive ? "课时计划 JSON 流" : "课时计划预览"}
                         </h2>
                         <span className="hidden truncate text-xs text-muted-foreground lg:inline">
                           {lessonDisplay.isStreamActive
@@ -317,7 +317,7 @@ export default function SmartEduArtifact({
                           content={lifecycle.lessonContent}
                           emptyDescription={
                             lessonDisplay.isStreamActive
-                              ? "请求已提交，右侧保持在教案 JSON 流视图；收到模型第一段内容后会直接追加到这里。"
+                              ? "请求已提交，右侧保持在课时计划 JSON 流视图；收到模型第一段内容后会直接追加到这里。"
                               : undefined
                           }
                           emptyTitle={lessonDisplay.isStreamActive ? "等待 JSON 首包" : undefined}
@@ -350,7 +350,7 @@ export default function SmartEduArtifact({
                       <div>
                         <h2 className="text-sm font-semibold">原生互动大屏预览</h2>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          由结构化教案数据直接渲染；HTML 仅作为导出兼容文件。
+                          由结构化课时计划数据直接渲染；HTML 仅作为导出兼容文件。
                         </p>
                       </div>
                       {hasHtml ? (
@@ -374,7 +374,7 @@ export default function SmartEduArtifact({
                     <div className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card px-4 py-2 text-foreground">
                       <div>
                         <h2 className="text-sm font-semibold">旧版 HTML 大屏预览</h2>
-                        <p className="mt-0.5 text-xs text-muted-foreground">当前历史版本缺少结构化教案数据，继续使用兼容沙箱。</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">当前历史版本缺少结构化课时计划数据，继续使用兼容沙箱。</p>
                       </div>
                       <Button disabled={isExporting} onClick={downloadHtml} size="sm" type="button" variant="outline" className="h-8 gap-1.5">
                         <Download className="size-3.5" />
@@ -397,7 +397,7 @@ export default function SmartEduArtifact({
                   <div className="mb-4">
                     <h2 className="text-sm font-semibold text-foreground">版本记录</h2>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      每次生成教案或互动大屏后，都会在这里留下记录，并可恢复为当前版本。
+                      每次生成课时计划或互动大屏后，都会在这里留下记录，并可恢复为当前版本。
                     </p>
                   </div>
                   <div className="space-y-3">
@@ -412,7 +412,7 @@ export default function SmartEduArtifact({
                       ))
                     ) : (
                       <StateNotice
-                        description="每次教案或互动大屏生成都会在这里形成快照。"
+                        description="每次课时计划或互动大屏生成都会在这里形成快照。"
                         layout="center"
                         title="暂无版本"
                       />
@@ -430,7 +430,7 @@ export default function SmartEduArtifact({
                               {selectedVersion.title}
                             </h2>
                             <Badge variant="secondary">
-                              {selectedVersion.stage === "lesson" ? "教案" : "互动大屏"}
+                              {selectedVersion.stage === "lesson" ? "课时计划" : "互动大屏"}
                             </Badge>
                             {selectedVersion.isCurrent ? (
                               <Badge variant="success">当前版本</Badge>

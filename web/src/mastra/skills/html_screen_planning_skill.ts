@@ -73,7 +73,7 @@ function buildMinimalScreenPlan(): LessonScreenPlan {
         safetyCue: "保持前后左右安全距离，按教师口令开始与停止。",
         evaluationCue: "观察学生是否按提示完成动作并遵守安全边界。",
         visualIntent: "绘制课堂组织队形图和安全边界提示。",
-        reason: "未能从已确认教案中解析课时行，使用最小可运行页面计划。",
+        reason: "未能从已确认课时计划中解析课时行，使用最小可运行页面计划。",
       },
     ],
   };
@@ -116,13 +116,13 @@ function buildPlanningModelMessages(input: {
     {
       role: "user" as const,
       content: [
-        "请基于已确认教案输出最终 LessonScreenPlan。必须自动判断课堂有几个真实教学环节页。",
+        "请基于已确认课时计划输出最终 LessonScreenPlan。必须自动判断课堂有几个真实教学环节页。",
         "",
         "确定性初始计划（可修正但不能遗漏环节）：",
         formatLessonScreenPlanForPrompt(input.seedPlan ?? input.fallbackPlan),
         "",
-        "已确认教案 JSON：",
-        input.lessonPlan ?? "未提供已确认教案 JSON。",
+        "已确认课时计划 JSON：",
+        input.lessonPlan ?? "未提供已确认课时计划 JSON。",
       ].join("\n"),
     },
   ] as AgentModelMessages;
@@ -145,7 +145,7 @@ function normalizeAgentPlan(agentPlan: LessonScreenPlan, fallbackPlan: LessonScr
 
   if (parsed.sections.length < fallbackPlan.sections.length) {
     throw new Error(
-      `HTML 大屏规划页数少于结构化教案环节数：agent=${parsed.sections.length}, fallback=${fallbackPlan.sections.length}`,
+      `HTML 大屏规划页数少于结构化课时计划环节数：agent=${parsed.sections.length}, fallback=${fallbackPlan.sections.length}`,
     );
   }
 
