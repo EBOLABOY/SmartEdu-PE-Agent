@@ -2,6 +2,7 @@ import {
   createUIMessageStream,
   type DeepPartial,
   type FinishReason,
+  type InferUIMessageChunk,
   type UIMessageChunk,
 } from "ai";
 
@@ -23,7 +24,6 @@ import {
 } from "@/lib/lesson-authoring-contract";
 import { buildLessonSlideshowHtml, isPptStyleLessonHtml } from "@/lib/lesson-slideshow-html";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
-import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-store";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import {
@@ -69,14 +69,13 @@ function buildTraceData(
     updatedAt: nowIsoString(),
   };
 
-  if (workflow.standards.references) {
+  if (workflow.standards.corpus && workflow.standards.references) {
     traceData.standards = {
-      corpusId: workflow.standards.corpusId,
-      displayName: workflow.standards.displayName,
-      sourceName: workflow.standards.sourceName,
-      issuer: workflow.standards.issuer,
-      version: workflow.standards.version,
-      url: workflow.standards.url,
+      corpusId: workflow.standards.corpus.corpusId,
+      displayName: workflow.standards.corpus.displayName,
+      issuer: workflow.standards.corpus.issuer,
+      version: workflow.standards.corpus.version,
+      url: workflow.standards.corpus.url,
       references: workflow.standards.references,
     };
   }
@@ -169,11 +168,75 @@ function joinWarnings(...warnings: Array<string | undefined>) {
   return warnings.filter(Boolean).join(" ");
 }
 
+function shouldForwardAssistantText(
+  mode: GenerationMode,
+  workflow: LessonWorkflowOutput,
+) {
+  return mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text";
+}
+
+function shouldForwardUiChunk(
+  part: UIMessageChunk,
+  options: {
+    forwardAssistantText: boolean;
+  },
+) {
+  if (
+    part.type === "start" ||
+    part.type === "finish" ||
+    part.type === "error" ||
+    part.type === "abort" ||
+    part.type === "data-structured-output"
+  ) {
+    return false;
+  }
+
+  if (
+    (part.type === "text-start" || part.type === "text-delta" || part.type === "text-end") &&
+    !options.forwardAssistantText
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function createForwardedUiChunkStream(
+  stream: ReadableStream<UIMessageChunk>,
+  options: {
+    forwardAssistantText: boolean;
+  },
+) {
+  return new ReadableStream<InferUIMessageChunk<SmartEduUIMessage>>({
+    async start(controller) {
+      const reader = stream.getReader();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            controller.close();
+            return;
+          }
+
+          if (shouldForwardUiChunk(value, options)) {
+            controller.enqueue(value as InferUIMessageChunk<SmartEduUIMessage>);
+          }
+        }
+      } catch {
+        controller.close();
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}
+
 export function createStructuredAuthoringStreamAdapter({
   finalLessonPlanPromise,
   mode,
   originalMessages,
-  chatPersistence,
   lessonDraftStream,
   lessonPlan,
   persistence,
@@ -187,7 +250,6 @@ export function createStructuredAuthoringStreamAdapter({
   finalLessonPlanPromise?: Promise<CompetitionLessonPlan>;
   mode: GenerationMode;
   originalMessages: SmartEduUIMessage[];
-  chatPersistence?: ProjectChatPersistence | null;
   lessonDraftStream?: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
   lessonPlan?: string;
   persistence?: LessonAuthoringPersistence | null;
@@ -203,29 +265,13 @@ export function createStructuredAuthoringStreamAdapter({
 
   return createUIMessageStream<SmartEduUIMessage>({
     originalMessages,
-    onFinish: async ({ responseMessage }) => {
-      if (!chatPersistence || !projectId) {
-        return;
-      }
-
-      try {
-        await chatPersistence.saveMessages({
-          projectId,
-          requestId,
-          messages: [responseMessage],
-        });
-      } catch (error) {
-        console.warn("[lesson-authoring] persist-assistant-message-failed", {
-          requestId,
-          message: error instanceof Error ? error.message : "unknown-error",
-        });
-      }
-    },
     execute: async ({ writer }) => {
       let rawText = "";
       let hasFinished = false;
       let structuredLessonOutput: unknown;
-      const reader = stream.getReader();
+      const forwardAssistantText = shouldForwardAssistantText(mode, workflow);
+      const [inspectionStream, passthroughStream] = stream.tee();
+      const reader = inspectionStream.getReader();
 
       const writeTrace = (phase: WorkflowTraceData["phase"]) => {
         writer.write({
@@ -426,8 +472,12 @@ export function createStructuredAuthoringStreamAdapter({
         );
       });
 
-      writer.write({ type: "start" });
       writeTrace("workflow");
+      writer.merge(
+        createForwardedUiChunkStream(passthroughStream, {
+          forwardAssistantText,
+        }),
+      );
 
       if (!runtimeTrace.some((entry) => entry.step === "agent-stream-started")) {
         runtimeTrace.push(
@@ -468,34 +518,10 @@ export function createStructuredAuthoringStreamAdapter({
           }
 
           switch (part.type) {
-            case "text-start": {
-              if (
-                mode === "lesson" &&
-                workflow.generationPlan.assistantTextPolicy === "mirror-json-text"
-              ) {
-                writer.write({
-                  type: "text-start",
-                  id: part.id,
-                  ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-                });
-              }
-              break;
-            }
-
             case "text-delta": {
               rawText += part.delta;
 
               if (mode === "lesson") {
-                if (
-                  workflow.generationPlan.assistantTextPolicy === "mirror-json-text"
-                ) {
-                  writer.write({
-                    type: "text-delta",
-                    id: part.id,
-                    delta: part.delta,
-                    ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-                  });
-                }
                 break;
               }
 
@@ -514,50 +540,7 @@ export function createStructuredAuthoringStreamAdapter({
               break;
             }
 
-            case "text-end": {
-              if (
-                mode === "lesson" &&
-                workflow.generationPlan.assistantTextPolicy === "mirror-json-text"
-              ) {
-                writer.write({
-                  type: "text-end",
-                  id: part.id,
-                  ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-                });
-              }
-              break;
-            }
-
-            case "reasoning-start": {
-              writer.write({
-                type: "reasoning-start",
-                id: part.id,
-                ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-              });
-              break;
-            }
-
-            case "reasoning-delta": {
-              writer.write({
-                type: "reasoning-delta",
-                id: part.id,
-                delta: part.delta,
-                ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-              });
-              break;
-            }
-
-            case "reasoning-end": {
-              writer.write({
-                type: "reasoning-end",
-                id: part.id,
-                ...(part.providerMetadata ? { providerMetadata: part.providerMetadata } : {}),
-              });
-              break;
-            }
-
             case "start-step": {
-              writer.write(part);
               runtimeTrace.push(
                 createTraceEntry("agent-step-start", "running", "模型进入新一步推理或工具执行阶段。"),
               );
@@ -566,51 +549,10 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "finish-step": {
-              writer.write(part);
               runtimeTrace.push(
                 createTraceEntry("agent-step-finish", "success", "模型当前步骤已完成并回写到 UI 流。"),
               );
               writeTrace("generation");
-              break;
-            }
-
-            case "tool-input-start": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-input-delta": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-input-available": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-input-error": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-approval-request": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-output-available": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-output-error": {
-              writer.write(part);
-              break;
-            }
-
-            case "tool-output-denied": {
-              writer.write(part);
               break;
             }
 
@@ -692,15 +634,11 @@ export function createStructuredAuthoringStreamAdapter({
 
 export function createLessonClarificationStreamAdapter({
   originalMessages,
-  chatPersistence,
-  projectId,
   requestId,
   workflow,
   text,
 }: {
   originalMessages: SmartEduUIMessage[];
-  chatPersistence?: ProjectChatPersistence | null;
-  projectId?: string;
   requestId: string;
   workflow: LessonWorkflowOutput;
   text: string;
@@ -709,28 +647,9 @@ export function createLessonClarificationStreamAdapter({
 
   return createUIMessageStream<SmartEduUIMessage>({
     originalMessages,
-    onFinish: async ({ responseMessage }) => {
-      if (!chatPersistence || !projectId) {
-        return;
-      }
-
-      try {
-        await chatPersistence.saveMessages({
-          projectId,
-          requestId,
-          messages: [responseMessage],
-        });
-      } catch (error) {
-        console.warn("[lesson-authoring] persist-clarification-message-failed", {
-          requestId,
-          message: error instanceof Error ? error.message : "unknown-error",
-        });
-      }
-    },
     execute: ({ writer }) => {
       const id = "lesson-intake-clarification";
 
-      writer.write({ type: "start" });
       writer.write({
         type: "data-trace",
         id: "lesson-authoring-trace",

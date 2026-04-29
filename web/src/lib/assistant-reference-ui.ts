@@ -52,14 +52,16 @@ function toSourceDescription(reference: WorkflowStandardsReference) {
 export function getAssistantSources(message: SmartEduUIMessage): AssistantSourceItem[] {
   const standards = getTrace(message)?.standards;
 
-  if (!standards?.references.length) {
+  if (!standards?.references.length || !standards.url) {
     return [];
   }
+
+  const { url } = standards;
 
   return standards.references.map((reference) => ({
     id: reference.id,
     title: reference.title,
-    href: standards.url,
+    href: url,
     description: toSourceDescription(reference),
     citation: reference.citation,
   }));

@@ -10,10 +10,9 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
+import type { ComponentProps, HTMLAttributes } from "react";
 import {
   createContext,
-  memo,
   useCallback,
   useContext,
   useEffect,
@@ -21,55 +20,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  BundledLanguage,
-  BundledTheme,
-  HighlighterGeneric,
-  ThemedToken,
-} from "shiki";
-import { createHighlighter } from "shiki";
-
-const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1;
-const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2;
-const isUnderline = (fontStyle: number | undefined) =>
-  fontStyle && fontStyle & 4;
-
-interface KeyedToken {
-  token: ThemedToken;
-  key: string;
-}
-
-interface KeyedLine {
-  tokens: KeyedToken[];
-  key: string;
-}
-
-const addKeysToTokens = (lines: ThemedToken[][]): KeyedLine[] =>
-  lines.map((line, lineIdx) => ({
-    key: `line-${lineIdx}`,
-    tokens: line.map((token, tokenIdx) => ({
-      key: `line-${lineIdx}-${tokenIdx}`,
-      token,
-    })),
-  }));
-
-const TokenSpan = ({ token }: { token: ThemedToken }) => (
-  <span
-    className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
-    style={
-      {
-        backgroundColor: token.bgColor,
-        color: token.color,
-        fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
-        fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
-        textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
-        ...token.htmlStyle,
-      } as CSSProperties
-    }
-  >
-    {token.content}
-  </span>
-);
 
 const LINE_NUMBER_CLASSES = cn(
   "block",
@@ -84,33 +34,11 @@ const LINE_NUMBER_CLASSES = cn(
   "before:select-none"
 );
 
-const LineSpan = ({
-  keyedLine,
-  showLineNumbers,
-}: {
-  keyedLine: KeyedLine;
-  showLineNumbers: boolean;
-}) => (
-  <span className={showLineNumbers ? LINE_NUMBER_CLASSES : "block"}>
-    {keyedLine.tokens.length === 0
-      ? "\n"
-      : keyedLine.tokens.map(({ token, key }) => (
-          <TokenSpan key={key} token={token} />
-        ))}
-  </span>
-);
-
 type CodeBlockProps = HTMLAttributes<HTMLDivElement> & {
   code: string;
-  language: BundledLanguage;
+  language: string;
   showLineNumbers?: boolean;
 };
-
-interface TokenizedCode {
-  tokens: ThemedToken[][];
-  fg: string;
-  bg: string;
-}
 
 interface CodeBlockContextType {
   code: string;
@@ -120,189 +48,39 @@ const CodeBlockContext = createContext<CodeBlockContextType>({
   code: "",
 });
 
-const highlighterCache = new Map<
-  string,
-  Promise<HighlighterGeneric<BundledLanguage, BundledTheme>>
->();
-const tokensCache = new Map<string, TokenizedCode>();
-const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
-const TOKENS_CACHE_MAX_ENTRIES = 256;
+const getCodeLines = (code: string) => code.split("\n");
 
-const getTokensCacheKey = (code: string, language: BundledLanguage) => {
-  return `${language}:${code.length}:${code}`;
-};
+const CodeBlockBody = ({
+  code,
+  showLineNumbers,
+  className,
+}: {
+  code: string;
+  showLineNumbers: boolean;
+  className?: string;
+}) => {
+  const lines = useMemo(() => getCodeLines(code), [code]);
 
-const getCachedTokens = (key: string) => {
-  const cached = tokensCache.get(key);
-
-  if (!cached) {
-    return null;
-  }
-
-  tokensCache.delete(key);
-  tokensCache.set(key, cached);
-  return cached;
-};
-
-const setCachedTokens = (key: string, value: TokenizedCode) => {
-  tokensCache.delete(key);
-  tokensCache.set(key, value);
-
-  while (tokensCache.size > TOKENS_CACHE_MAX_ENTRIES) {
-    const oldestKey = tokensCache.keys().next().value;
-
-    if (oldestKey === undefined) {
-      return;
-    }
-
-    tokensCache.delete(oldestKey);
-  }
-};
-
-const getHighlighter = (
-  language: BundledLanguage
-): Promise<HighlighterGeneric<BundledLanguage, BundledTheme>> => {
-  const cached = highlighterCache.get(language);
-
-  if (cached) {
-    return cached;
-  }
-
-  const highlighterPromise = createHighlighter({
-    langs: [language],
-    themes: ["github-light", "github-dark"],
-  });
-
-  highlighterCache.set(language, highlighterPromise);
-  return highlighterPromise;
-};
-
-const createRawTokens = (code: string): TokenizedCode => ({
-  bg: "transparent",
-  fg: "inherit",
-  tokens: code.split("\n").map((line) =>
-    line === ""
-      ? []
-      : [
-          {
-            color: "inherit",
-            content: line,
-          } as ThemedToken,
-        ]
-  ),
-});
-
-export const highlightCode = (
-  code: string,
-  language: BundledLanguage,
-  callback?: (result: TokenizedCode) => void
-): TokenizedCode | null => {
-  const tokensCacheKey = getTokensCacheKey(code, language);
-  const cached = getCachedTokens(tokensCacheKey);
-
-  if (cached) {
-    return cached;
-  }
-
-  if (callback) {
-    if (!subscribers.has(tokensCacheKey)) {
-      subscribers.set(tokensCacheKey, new Set());
-    }
-    subscribers.get(tokensCacheKey)?.add(callback);
-  }
-
-  getHighlighter(language)
-    .then((highlighter) => {
-      const availableLangs = highlighter.getLoadedLanguages();
-      const langToUse = availableLangs.includes(language) ? language : "text";
-
-      const result = highlighter.codeToTokens(code, {
-        lang: langToUse,
-        themes: {
-          dark: "github-dark",
-          light: "github-light",
-        },
-      });
-
-      const tokenized: TokenizedCode = {
-        bg: result.bg ?? "transparent",
-        fg: result.fg ?? "inherit",
-        tokens: result.tokens,
-      };
-
-      setCachedTokens(tokensCacheKey, tokenized);
-
-      const subs = subscribers.get(tokensCacheKey);
-      if (subs) {
-        for (const sub of subs) {
-          sub(tokenized);
-        }
-        subscribers.delete(tokensCacheKey);
-      }
-    })
-    .catch((error) => {
-      console.error("Failed to highlight code:", error);
-      subscribers.delete(tokensCacheKey);
-    });
-
-  return null;
-};
-
-const CodeBlockBody = memo(
-  ({
-    tokenized,
-    showLineNumbers,
-    className,
-  }: {
-    tokenized: TokenizedCode;
-    showLineNumbers: boolean;
-    className?: string;
-  }) => {
-    const preStyle = useMemo(
-      () => ({
-        backgroundColor: tokenized.bg,
-        color: tokenized.fg,
-      }),
-      [tokenized.bg, tokenized.fg]
-    );
-
-    const keyedLines = useMemo(
-      () => addKeysToTokens(tokenized.tokens),
-      [tokenized.tokens]
-    );
-
-    return (
-      <pre
+  return (
+    <pre className={cn("m-0 p-4 text-sm", className)}>
+      <code
         className={cn(
-          "dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)] m-0 p-4 text-sm",
-          className
+          "block font-mono text-sm whitespace-pre",
+          showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
         )}
-        style={preStyle}
       >
-        <code
-          className={cn(
-            "font-mono text-sm",
-            showLineNumbers && "[counter-increment:line_0] [counter-reset:line]"
-          )}
-        >
-          {keyedLines.map((keyedLine) => (
-            <LineSpan
-              key={keyedLine.key}
-              keyedLine={keyedLine}
-              showLineNumbers={showLineNumbers}
-            />
-          ))}
-        </code>
-      </pre>
-    );
-  },
-  (prevProps, nextProps) =>
-    prevProps.tokenized === nextProps.tokenized &&
-    prevProps.showLineNumbers === nextProps.showLineNumbers &&
-    prevProps.className === nextProps.className
-);
-
-CodeBlockBody.displayName = "CodeBlockBody";
+        {lines.map((line, index) => (
+          <span
+            className={showLineNumbers ? LINE_NUMBER_CLASSES : "block"}
+            key={`line-${index}`}
+          >
+            {line || " "}
+          </span>
+        ))}
+      </code>
+    </pre>
+  );
+};
 
 export const CodeBlockContainer = ({
   className,
@@ -376,52 +154,16 @@ export const CodeBlockActions = ({
 
 export const CodeBlockContent = ({
   code,
-  language,
   showLineNumbers = false,
 }: {
   code: string;
-  language: BundledLanguage;
+  language: string;
   showLineNumbers?: boolean;
-}) => {
-  const rawTokens = useMemo(() => createRawTokens(code), [code]);
-
-  const syncTokens = useMemo(
-    () => highlightCode(code, language) ?? rawTokens,
-    [code, language, rawTokens]
-  );
-
-  const cacheKey = useMemo(
-    () => getTokensCacheKey(code, language),
-    [code, language]
-  );
-  const [asyncTokens, setAsyncTokens] = useState<{
-    key: string;
-    value: TokenizedCode;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    highlightCode(code, language, (result) => {
-      if (!cancelled) {
-        setAsyncTokens({ key: cacheKey, value: result });
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cacheKey, code, language]);
-
-  const tokenized =
-    asyncTokens?.key === cacheKey ? asyncTokens.value : syncTokens;
-
-  return (
-    <div className="relative overflow-auto">
-      <CodeBlockBody showLineNumbers={showLineNumbers} tokenized={tokenized} />
-    </div>
-  );
-};
+}) => (
+  <div className="relative overflow-auto">
+    <CodeBlockBody code={code} showLineNumbers={showLineNumbers} />
+  </div>
+);
 
 export const CodeBlock = ({
   code,

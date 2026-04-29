@@ -9,7 +9,7 @@ import { SMARTEDU_PROJECT_HEADER } from "@/lib/api/smartedu-request-headers";
 describe("ai gateway rate limit", () => {
   it("matches only the targeted AI POST endpoints", () => {
     expect(isAiGatewayRateLimitedPath("/api/chat")).toBe(true);
-    expect(isAiGatewayRateLimitedPath("/api/competition-lesson-patches")).toBe(true);
+    expect(isAiGatewayRateLimitedPath("/api/competition-lesson-patches")).toBe(false);
     expect(isAiGatewayRateLimitedPath("/api/projects")).toBe(false);
   });
 

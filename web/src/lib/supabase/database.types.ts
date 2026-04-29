@@ -28,6 +28,11 @@ export type Database = {
       artifact_versions: {
         Row: {
           artifact_id: string;
+          content_byte_size: number | null;
+          content_checksum: string | null;
+          content_storage_bucket: string | null;
+          content_storage_object_key: string | null;
+          content_storage_provider: "inline" | "cloudflare-r2";
           content: string;
           content_type: "html" | "lesson-json";
           created_at: string;
@@ -44,6 +49,11 @@ export type Database = {
         };
         Insert: {
           artifact_id: string;
+          content_byte_size?: number | null;
+          content_checksum?: string | null;
+          content_storage_bucket?: string | null;
+          content_storage_object_key?: string | null;
+          content_storage_provider?: "inline" | "cloudflare-r2";
           content: string;
           content_type: "html" | "lesson-json";
           created_at?: string;
@@ -88,6 +98,7 @@ export type Database = {
           created_at: string;
           created_by: string | null;
           id: string;
+          is_active: boolean;
           project_id: string;
           request_id: string | null;
           role: "system" | "user" | "assistant" | "tool";
@@ -100,6 +111,7 @@ export type Database = {
           created_at?: string;
           created_by?: string | null;
           id?: string;
+          is_active?: boolean;
           project_id: string;
           request_id?: string | null;
           role: Database["public"]["Tables"]["messages"]["Row"]["role"];
@@ -275,6 +287,68 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["projects"]["Insert"]>;
         Relationships: [];
       };
+      standard_entries: {
+        Row: {
+          citation: string;
+          corpus_id: string;
+          created_at: string;
+          embedding: number[] | null;
+          external_id: string | null;
+          grade_bands: string[];
+          id: string;
+          keywords: string[];
+          module: string;
+          requirements: string[];
+          section_path: string[];
+          summary: string;
+          teaching_implications: string[];
+          title: string;
+        };
+        Insert: {
+          citation: string;
+          corpus_id: string;
+          created_at?: string;
+          embedding?: number[] | null;
+          external_id?: string | null;
+          grade_bands?: string[];
+          id?: string;
+          keywords?: string[];
+          module: string;
+          requirements?: string[];
+          section_path?: string[];
+          summary: string;
+          teaching_implications?: string[];
+          title: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["standard_entries"]["Insert"]>;
+        Relationships: [];
+      };
+      standards_corpora: {
+        Row: {
+          availability: "ready" | "planned";
+          created_at: string;
+          display_name: string;
+          id: string;
+          issuer: string;
+          market: string;
+          official_version: string;
+          source_url: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          availability?: "ready" | "planned";
+          created_at?: string;
+          display_name: string;
+          id?: string;
+          issuer: string;
+          market: string;
+          official_version: string;
+          source_url?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["standards_corpora"]["Insert"]>;
+        Relationships: [];
+      };
       profiles: {
         Row: {
           avatar_url: string | null;
@@ -307,12 +381,18 @@ export type Database = {
       create_artifact_version: {
         Args: {
           artifact_content: string;
+          artifact_content_byte_size?: number | null;
+          artifact_content_checksum?: string | null;
+          artifact_content_storage_bucket?: string | null;
+          artifact_content_storage_object_key?: string | null;
+          artifact_content_storage_provider?: string | null;
           artifact_content_type: "html" | "lesson-json";
           artifact_protocol_version: string;
           artifact_request_id?: string | null;
           artifact_stage: "lesson" | "html";
           artifact_status: "streaming" | "ready" | "error";
           artifact_title: string;
+          artifact_version_id?: string | null;
           artifact_warning_text?: string | null;
           artifact_workflow_trace?: Json;
           target_project_id: string;
@@ -364,6 +444,57 @@ export type Database = {
           target_organization_id: string;
         };
         Returns: string;
+      };
+      match_standard_entries: {
+        Args: {
+          match_limit?: number;
+          query_embedding: number[];
+          similarity_threshold?: number;
+          target_market?: string;
+        };
+        Returns: {
+          citation: string;
+          corpus_id: string;
+          display_name: string;
+          grade_bands: string[];
+          id: string;
+          issuer: string;
+          keywords: string[];
+          module: string;
+          official_version: string;
+          requirements: string[];
+          section_path: string[];
+          similarity: number;
+          source_url: string | null;
+          summary: string;
+          teaching_implications: string[];
+          title: string;
+          availability: "ready" | "planned";
+        }[];
+      };
+      match_standard_entries_hybrid: {
+        Args: {
+          lexical_match_limit?: number;
+          match_limit?: number;
+          query_embedding: number[];
+          query_text: string;
+          rrf_k?: number;
+          target_market?: string;
+          vector_match_limit?: number;
+        };
+        Returns: {
+          citation: string;
+          grade_bands: string[];
+          id: string;
+          keywords: string[];
+          module: string;
+          requirements: string[];
+          section_path: string[];
+          similarity: number;
+          summary: string;
+          teaching_implications: string[];
+          title: string;
+        }[];
       };
       restore_artifact_version: {
         Args: {

@@ -1,15 +1,13 @@
 import type { StandardsMarket } from "@/lib/lesson-authoring-contract";
 
-import type { PeStandardEntry } from "./standards_2022";
-
 export type StandardReference = {
   id: string;
   title: string;
   summary: string;
-  source: PeStandardEntry["source"];
-  officialVersion: PeStandardEntry["officialVersion"];
-  gradeBands: PeStandardEntry["gradeBands"];
-  module: PeStandardEntry["module"];
+  source: string;
+  officialVersion: string;
+  gradeBands: string[];
+  module: string;
   sectionPath: string[];
   keywords: string[];
   requirements: string[];
@@ -21,11 +19,9 @@ export type StandardReference = {
 export type StandardsCorpusMetadata = {
   corpusId: string;
   displayName: string;
-  officialStatus: string;
-  sourceName: string;
   issuer: string;
   version: string;
-  url: string;
+  url: string | null;
   availability: "ready" | "planned";
 };
 
@@ -34,7 +30,7 @@ export type StandardsSearchResult = {
   resolvedMarket: StandardsMarket;
   references: StandardReference[];
   context: string;
-  corpus: StandardsCorpusMetadata;
+  corpus: StandardsCorpusMetadata | null;
   warning?: string;
 };
 

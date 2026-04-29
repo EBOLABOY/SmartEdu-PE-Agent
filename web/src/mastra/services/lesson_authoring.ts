@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import type { FullOutput, MastraModelOutput } from "@mastra/core/stream";
-import { toAISdkStream } from "@mastra/ai-sdk";
 import {
   createUIMessageStream,
+  safeValidateUIMessages,
   type UIMessage,
   type UIMessageChunk,
   type UIMessageStreamWriter,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/competition-lesson-contract";
 import {
   DEFAULT_STANDARDS_MARKET,
+  smartEduDataSchemas,
   type GenerationMode,
   type LessonAuthoringMemory,
   type LessonScreenPlan,
@@ -28,6 +29,7 @@ import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-author
 import type { LessonMemoryPersistence } from "@/lib/persistence/lesson-memory-store";
 import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-store";
 import { mastra } from "@/mastra";
+import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
 import { formatLessonScreenPlanForPrompt } from "@/mastra/agents/html_screen_planner";
 import {
   createLessonClarificationStreamAdapter,
@@ -193,34 +195,6 @@ function applyHtmlScreenPlanning(
   };
 }
 
-async function rememberLessonIntake(input: {
-  context?: PeTeacherContext;
-  workflow: LessonWorkflowOutput;
-  memoryPersistence?: LessonMemoryPersistence | null;
-  projectId?: string;
-  requestId: string;
-}) {
-  if (!input.memoryPersistence || !input.projectId) {
-    return;
-  }
-
-  const intakeResult =
-    "intakeResult" in input.workflow.decision
-      ? input.workflow.decision.intakeResult
-      : undefined;
-
-  if (!intakeResult) {
-    return;
-  }
-
-  await input.memoryPersistence.rememberFromIntake({
-    context: input.context,
-    intake: intakeResult.intake,
-    projectId: input.projectId,
-    requestId: input.requestId,
-  });
-}
-
 function writeTracePart(
   writer: UIMessageStreamWriter<SmartEduUIMessage>,
   data: ReturnType<typeof buildWorkflowTraceData>,
@@ -332,9 +306,48 @@ function writeAuthoringFailure(input: {
   ];
 
   writeTracePart(input.writer, buildWorkflowTraceData(state, input.requestId, "failed"));
-  input.writer.write({ type: "start" });
   input.writer.write({ type: "error", errorText });
   input.writer.write({ type: "finish", finishReason: "error" });
+}
+
+function fallbackHistoryParts(content: string): SmartEduUIMessage["parts"] {
+  return [{ type: "text", text: content }];
+}
+
+async function restorePersistedHistoryParts(message: {
+  content: string;
+  metadata?: Record<string, unknown>;
+}): Promise<SmartEduUIMessage["parts"]> {
+  const serializedUiMessage = message.metadata?.uiMessage;
+
+  if (!serializedUiMessage) {
+    return fallbackHistoryParts(message.content);
+  }
+
+  let candidate: unknown = serializedUiMessage;
+
+  if (typeof serializedUiMessage === "string") {
+    try {
+      candidate = JSON.parse(serializedUiMessage);
+    } catch {
+      return fallbackHistoryParts(message.content);
+    }
+  }
+
+  const parsedMessage = await safeValidateUIMessages<SmartEduUIMessage>({
+    messages: [candidate],
+    dataSchemas: smartEduDataSchemas,
+  });
+
+  if (!parsedMessage.success) {
+    return fallbackHistoryParts(message.content);
+  }
+
+  const filteredParts = parsedMessage.data[0]?.parts.filter(
+    (part) => part.type !== "data-artifact" && part.type !== "data-trace",
+  );
+
+  return filteredParts?.length ? filteredParts : fallbackHistoryParts(message.content);
 }
 
 async function buildExecutionMessages(request: LessonAuthoringRequest): Promise<SmartEduUIMessage[]> {
@@ -354,13 +367,15 @@ async function buildExecutionMessages(request: LessonAuthoringRequest): Promise<
       return incrementalMessages;
     }
 
-    // Sanitize: 剥离占用大量 Token 的 Data Part 等结构化载荷，仅提取纯文本意图
-    const sanitizedHistory: SmartEduUIMessage[] = history.map((msg) => ({
-      id: msg.id,
-      role: msg.role === "system" ? "system" : msg.role === "user" ? "user" : "assistant",
-      content: msg.content,
-      parts: [{ type: "text", text: msg.content }],
-    }));
+    // Sanitize: 剥离高 token 的结构化 data part，尽量保留原始非 data parts 作为历史上下文。
+    const sanitizedHistory: SmartEduUIMessage[] = await Promise.all(
+      history.map(async (msg) => ({
+        id: msg.id,
+        role: msg.role === "system" ? "system" : msg.role === "user" ? "user" : "assistant",
+        content: msg.content,
+        parts: await restorePersistedHistoryParts(msg),
+      })),
+    );
 
     // 去重合并：因为前端最后一条消息在 route.ts 中已被 upsert，可能包含在 history 里
     const historyIds = new Set(sanitizedHistory.map((m) => m.id));
@@ -421,20 +436,10 @@ async function executeLessonAuthoringStream(input: {
 
   logLessonAuthoringTrace({ workflow, mode: workflow.generationPlan.mode, query, requestId });
 
-  await rememberLessonIntake({
-    context: request.context,
-    workflow,
-    memoryPersistence: request.memoryPersistence,
-    projectId: request.projectId,
-    requestId,
-  });
-
   if (workflow.decision.type === "clarify" || workflow.decision.type === "respond") {
     writer.merge(
       createLessonClarificationStreamAdapter({
         originalMessages: executionMessages,
-        chatPersistence: request.chatPersistence,
-        projectId: request.projectId,
         requestId,
         text: workflow.decision.text,
         workflow,
@@ -488,7 +493,6 @@ async function executeLessonAuthoringStream(input: {
     writer.merge(
       createStructuredAuthoringStreamAdapter({
         originalMessages: executionMessages,
-        chatPersistence: request.chatPersistence,
         mode: "lesson",
         persistence: request.persistence,
         projectId: request.projectId,
@@ -546,9 +550,7 @@ async function executeLessonAuthoringStream(input: {
       agentStream,
     });
 
-    const generationStream = toAISdkStream(htmlGeneration.result, {
-      from: "agent",
-      version: "v6",
+    const generationStream = createMastraAgentUiMessageStream(htmlGeneration.result, {
       sendStart: false,
       sendFinish: true,
     });
@@ -556,7 +558,6 @@ async function executeLessonAuthoringStream(input: {
     writer.merge(
       createStructuredAuthoringStreamAdapter({
         originalMessages: request.messages,
-        chatPersistence: request.chatPersistence,
         lessonPlan: request.lessonPlan,
         mode: workflow.generationPlan.mode,
         persistence: request.persistence,
@@ -602,18 +603,17 @@ async function executeLessonAuthoringStream(input: {
   });
 
   writer.merge(
-    createStructuredAuthoringStreamAdapter({
-      finalLessonPlanPromise: lessonGeneration.finalLessonPlanPromise,
-      originalMessages: executionMessages,
-      chatPersistence: request.chatPersistence,
-      lessonDraftStream: lessonGeneration.partialOutputStream,
-      lessonPlan: request.lessonPlan,
-      mode: workflow.generationPlan.mode,
-      persistence: request.persistence,
-      projectId: request.projectId,
-      requestId,
-      runtimeTrace: lessonRuntimeTrace,
-      runtimeUiHints: lessonRuntimeUiHints,
+      createStructuredAuthoringStreamAdapter({
+        finalLessonPlanPromise: lessonGeneration.finalLessonPlanPromise,
+        originalMessages: executionMessages,
+        lessonDraftStream: lessonGeneration.partialOutputStream,
+        lessonPlan: request.lessonPlan,
+        mode: workflow.generationPlan.mode,
+        persistence: request.persistence,
+        projectId: request.projectId,
+        requestId,
+        runtimeTrace: lessonRuntimeTrace,
+        runtimeUiHints: lessonRuntimeUiHints,
       workflow,
       stream: lessonGeneration.stream,
     }),
@@ -627,7 +627,27 @@ export function streamLessonAuthoring(request: LessonAuthoringRequest) {
 
   return {
     stream: createUIMessageStream<SmartEduUIMessage>({
+      onFinish: async ({ responseMessage }) => {
+        if (!request.chatPersistence || !request.projectId) {
+          return;
+        }
+
+        try {
+          await request.chatPersistence.saveMessages({
+            projectId: request.projectId,
+            requestId,
+            messages: [responseMessage],
+          });
+        } catch (error) {
+          console.warn("[lesson-authoring] persist-assistant-message-failed", {
+            requestId,
+            message: error instanceof Error ? error.message : "unknown-error",
+          });
+        }
+      },
       execute: async ({ writer }) => {
+        writer.write({ type: "start" });
+
         try {
           await executeLessonAuthoringStream({
             mode,

@@ -1,13 +1,13 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
+import { formatLessonAuthoringMemoryForPrompt } from "@/lib/lesson-authoring-memory";
 import {
   artifactViewSchema,
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   generationModeSchema,
   lessonAuthoringMemorySchema,
-  lessonIntakeResultSchema,
   lessonScreenPlanSchema,
   peTeacherContextSchema,
   standardsMarketSchema,
@@ -25,37 +25,15 @@ import {
 
 import { buildPeTeacherSystemPrompt } from "../agents/pe_teacher";
 import {
-  formatLessonIntakeQuestions,
-  formatLessonIntakeResultForPrompt,
-} from "../agents/lesson_intake";
-import {
-  runLessonIntakeSkill,
-  type LessonIntakeSkillResult,
-} from "../skills/lesson_intake_skill";
-import {
   lessonIntentSchema,
   runLessonIntentSkill,
   type LessonIntent,
 } from "../skills/lesson_intent_skill";
-import {
-  runStandardsRetrievalSkill,
-} from "../skills/standards_retrieval_skill";
-import {
-  resolveStandardsMarketMetadata,
-} from "../tools/search_standards";
+import { runStandardsRetrievalSkill } from "../skills/standards_retrieval_skill";
+import { resolveStandardsMarketMetadata } from "../tools/search_standards";
 
 const MAX_WORKFLOW_AGENT_STEPS = 3;
 const LOW_CONFIDENCE_INTENT_THRESHOLD = 0.7;
-
-const lessonIntakeSkillResultSchema = z
-  .object({
-    intake: lessonIntakeResultSchema,
-    memoryUsed: z.boolean().optional(),
-    modelMessageCount: z.number().int().nonnegative(),
-    source: z.enum(["agent", "safe-fallback"]),
-    warning: z.string().optional(),
-  })
-  .strict();
 
 export const lessonWorkflowInputSchema = z.object({
   query: z.string().trim().min(1),
@@ -75,7 +53,6 @@ export const lessonWorkflowDecisionSchema = z.discriminatedUnion("type", [
       type: z.literal("clarify"),
       text: z.string().trim().min(1),
       intentResult: lessonIntentSchema,
-      intakeResult: lessonIntakeSkillResultSchema.optional(),
     })
     .strict(),
   z
@@ -89,7 +66,6 @@ export const lessonWorkflowDecisionSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("generate"),
       intentResult: lessonIntentSchema,
-      intakeResult: lessonIntakeSkillResultSchema.optional(),
     })
     .strict(),
   z
@@ -106,14 +82,16 @@ export const lessonWorkflowOutputSchema = z.object({
   standards: z.object({
     requestedMarket: standardsMarketSchema,
     resolvedMarket: standardsMarketSchema,
-    corpusId: z.string(),
-    displayName: z.string(),
-    officialStatus: z.string(),
-    sourceName: z.string(),
-    issuer: z.string(),
-    version: z.string(),
-    url: z.string().url(),
-    availability: z.enum(["ready", "planned"]),
+    corpus: z
+      .object({
+        corpusId: z.string(),
+        displayName: z.string(),
+        issuer: z.string(),
+        version: z.string(),
+        url: z.string().url().nullable(),
+        availability: z.enum(["ready", "planned"]),
+      })
+      .nullable(),
     referenceCount: z.number(),
     references: z.array(workflowStandardsReferenceSchema).optional(),
     warning: z.string().optional(),
@@ -149,7 +127,6 @@ export type LessonWorkflowInput = Omit<z.infer<typeof lessonWorkflowInputSchema>
 export type LessonWorkflowDecision = z.infer<typeof lessonWorkflowDecisionSchema>;
 export type LessonWorkflowOutput = z.infer<typeof lessonWorkflowOutputSchema>;
 
-type LessonIntakeRunner = typeof runLessonIntakeSkill;
 type LessonIntentRunner = typeof runLessonIntentSkill;
 
 const intentClassificationOutputSchema = lessonWorkflowInputSchema.extend({
@@ -157,11 +134,7 @@ const intentClassificationOutputSchema = lessonWorkflowInputSchema.extend({
   trace: lessonWorkflowOutputSchema.shape.trace,
 });
 
-const intakeCollectionOutputSchema = intentClassificationOutputSchema.extend({
-  intakeResult: lessonIntakeSkillResultSchema.optional(),
-});
-
-const promptConstructionOutputSchema = intakeCollectionOutputSchema.extend({
+const promptConstructionOutputSchema = intentClassificationOutputSchema.extend({
   standardsContext: z.string(),
   standards: lessonWorkflowOutputSchema.shape.standards,
   system: z.string(),
@@ -176,7 +149,6 @@ const workflowBranchOutputSchema = z
     "prepare-intent-clarification-response": lessonWorkflowOutputSchema.optional(),
     "prepare-patch-response": lessonWorkflowOutputSchema.optional(),
     "prepare-standards-consultation-response": lessonWorkflowOutputSchema.optional(),
-    "prepare-clarification-response": lessonWorkflowOutputSchema.optional(),
     "prepare-generation-response": lessonWorkflowOutputSchema.optional(),
   })
   .strict();
@@ -305,24 +277,17 @@ function resolveGenerationMode(inputData: {
 
 function buildDeferredStandardsWorkflowFields(
   inputData: Pick<z.infer<typeof lessonWorkflowInputSchema>, "market">,
-) {
+): Pick<LessonWorkflowOutput, "standardsContext" | "standards" | "trace"> {
   const resolved = resolveStandardsMarketMetadata(inputData.market);
-  const deferredWarning = "课程标准检索已交给 peTeacherAgent 的 searchStandardsTool 按需执行；工作流不再预取课标片段。";
-  const warning = [resolved.warning, deferredWarning].filter(Boolean).join(" ");
+  const deferredWarning = "课程标准检索已交给 peTeacherAgent 的 searchStandards 按需执行；工作流不再预取课标片段。";
+  const warning = deferredWarning;
 
   return {
-    standardsContext: "未预取课标片段。生成 Agent 可在需要课标依据时调用 searchStandardsTool。",
+    standardsContext: "未预取课标片段。生成 Agent 可在需要课标依据时调用 searchStandards。",
     standards: {
       requestedMarket: resolved.requestedMarket,
       resolvedMarket: resolved.resolvedMarket,
-      corpusId: resolved.corpus.corpusId,
-      displayName: resolved.corpus.displayName,
-      officialStatus: resolved.corpus.officialStatus,
-      sourceName: resolved.corpus.sourceName,
-      issuer: resolved.corpus.issuer,
-      version: resolved.corpus.version,
-      url: resolved.corpus.url,
-      availability: resolved.corpus.availability,
+      corpus: null,
       referenceCount: 0,
       references: [],
       warning,
@@ -331,17 +296,8 @@ function buildDeferredStandardsWorkflowFields(
       createTraceEntry(
         "delegate-standards-tooling",
         "success",
-        `目标市场 ${resolved.requestedMarket} 已解析为 ${resolved.resolvedMarket}，课标检索将由 searchStandardsTool 按需执行。`,
+        `目标市场 ${resolved.requestedMarket} 已解析为 ${resolved.resolvedMarket}，课标检索将由 searchStandards 按需执行。`,
       ),
-      ...(resolved.warning
-        ? [
-            createTraceEntry(
-              "resolve-standards-market",
-              "blocked",
-              resolved.warning,
-            ),
-          ]
-        : []),
     ],
   };
 }
@@ -360,14 +316,7 @@ async function buildResolvedStandardsWorkflowFields(inputData: {
     standards: {
       requestedMarket: standardsResult.requestedMarket,
       resolvedMarket: standardsResult.resolvedMarket,
-      corpusId: standardsResult.corpus.corpusId,
-      displayName: standardsResult.corpus.displayName,
-      officialStatus: standardsResult.corpus.officialStatus,
-      sourceName: standardsResult.corpus.sourceName,
-      issuer: standardsResult.corpus.issuer,
-      version: standardsResult.corpus.version,
-      url: standardsResult.corpus.url,
-      availability: standardsResult.corpus.availability,
+      corpus: standardsResult.corpus,
       referenceCount: standardsResult.references.length,
       references: standardsResult.references.map((reference) => ({
         id: reference.id,
@@ -388,7 +337,7 @@ async function buildResolvedStandardsWorkflowFields(inputData: {
         `已检索 ${standardsResult.references.length} 条课标条目，供直接咨询答复使用。`,
       ),
       ...(standardsResult.warning
-        ? [createTraceEntry("resolve-standards-market", "blocked", standardsResult.warning)]
+        ? [createTraceEntry("consult-standards-context-warning", "blocked", standardsResult.warning)]
         : []),
     ],
   };
@@ -419,27 +368,22 @@ function buildStandardsConsultationText(standardsContext: string) {
   ].join("\n");
 }
 
-function buildIntakePromptParts(intakeResult?: LessonIntakeSkillResult) {
-  if (!intakeResult?.intake.readyToGenerate) {
-    return [];
-  }
-
+function buildMemoryPromptParts(memory?: LessonAuthoringMemory) {
   return [
-    "课时计划生成 Agent 启动前的信息收集结果：",
-    "你必须严格基于下列已确认信息生成课时计划；不得补写与其冲突的年级、课题、人数、课时、场地或器材。未确认学生人数时按 40 人生成；未确认课时、场地和器材时，根据课程内容、教学环节和安全要求自动匹配。",
-    formatLessonIntakeResultForPrompt(intakeResult.intake),
+    "工作流不再在正式生成前执行信息收集或必要追问。请直接基于本轮用户输入、对话历史、教师上下文和项目教学记忆生成内容。",
+    "信息不足时优先做合理假设：学生人数未明确时默认 40 人，课时、场地、器材可根据课程内容和安全要求自动匹配。",
+    "如果本轮用户明确指令与项目记忆冲突，始终以本轮用户指令为准。",
+    formatLessonAuthoringMemoryForPrompt(memory),
   ];
 }
 
 function buildWorkflowWarnings(inputData: {
-  intakeResult?: LessonIntakeSkillResult;
   standards: LessonWorkflowOutput["standards"];
 }) {
-  const standardsRetrievalDeferred = inputData.standards.warning?.includes("searchStandardsTool") === true;
+  const standardsRetrievalDeferred = inputData.standards.warning?.includes("searchStandards") === true;
 
   return [
     ...(inputData.standards.warning ? [inputData.standards.warning] : []),
-    ...(inputData.intakeResult?.warning ? [inputData.intakeResult.warning] : []),
     ...(inputData.standards.referenceCount === 0 && !standardsRetrievalDeferred
       ? ["未命中目标市场课标结构化条目，生成内容需以正式现行课标文本为准。"]
       : []),
@@ -476,92 +420,10 @@ function createClassifyIntentStep(runLessonIntent: LessonIntentRunner) {
   });
 }
 
-function createCollectLessonRequirementsStep(runLessonIntake: LessonIntakeRunner) {
-  return createStep({
-    id: "collect-lesson-requirements",
-    description: "在正式生成体育课时计划前核对年级、课题等必要信息，并决定追问或继续生成。",
-    inputSchema: intentClassificationOutputSchema,
-    outputSchema: intakeCollectionOutputSchema,
-    execute: async ({ inputData, runId }) => {
-      if (inputData.intentResult.intent !== "generate_lesson") {
-        return {
-          ...inputData,
-          intakeResult: undefined,
-        };
-      }
-
-      const intakeResult = await runLessonIntake({
-        context: inputData.context,
-        maxSteps: MAX_WORKFLOW_AGENT_STEPS,
-        memory: inputData.memory,
-        messages: getWorkflowMessages(inputData),
-        requestId: getWorkflowRequestId(inputData, runId),
-      });
-      const memoryDetail = intakeResult.memoryUsed ? " 已使用项目教学记忆减少追问。" : "";
-
-      return {
-        ...inputData,
-        intakeResult,
-        trace: [
-          createTraceEntry(
-            "collect-lesson-requirements",
-            intakeResult.intake.readyToGenerate ? "success" : "blocked",
-            intakeResult.intake.readyToGenerate
-              ? `信息收集 Agent 已确认可以生成课时计划：${intakeResult.intake.reason}${memoryDetail}`
-              : `信息收集 Agent 已阻止随机生成：${intakeResult.intake.reason}${memoryDetail}`,
-          ),
-        ],
-      };
-    },
-  });
-}
-
-const prepareClarificationResponseStep = createStep({
-  id: "prepare-clarification-response",
-  description: "将信息收集结果转换为面向教师的必要追问，并保持结构化 trace 输出。",
-  inputSchema: intakeCollectionOutputSchema,
-  outputSchema: lessonWorkflowOutputSchema,
-  execute: async ({ inputData }) => {
-    if (!inputData.intakeResult) {
-      throw new Error("缺少课时计划信息收集结果，无法生成追问。");
-    }
-
-    const standards = buildDeferredStandardsWorkflowFields(inputData);
-    const warnings = buildWorkflowWarnings({
-      intakeResult: inputData.intakeResult,
-      standards: standards.standards,
-    });
-
-    return {
-      system: "",
-      standardsContext: standards.standardsContext,
-      standards: standards.standards,
-      generationPlan: createGenerationPlan(resolveGenerationMode(inputData)),
-      safety: createSafety(resolveGenerationMode(inputData), warnings),
-      uiHints: createLowConfidenceIntentUiHints(inputData.intentResult),
-      decision: {
-        type: "clarify" as const,
-        intentResult: inputData.intentResult,
-        text: formatLessonIntakeQuestions(inputData.intakeResult.intake),
-        intakeResult: inputData.intakeResult,
-      },
-      trace: [
-        ...inputData.trace,
-        ...standards.trace,
-        createTraceEntry(
-          "prepare-clarification-response",
-          "blocked",
-          "信息不足，工作流已停止正式课时计划生成并返回必要追问。",
-        ),
-      ],
-    };
-  },
-});
-
 const prepareIntentClarificationResponseStep = createStep({
   id: "prepare-intent-clarification-response",
   description: "当入口意图仍不明确时，返回任务方向澄清信息。",
-  inputSchema: intakeCollectionOutputSchema,
+  inputSchema: intentClassificationOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
     const standards = buildDeferredStandardsWorkflowFields(inputData);
@@ -598,7 +460,7 @@ const prepareIntentClarificationResponseStep = createStep({
 const prepareStandardsConsultationResponseStep = createStep({
   id: "prepare-standards-consultation-response",
   description: "直接检索课标并返回咨询结果，跳过正式生成链路。",
-  inputSchema: intakeCollectionOutputSchema,
+  inputSchema: intentClassificationOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
     const standards = await buildResolvedStandardsWorkflowFields(inputData);
@@ -633,8 +495,8 @@ const prepareStandardsConsultationResponseStep = createStep({
 
 const preparePatchResponseStep = createStep({
   id: "prepare-patch-response",
-  description: "识别为已确认课时计划修改请求后，跳过 intake 并转入结构化补丁链路。",
-  inputSchema: intakeCollectionOutputSchema,
+  description: "识别为已确认课时计划修改请求后，直接转入结构化补丁链路。",
+  inputSchema: intentClassificationOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
     const standards = buildDeferredStandardsWorkflowFields(inputData);
@@ -687,7 +549,7 @@ const preparePatchResponseStep = createStep({
         createTraceEntry(
           "prepare-patch-response",
           "success",
-          "已识别为现有课时计划局部修改请求，跳过 intake 并转入结构化补丁链路。",
+          "已识别为现有课时计划局部修改请求，直接转入结构化补丁链路。",
         ),
       ],
     };
@@ -696,8 +558,8 @@ const preparePatchResponseStep = createStep({
 
 const constructPromptStep = createStep({
   id: "construct-generation-prompt",
-  description: "根据生成阶段、课堂上下文、信息收集结果与课标解析结果构造 Agent 系统提示词。",
-  inputSchema: intakeCollectionOutputSchema,
+  description: "根据生成阶段、课堂上下文、用户消息与教学记忆构造 Agent 系统提示词。",
+  inputSchema: intentClassificationOutputSchema,
   outputSchema: promptConstructionOutputSchema,
   execute: async ({ inputData }) => {
     const standards = buildDeferredStandardsWorkflowFields(inputData);
@@ -708,11 +570,15 @@ const constructPromptStep = createStep({
         lessonPlan: inputData.lessonPlan,
         screenPlan: inputData.screenPlan,
       }),
-      ...buildIntakePromptParts(inputData.intakeResult),
-      "课程标准检索策略：searchStandardsTool 已挂载给当前 Agent。生成新课时计划或需要核对课标依据时调用该工具；只做局部改写且用户未要求课标核对时，可以跳过工具。",
-      `\n目标市场：${standards.standards.resolvedMarket}`,
-      `可用课标语料：${standards.standards.displayName}`,
-      `官方状态：${standards.standards.officialStatus}`,
+      ...buildMemoryPromptParts(inputData.memory),
+      "课程标准检索策略：searchStandards 已挂载给当前 Agent。生成新课时计划或需要核对课标依据时调用该工具；只做局部改写且用户未要求课标核对时，可以跳过工具。",
+      `目标市场：${standards.standards.resolvedMarket}`,
+      ...(standards.standards.corpus
+        ? [
+            `课标语料：${standards.standards.corpus.displayName}`,
+            `语料版本：${standards.standards.corpus.version}`,
+          ]
+        : []),
     ].join("\n\n");
 
     return {
@@ -725,7 +591,7 @@ const constructPromptStep = createStep({
         createTraceEntry(
           "construct-generation-prompt",
           "success",
-          `已构造 ${resolvedMode} 阶段系统提示词，并把课标检索决策交给 Agent 工具。`,
+          `已构造 ${resolvedMode} 阶段系统提示词，并把教学记忆与课标检索决策交给 Agent。`,
         ),
       ],
     };
@@ -776,7 +642,6 @@ const validateSafetyStep = createStep({
       safety: createSafety(
         resolvedMode,
         buildWorkflowWarnings({
-          intakeResult: inputData.intakeResult,
           standards: inputData.standards,
         }),
       ),
@@ -787,7 +652,6 @@ const validateSafetyStep = createStep({
       decision: {
         type: "generate" as const,
         intentResult: inputData.intentResult,
-        ...(inputData.intakeResult ? { intakeResult: inputData.intakeResult } : {}),
       },
       trace: [
         ...inputData.trace,
@@ -805,7 +669,7 @@ const validateSafetyStep = createStep({
 
 const mergeWorkflowBranchStep = createStep({
   id: "merge-workflow-branch-output",
-  description: "归一化追问分支和生成分支的工作流输出。",
+  description: "归一化澄清分支和生成分支的工作流输出。",
   inputSchema: workflowBranchOutputSchema,
   outputSchema: lessonWorkflowOutputSchema,
   execute: async ({ inputData }) => {
@@ -813,7 +677,6 @@ const mergeWorkflowBranchStep = createStep({
       inputData["prepare-intent-clarification-response"] ??
       inputData["prepare-standards-consultation-response"] ??
       inputData["prepare-patch-response"] ??
-      inputData["prepare-clarification-response"] ??
       inputData["prepare-generation-response"];
 
     if (!output) {
@@ -827,19 +690,15 @@ const mergeWorkflowBranchStep = createStep({
 export function createLessonAuthoringWorkflow(
   options: {
     runLessonIntent?: LessonIntentRunner;
-    runLessonIntake?: LessonIntakeRunner;
   } = {},
 ) {
   const classifyIntentStep = createClassifyIntentStep(
     options.runLessonIntent ?? runLessonIntentSkill,
   );
-  const collectLessonRequirementsStep = createCollectLessonRequirementsStep(
-    options.runLessonIntake ?? runLessonIntakeSkill,
-  );
   const prepareGenerationWorkflow = createWorkflow({
     id: "prepare-generation-response",
-    description: "准备正式 lesson/html 生成所需的课标、提示词、结构化推流计划和安全校验。",
-    inputSchema: intakeCollectionOutputSchema,
+    description: "准备正式 lesson/html 生成所需的课标、教学记忆、提示词、结构化推流计划和安全校验。",
+    inputSchema: intentClassificationOutputSchema,
     outputSchema: lessonWorkflowOutputSchema,
   })
     .then(constructPromptStep)
@@ -849,12 +708,11 @@ export function createLessonAuthoringWorkflow(
 
   return createWorkflow({
     id: "lesson-authoring-workflow",
-    description: "编排入口意图识别、信息收集、追问分支、课标咨询、补丁分发、提示词构建与结构化推流安全校验。",
+    description: "编排入口意图识别、课标咨询、补丁分发、直接生成提示词构建与结构化推流安全校验。",
     inputSchema: lessonWorkflowInputSchema,
     outputSchema: lessonWorkflowOutputSchema,
   })
     .then(classifyIntentStep)
-    .then(collectLessonRequirementsStep)
     .branch([
       [
         async ({ inputData }) => inputData.intentResult.intent === "clarify",
@@ -870,15 +728,8 @@ export function createLessonAuthoringWorkflow(
       ],
       [
         async ({ inputData }) =>
-          inputData.intentResult.intent === "generate_lesson" &&
-          inputData.intakeResult?.intake.readyToGenerate === false,
-        prepareClarificationResponseStep,
-      ],
-      [
-        async ({ inputData }) =>
           inputData.intentResult.intent === "generate_html" ||
-          (inputData.intentResult.intent === "generate_lesson" &&
-            inputData.intakeResult?.intake.readyToGenerate === true),
+          inputData.intentResult.intent === "generate_lesson",
         prepareGenerationWorkflow,
       ],
     ])

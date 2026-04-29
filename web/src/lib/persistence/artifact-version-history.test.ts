@@ -8,6 +8,11 @@ type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row
 
 const BASE_ROW: ArtifactVersionRow = {
   artifact_id: "11111111-1111-1111-1111-111111111111",
+  content_byte_size: null,
+  content_checksum: null,
+  content_storage_bucket: null,
+  content_storage_object_key: null,
+  content_storage_provider: "inline",
   content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
   content_type: "lesson-json",
   created_at: "2026-04-25T12:00:00.000Z",

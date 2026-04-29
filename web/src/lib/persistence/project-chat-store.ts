@@ -162,6 +162,7 @@ export function createProjectChatPersistence(
         content: getPersistedMessageContent(message),
         conversation_id: conversation.id,
         created_by: userId,
+        is_active: true,
         project_id: projectId,
         request_id: requestId ?? null,
         role: message.role,

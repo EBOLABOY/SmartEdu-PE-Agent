@@ -19,10 +19,7 @@ const mocks = vi.hoisted(() => {
   return {
     createChunkStream,
     createLessonClarificationStreamAdapter: vi.fn(() =>
-      createChunkStream([
-        { type: "start" },
-        { type: "finish", finishReason: "stop" },
-      ]),
+      createChunkStream([{ type: "finish", finishReason: "stop" }]),
     ),
     createStructuredAuthoringStreamAdapter: vi.fn(() =>
       createChunkStream([{ type: "finish", finishReason: "stop" }]),
@@ -56,56 +53,20 @@ function createIntentResult(
   };
 }
 
-const readyIntakeResult = {
-  intake: {
-    readyToGenerate: true,
-    known: {
-      grade: "五年级",
-      topic: "篮球行进间运球",
-    },
-    missing: [],
-    clarifications: [],
-    summary: "五年级篮球行进间运球。",
-    reason: "年级和课题已明确。",
-  },
-  modelMessageCount: 1,
-  source: "agent" as const,
-};
-
-const clarifyIntakeResult = {
-  intake: {
-    readyToGenerate: false,
-    known: {
-      topic: "篮球课",
-    },
-    missing: ["grade" as const],
-    clarifications: [
-      {
-        field: "grade" as const,
-        question: "本次课是几年级？",
-      },
-    ],
-    reason: "缺少年级。",
-  },
-  memoryUsed: true,
-  modelMessageCount: 1,
-  source: "agent" as const,
-};
-
 const workflow = {
-  system: "system prompt",
+  system: "system prompt\n\n项目教学记忆",
   standardsContext: "",
   standards: {
     requestedMarket: "cn-compulsory-2022",
     resolvedMarket: "cn-compulsory-2022",
-    corpusId: "cn",
-    displayName: "义务教育体育与健康课程标准",
-    officialStatus: "ready",
-    sourceName: "课程标准",
-    issuer: "教育部",
-    version: "2022",
-    url: "https://example.com/standards",
-    availability: "ready",
+    corpus: {
+      corpusId: "cn",
+      displayName: "义务教育体育与健康课程标准",
+      issuer: "教育部",
+      version: "2022",
+      url: "https://example.com/standards",
+      availability: "ready",
+    },
     referenceCount: 0,
   },
   generationPlan: {
@@ -134,7 +95,6 @@ const workflow = {
   decision: {
     type: "generate",
     intentResult: createIntentResult("generate_lesson"),
-    intakeResult: readyIntakeResult,
   },
   trace: [],
 } satisfies LessonWorkflowOutput;
@@ -144,15 +104,14 @@ const clarificationWorkflow = {
   uiHints: [],
   decision: {
     type: "clarify",
-    text: "请先补充：\n1. 本次课是几年级？",
-    intentResult: createIntentResult("generate_lesson"),
-    intakeResult: clarifyIntakeResult,
+    text: "请明确你是要：\n1. 生成一份新的体育课时计划；",
+    intentResult: createIntentResult("clarify"),
   },
   trace: [
     {
-      step: "collect-lesson-requirements",
+      step: "prepare-intent-clarification-response",
       status: "blocked",
-      detail: "缺少年级。",
+      detail: "入口意图不够明确，工作流已返回任务方向澄清提示。",
     },
   ],
 } satisfies LessonWorkflowOutput;
@@ -169,6 +128,27 @@ async function readChunks(stream: ReadableStream<UIMessageChunk>) {
     }
 
     chunks.push(value);
+  }
+}
+
+async function readFirstChunks(stream: ReadableStream<UIMessageChunk>, count: number) {
+  const reader = stream.getReader();
+  const chunks: UIMessageChunk[] = [];
+
+  try {
+    while (chunks.length < count) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      chunks.push(value);
+    }
+
+    return chunks;
+  } finally {
+    await reader.cancel().catch(() => undefined);
   }
 }
 
@@ -224,7 +204,7 @@ describe("lesson authoring service", () => {
     });
   });
 
-  it("asks clarification questions from workflow decision instead of generating a lesson", async () => {
+  it("clarify decision 会直接走 clarification adapter，而不是生成课时计划", async () => {
     mockWorkflowResult(clarificationWorkflow);
     const { streamLessonAuthoring } = await import("./lesson_authoring");
 
@@ -233,35 +213,41 @@ describe("lesson authoring service", () => {
         {
           id: "user-1",
           role: "user",
-          parts: [{ type: "text", text: "帮我写一个篮球课课时计划" }],
+          parts: [{ type: "text", text: "帮我看看这个" }],
         },
       ],
       mode: "lesson",
     });
-    const chunks = await readChunks(result.stream);
+    const chunks = await readFirstChunks(result.stream, 3);
 
     expect(chunks[0]).toEqual(
+      expect.objectContaining({
+        type: "start",
+      }),
+    );
+    expect(chunks[1]).toEqual(
       expect.objectContaining({
         type: "data-trace",
       }),
     );
+    expect(chunks.filter((chunk) => chunk.type === "start")).toHaveLength(1);
     expect(mocks.runLessonGenerationWithRepair).not.toHaveBeenCalled();
     expect(mocks.createLessonClarificationStreamAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining("本次课是几年级？"),
+        text: expect.stringContaining("请明确你是要"),
         workflow: expect.objectContaining({
           trace: expect.arrayContaining([
             expect.objectContaining({
               status: "blocked",
-              step: "collect-lesson-requirements",
+              step: "prepare-intent-clarification-response",
             }),
           ]),
         }),
       }),
     );
-  });
+  }, 15000);
 
-  it("passes project memory into workflow and saves the updated memory from workflow decision", async () => {
+  it("会把 project memory 传入 workflow，但不再回写 intake memory", async () => {
     const memoryPersistence = {
       loadMemory: vi.fn(),
       rememberFromIntake: vi.fn(),
@@ -305,15 +291,258 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(memoryPersistence.rememberFromIntake).toHaveBeenCalledWith(
+    expect(memoryPersistence.rememberFromIntake).not.toHaveBeenCalled();
+  });
+
+  it("顶层流统一负责 assistant message 生命周期与最终持久化", async () => {
+    const chatPersistence = {
+      saveMessages: vi.fn().mockResolvedValue(undefined),
+    };
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      chatPersistence,
+      messages: [
+        {
+          id: "user-persist-1",
+          role: "user",
+          parts: [{ type: "text", text: "生成一份四年级足球课时计划" }],
+        },
+      ],
+      mode: "lesson",
+      projectId: "00000000-0000-4000-8000-000000000099",
+    });
+    const chunks = await readChunks(result.stream);
+
+    expect(chunks.filter((chunk) => chunk.type === "start")).toHaveLength(1);
+    expect(chatPersistence.saveMessages).toHaveBeenCalledOnce();
+    expect(chatPersistence.saveMessages).toHaveBeenCalledWith(
       expect.objectContaining({
-        intake: readyIntakeResult.intake,
-        projectId: "00000000-0000-4000-8000-000000000001",
+        messages: [
+          expect.objectContaining({
+            role: "assistant",
+          }),
+        ],
+        projectId: "00000000-0000-4000-8000-000000000099",
+        requestId: result.requestId,
       }),
     );
   });
 
-  it("routes patch decision into lesson patch skill and returns a structured lesson artifact stream", async () => {
+  it("restores persisted reasoning parts and filters data parts from history", async () => {
+    const start = mockWorkflowResult(workflow);
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      mastraStorageAdapter: {
+        listMessages: vi.fn(async () => [
+          {
+            id: "history-1",
+            threadId: "project-1",
+            role: "assistant",
+            content: "历史回复",
+            createdAt: "2026-04-29T00:00:00.000Z",
+            metadata: {
+              uiMessage: {
+                id: "history-1",
+                role: "assistant",
+                parts: [
+                  { type: "reasoning", text: "先看课标。", state: "done" },
+                  { type: "text", text: "历史回复" },
+                  {
+                    type: "data-artifact",
+                    id: "artifact-1",
+                    data: {
+                      protocolVersion: "structured-v1",
+                      stage: "lesson",
+                      contentType: "lesson-json",
+                      content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+                      isComplete: true,
+                      status: "ready",
+                      source: "data-part",
+                      updatedAt: "2026-04-29T00:00:00.000Z",
+                    },
+                  },
+                  {
+                    type: "data-trace",
+                    id: "trace-1",
+                    data: {
+                      protocolVersion: "structured-v1",
+                      requestId: "req-1",
+                      mode: "lesson",
+                      phase: "completed",
+                      responseTransport: "structured-data-part",
+                      requestedMarket: "cn-compulsory-2022",
+                      resolvedMarket: "cn-compulsory-2022",
+                      warnings: [],
+                      uiHints: [],
+                      trace: [],
+                      updatedAt: "2026-04-29T00:00:00.000Z",
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        ]),
+      } as never,
+      messages: [
+        {
+          id: "user-history-1",
+          role: "user",
+          parts: [{ type: "text", text: "继续生成" }],
+        },
+      ],
+      mode: "lesson",
+      projectId: "00000000-0000-4000-8000-000000000010",
+    });
+    await readChunks(result.stream);
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputData: expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              id: "history-1",
+              parts: [
+                expect.objectContaining({ type: "reasoning", text: "先看课标。" }),
+                expect.objectContaining({ type: "text", text: "历史回复" }),
+              ],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("parses stringified uiMessage and falls back to plain text when only data parts remain", async () => {
+    const start = mockWorkflowResult(workflow);
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      mastraStorageAdapter: {
+        listMessages: vi.fn(async () => [
+          {
+            id: "history-2",
+            threadId: "project-1",
+            role: "assistant",
+            content: "只剩文本回退",
+            createdAt: "2026-04-29T00:00:00.000Z",
+            metadata: {
+              uiMessage: JSON.stringify({
+                id: "history-2",
+                role: "assistant",
+                parts: [
+                  {
+                    type: "data-artifact",
+                    id: "artifact-2",
+                    data: {
+                      protocolVersion: "structured-v1",
+                      stage: "lesson",
+                      contentType: "lesson-json",
+                      content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+                      isComplete: true,
+                      status: "ready",
+                      source: "data-part",
+                      updatedAt: "2026-04-29T00:00:00.000Z",
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        ]),
+      } as never,
+      messages: [
+        {
+          id: "user-history-2",
+          role: "user",
+          parts: [{ type: "text", text: "继续写" }],
+        },
+      ],
+      mode: "lesson",
+      projectId: "00000000-0000-4000-8000-000000000011",
+    });
+    await readChunks(result.stream);
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputData: expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              id: "history-2",
+              parts: [{ type: "text", text: "只剩文本回退" }],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("falls back to plain text when persisted uiMessage is invalid", async () => {
+    const start = mockWorkflowResult(workflow);
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      mastraStorageAdapter: {
+        listMessages: vi.fn(async () => [
+          {
+            id: "history-3",
+            threadId: "project-1",
+            role: "assistant",
+            content: "非法 JSON 回退",
+            createdAt: "2026-04-29T00:00:00.000Z",
+            metadata: {
+              uiMessage: "{not-json",
+            },
+          },
+          {
+            id: "history-4",
+            threadId: "project-1",
+            role: "assistant",
+            content: "结构非法回退",
+            createdAt: "2026-04-29T00:00:00.000Z",
+            metadata: {
+              uiMessage: {
+                id: "history-4",
+                role: "assistant",
+                parts: [{ type: "data-artifact" }],
+              },
+            },
+          },
+        ]),
+      } as never,
+      messages: [
+        {
+          id: "user-history-3",
+          role: "user",
+          parts: [{ type: "text", text: "继续" }],
+        },
+      ],
+      mode: "lesson",
+      projectId: "00000000-0000-4000-8000-000000000012",
+    });
+    await readChunks(result.stream);
+
+    expect(start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputData: expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              id: "history-3",
+              parts: [{ type: "text", text: "非法 JSON 回退" }],
+            }),
+            expect.objectContaining({
+              id: "history-4",
+              parts: [{ type: "text", text: "结构非法回退" }],
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it("patch decision 会走 lesson patch skill，并返回结构化课时流", async () => {
     mockWorkflowResult({
       ...workflow,
       decision: {
@@ -357,7 +586,7 @@ describe("lesson authoring service", () => {
     expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalled();
   });
 
-  it("passes repair trace and final lesson promise into the structured adapter", async () => {
+  it("会把 repair trace 和 final lesson promise 传给 structured adapter", async () => {
     const repairedPromise = Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN);
 
     mocks.runLessonGenerationWithRepair.mockImplementation(async ({ onTrace }) => {
@@ -439,7 +668,7 @@ describe("lesson authoring service", () => {
     );
   });
 
-  it("passes intent handover into html planning skill before screen generation", async () => {
+  it("会先把 intent handover 传给 html planning skill，再进入大屏生成", async () => {
     mockWorkflowResult({
       ...workflow,
       generationPlan: {
@@ -501,7 +730,7 @@ describe("lesson authoring service", () => {
 
     expect(mocks.runHtmlScreenPlanningSkill).toHaveBeenCalledWith(
       expect.objectContaining({
-        additionalInstructions: expect.stringContaining("当前目标是生成课堂互动大屏"),
+        additionalInstructions: expect.stringContaining("当前入口判定"),
       }),
     );
     expect(mocks.runHtmlScreenGenerationSkill).toHaveBeenCalledWith(

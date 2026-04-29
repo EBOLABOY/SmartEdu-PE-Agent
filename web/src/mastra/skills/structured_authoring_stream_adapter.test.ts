@@ -36,14 +36,14 @@ const baseWorkflow = {
   standards: {
     requestedMarket: "cn-compulsory-2022",
     resolvedMarket: "cn-compulsory-2022",
-    corpusId: "cn-compulsory-2022",
-    displayName: "义务教育体育与健康课程标准",
-    officialStatus: "现行",
-    sourceName: "课程标准",
-    issuer: "教育部",
-    version: "2022",
-    url: "https://example.com/standards",
-    availability: "ready",
+    corpus: {
+      corpusId: "cn-compulsory-2022",
+      displayName: "义务教育体育与健康课程标准",
+      issuer: "教育部",
+      version: "2022",
+      url: "https://example.com/standards",
+      availability: "ready",
+    },
     referenceCount: 1,
   },
   safety: {
@@ -164,10 +164,14 @@ describe("structured authoring stream adapter", () => {
       originalMessages: [],
       requestId: "request-trace-before-text",
       workflow: baseWorkflow,
-      stream: new ReadableStream<UIMessageChunk>(),
+      stream: new ReadableStream<UIMessageChunk>({
+        start(controller) {
+          controller.close();
+        },
+      }),
     });
 
-    const chunks = await readFirstChunks(stream, 3);
+    const chunks = await readFirstChunks(stream, 2);
     const tracePhases = chunks
       .map(getTraceData)
       .filter((trace): trace is WorkflowTraceData => Boolean(trace))
@@ -710,6 +714,37 @@ describe("structured authoring stream adapter", () => {
         expect.objectContaining({
           step: "persist-artifact-version",
           status: "blocked",
+        }),
+      ]),
+    );
+  });
+
+  it("保留未显式处理的 AI SDK UI chunks，避免升级后被适配层吞掉", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-pass-through-source",
+      workflow: baseWorkflow,
+      stream: createChunkStream([
+        {
+          type: "source-url",
+          sourceId: "source-1",
+          url: "https://example.com/standards",
+          title: "课程标准",
+        },
+        createStructuredLessonOutputChunk(),
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "source-url",
+          sourceId: "source-1",
+          url: "https://example.com/standards",
         }),
       ]),
     );

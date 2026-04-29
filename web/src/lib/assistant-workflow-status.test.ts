@@ -33,7 +33,7 @@ describe("assistant-workflow-status", () => {
               {
                 step: "agent-tool-call",
                 status: "running",
-                detail: "触发工具 searchStandardsTool。",
+                detail: "触发工具 searchStandards。",
               },
             ],
           },

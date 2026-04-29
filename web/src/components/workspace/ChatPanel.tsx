@@ -127,7 +127,7 @@ export default function ChatPanel({
                     课时计划 / 大屏 / 复盘
                   </span>
                   <span className="truncate text-[11px] text-muted-foreground">
-                    Enter 发送，Shift + Enter 换行
+                    回车发送，Shift + 回车换行
                   </span>
                 </PromptInputTools>
                 <PromptInputSubmit

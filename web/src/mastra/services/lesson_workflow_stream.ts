@@ -61,11 +61,9 @@ const WORKFLOW_RESPONSE_TRANSPORT = "structured-data-part" as const;
 
 const STEP_RUNNING_DETAILS: Record<string, string> = {
   "classify-intent": "正在识别当前请求的入口意图。",
-  "collect-lesson-requirements": "正在核对课题、年级、场地和器材等上课信息。",
   "prepare-intent-clarification-response": "正在准备任务方向澄清提示。",
   "prepare-patch-response": "正在准备课时计划补丁分发上下文。",
   "prepare-standards-consultation-response": "正在准备课标咨询结果。",
-  "prepare-clarification-response": "正在准备必要追问。",
   "prepare-generation-response": "正在准备正式生成上下文。",
   "consult-standards-context": "正在检索课程标准并解析目标市场。",
   "construct-generation-prompt": "正在构造生成提示词。",
@@ -76,11 +74,9 @@ const STEP_RUNNING_DETAILS: Record<string, string> = {
 
 const STEP_SUCCESS_DETAILS: Record<string, string> = {
   "classify-intent": "入口意图识别已完成。",
-  "collect-lesson-requirements": "信息收集已完成。",
   "prepare-intent-clarification-response": "任务方向澄清提示已准备。",
   "prepare-patch-response": "课时计划补丁分发上下文已准备。",
   "prepare-standards-consultation-response": "课标咨询结果已准备。",
-  "prepare-clarification-response": "必要追问已准备。",
   "prepare-generation-response": "正式生成上下文已准备。",
   "consult-standards-context": "课程标准检索已完成。",
   "construct-generation-prompt": "生成提示词已构造。",
@@ -153,15 +149,14 @@ export function buildWorkflowTraceDataFromWorkflow(
       mode: workflow.generationPlan.mode,
       requestedMarket: workflow.standards.requestedMarket,
       resolvedMarket: workflow.standards.resolvedMarket,
-      standards: workflow.standards.references
+      standards: workflow.standards.corpus && workflow.standards.references
         ? {
-            corpusId: workflow.standards.corpusId,
-            displayName: workflow.standards.displayName,
-            issuer: workflow.standards.issuer,
+            corpusId: workflow.standards.corpus.corpusId,
+            displayName: workflow.standards.corpus.displayName,
+            issuer: workflow.standards.corpus.issuer,
             references: workflow.standards.references,
-            sourceName: workflow.standards.sourceName,
-            url: workflow.standards.url,
-            version: workflow.standards.version,
+            url: workflow.standards.corpus.url,
+            version: workflow.standards.corpus.version,
           }
         : undefined,
       trace,
@@ -287,14 +282,20 @@ function updateStandardsSnapshot(state: LessonWorkflowTraceState, output: Record
     state.warnings = [...state.warnings, warning];
   }
 
+  const corpus = isRecord(standards.corpus) ? standards.corpus : undefined;
+
+  if (!corpus) {
+    state.standards = undefined;
+    return;
+  }
+
   const snapshot = workflowStandardsSnapshotSchema.safeParse({
-    corpusId: standards.corpusId,
-    displayName: standards.displayName,
-    issuer: standards.issuer,
+    corpusId: corpus.corpusId,
+    displayName: corpus.displayName,
+    issuer: corpus.issuer,
     references: Array.isArray(standards.references) ? standards.references : [],
-    sourceName: standards.sourceName,
-    url: standards.url,
-    version: standards.version,
+    url: getString(corpus, "url") ?? null,
+    version: corpus.version,
   });
 
   if (snapshot.success) {

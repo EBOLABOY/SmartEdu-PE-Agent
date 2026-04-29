@@ -1,7 +1,7 @@
 import type { StandardsRetrievalProvider } from "./provider-types";
-import { createLocalScoringStandardsProvider } from "./local_scoring_standards_provider";
+import { createSupabaseVectorStandardsProvider } from "./supabase_vector_standards_provider";
 
-let standardsRetrievalProvider: StandardsRetrievalProvider = createLocalScoringStandardsProvider();
+let standardsRetrievalProvider: StandardsRetrievalProvider = createSupabaseVectorStandardsProvider();
 
 export function getStandardsRetrievalProvider() {
   return standardsRetrievalProvider;
@@ -12,5 +12,5 @@ export function setStandardsRetrievalProvider(provider: StandardsRetrievalProvid
 }
 
 export function resetStandardsRetrievalProvider() {
-  standardsRetrievalProvider = createLocalScoringStandardsProvider();
+  standardsRetrievalProvider = createSupabaseVectorStandardsProvider();
 }

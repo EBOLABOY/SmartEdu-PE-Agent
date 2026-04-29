@@ -4,43 +4,32 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { MessageSquareText, PanelLeftClose, PanelLeftOpen, Plus, UserCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  createProjectAction,
+  deleteProjectAction,
+  generateCompetitionLessonPatchAction,
+  restoreArtifactVersionAction,
+  saveLessonArtifactVersionAction,
+  type WorkspaceActionResult,
+} from "@/app/actions/workspace";
+import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 import SmartEduArtifact from "@/components/ai/SmartEduArtifact";
 import { useArtifactLifecycle } from "@/components/ai/artifact-model";
 import { applyUiHints } from "@/components/ai/artifact-ui-hints";
 import AuthPanel from "@/components/auth/AuthPanel";
 import BrandLogo from "@/components/BrandLogo";
 import ChatPanel from "@/components/workspace/ChatPanel";
+import ProjectDirectoryPanel from "@/components/workspace/ProjectDirectoryPanel";
 import {
   isSnapshotAcknowledgedByPersistedVersions,
   mergeArtifactLifecycleHistory,
   shouldUsePersistedArtifactState,
 } from "@/components/workspace/artifact-source-policy";
-import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
-import ProjectDirectoryPanel from "@/components/workspace/ProjectDirectoryPanel";
 import { useWorkspaceProjectData } from "@/components/workspace/useWorkspaceProjectData";
-import {
-  DEFAULT_STANDARDS_MARKET,
-  STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
-  projectIdSchema,
-  smartEduDataSchemas,
-  type PersistedArtifactVersion,
-  type PersistedProjectSummary,
-  type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
-import { withSmartEduProjectHeader } from "@/lib/api/smartedu-request-headers";
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
-import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
-import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
-import {
-  requestArtifactVersionRestore,
-  requestCompetitionLessonPatch,
-  requestSaveLessonArtifactVersion,
-} from "@/lib/workspace/client-api";
-import { isLikelyLessonPatchInstruction } from "@/lib/workspace/prompt-intent";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,11 +47,41 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-
+import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
+import { withSmartEduProjectHeader } from "@/lib/api/smartedu-request-headers";
+import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
+import {
+  DEFAULT_STANDARDS_MARKET,
+  STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+  smartEduDataSchemas,
+  type PersistedArtifactVersion,
+  type PersistedProjectSummary,
+  type SmartEduUIMessage,
+} from "@/lib/lesson-authoring-contract";
+import { isLikelyLessonPatchInstruction } from "@/lib/workspace/prompt-intent";
 const EMPTY_MESSAGES: SmartEduUIMessage[] = [];
 const EMPTY_PERSISTED_VERSIONS: PersistedArtifactVersion[] = [];
 
 type PromptSubmission = string | PromptInputMessage;
+
+interface SmartEduWorkspaceProps {
+  accountMode: string | null;
+  currentProject: PersistedProjectSummary | null;
+  initialMessages: SmartEduUIMessage[];
+  inviteToken: string | null;
+  persistedVersions: PersistedArtifactVersion[];
+  projectId: string | null;
+  projects: PersistedProjectSummary[];
+}
+
+function unwrapWorkspaceActionResult<T>(result: WorkspaceActionResult<T>) {
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+
+  return result.data;
+}
 
 function normalizePromptSubmission(submission: PromptSubmission): PromptInputMessage {
   if (typeof submission === "string") {
@@ -77,8 +96,7 @@ function normalizePromptSubmission(submission: PromptSubmission): PromptInputMes
 
 function summarizeCompetitionLessonPatch(paths: string[]) {
   const labels = paths.map((path) => getCompetitionLessonEditableField(path)?.label ?? path);
-
-  return Array.from(new Set(labels)).join("、");
+  return Array.from(new Set(labels)).join(", ");
 }
 
 function createLocalPatchMessages(input: {
@@ -103,7 +121,7 @@ function createLocalPatchMessages(input: {
       parts: [
         {
           type: "text",
-          text: `已完成局部修改：${input.summary}。`,
+          text: `已完成修改：${input.summary}。`,
         },
         {
           type: "data-trace",
@@ -147,7 +165,7 @@ function createLocalPatchMessages(input: {
             isComplete: true,
             status: "ready",
             source: "data-part",
-            title: "课时计划 Artifact",
+            title: "课时计划",
             updatedAt: now,
           },
         },
@@ -156,40 +174,36 @@ function createLocalPatchMessages(input: {
   ];
 }
 
-function AppContent() {
+function AppContent({
+  accountMode,
+  currentProject: initialCurrentProject,
+  initialMessages,
+  inviteToken,
+  persistedVersions: initialPersistedVersions,
+  projectId,
+  projects: initialProjects,
+}: SmartEduWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const projectId = useMemo(() => {
-    const rawProjectId = searchParams.get("projectId");
-
-    if (!rawProjectId) {
-      return null;
-    }
-
-    const parsedProjectId = projectIdSchema.safeParse(rawProjectId);
-    return parsedProjectId.success ? parsedProjectId.data : null;
-  }, [searchParams]);
-  const accountMode = searchParams.get("account");
-  const inviteToken = searchParams.get("invite");
   const accountInitialTab =
     accountMode === "recovery" ? "security" : inviteToken ? "workspace" : "profile";
-  const [hasStarted, setHasStarted] = useState(() => Boolean(projectId));
+  const [hasStarted, setHasStarted] = useState(
+    () => Boolean(projectId || initialMessages.length),
+  );
   const [lessonConfirmed, setLessonConfirmed] = useState(false);
   const [isArtifactSyncPendingState, setIsArtifactSyncPendingState] = useState(false);
+  const [isProjectDirectoryLoading, setIsProjectDirectoryLoading] = useState(false);
   const [isRestoringArtifactVersionState, setIsRestoringArtifactVersionState] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
   const [hasLiveArtifactAuthority, setHasLiveArtifactAuthority] = useState(false);
   const [isProjectSheetOpen, setIsProjectSheetOpen] = useState(false);
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
-  const [authRevision, setAuthRevision] = useState(0);
+
   const chatTransport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
         prepareSendMessagesRequest: ({ body, headers, messages }) => {
-          // Phase 7: 记忆激活 - 废弃全量传递，只传递增量（最后一条）消息。
-          // 历史上下文将由后端的 Mastra Storage Adapter 自动接管并组装。
           const incrementalMessages = messages.length > 0 ? [messages[messages.length - 1]] : [];
 
           return {
@@ -203,36 +217,34 @@ function AppContent() {
       }),
     [],
   );
+
   const { messages, sendMessage, setMessages, status, error, stop } = useChat<SmartEduUIMessage>({
     dataPartSchemas: smartEduDataSchemas,
+    id: projectId ?? "transient-workspace",
+    messages: initialMessages,
     transport: chatTransport,
     experimental_throttle: 50,
   });
+
   const {
-    createPersistentProject,
     currentProject,
-    deletePersistentProject,
     isArtifactHistoryLoading,
-    isProjectDirectoryLoading,
-    isWorkspaceLoading,
     persistedVersions,
     projects,
-    refreshArtifactVersions,
     setArtifactHistoryLoading,
     setCurrentProject,
     setPersistedVersions,
+    setProjects,
   } = useWorkspaceProjectData({
-    authRevision,
-    messagesLength: messages.length,
+    initialCurrentProject,
+    initialPersistedVersions,
+    initialProjects,
     projectId,
-    setLessonConfirmed,
-    setMessages,
   });
+
   const isLoading = status === "submitted" || status === "streaming";
   const hasWorkspaceStarted = hasStarted || Boolean(projectId);
-  const isHistoryLoading = projectId
-    ? isArtifactHistoryLoading || isWorkspaceLoading
-    : false;
+  const isHistoryLoading = projectId ? isArtifactHistoryLoading : false;
   const liveArtifactLifecycle = useArtifactLifecycle(
     messages,
     status,
@@ -250,7 +262,7 @@ function AppContent() {
     isArtifactHistoryLoading,
     isArtifactSyncPending: isArtifactSyncPendingState,
     isLoading,
-    isWorkspaceLoading,
+    isWorkspaceLoading: false,
     persistedVersionsLength: persistedVersions.length,
     projectId,
   });
@@ -305,6 +317,27 @@ function AppContent() {
   }, [accountMode, inviteToken]);
 
   useEffect(() => {
+    if (projectId) {
+      queueMicrotask(() => {
+        setHasStarted(true);
+        setLessonConfirmed(false);
+        setHasLiveArtifactAuthority(false);
+        setIsArtifactSyncPendingState(false);
+      });
+      return;
+    }
+
+    if (initialMessages.length === 0) {
+      queueMicrotask(() => {
+        setHasStarted(false);
+        setLessonConfirmed(false);
+        setHasLiveArtifactAuthority(false);
+        setIsArtifactSyncPendingState(false);
+      });
+    }
+  }, [initialMessages.length, projectId]);
+
+  useEffect(() => {
     if (!projectId) {
       queueMicrotask(() => {
         setIsArtifactSyncPendingState(false);
@@ -321,26 +354,40 @@ function AppContent() {
     }
 
     if (status === "ready") {
-      void Promise.resolve()
-        .then(() =>
-          refreshArtifactVersions(projectId, {
-            preserveOnError: true,
-            silent: true,
-          }),
-        )
-        .finally(() => {
-          setIsArtifactSyncPendingState(false);
-        });
+      router.refresh();
+      queueMicrotask(() => {
+        setIsArtifactSyncPendingState(false);
+      });
       return;
     }
 
     queueMicrotask(() => {
       setIsArtifactSyncPendingState(false);
     });
-  }, [isArtifactSyncPendingState, projectId, refreshArtifactVersions, status]);
+  }, [isArtifactSyncPendingState, projectId, router, status]);
 
-  const withProjectContext = <T extends Record<string, unknown>>(body: T, targetProjectId = projectId) =>
-    targetProjectId ? { ...body, projectId: targetProjectId } : body;
+  const withProjectContext = <T extends Record<string, unknown>>(
+    body: T,
+    targetProjectId = projectId,
+  ) => (targetProjectId ? { ...body, projectId: targetProjectId } : body);
+
+  const createPersistentProject = async (title: string) => {
+    setIsProjectDirectoryLoading(true);
+
+    try {
+      const payload = unwrapWorkspaceActionResult(await createProjectAction(title));
+      setProjects(payload.projects);
+      setCurrentProject(payload.project);
+      return payload.project.id;
+    } finally {
+      setIsProjectDirectoryLoading(false);
+    }
+  };
+
+  const deletePersistentProject = async (targetProjectId: string) => {
+    const payload = unwrapWorkspaceActionResult(await deleteProjectAction(targetProjectId));
+    setProjects(payload.projects);
+  };
 
   const submitPrompt = async (submission: PromptSubmission, explicitProjectId = projectId) => {
     const prompt = normalizePromptSubmission(submission);
@@ -353,7 +400,8 @@ function AppContent() {
     setIsProjectSheetOpen(false);
 
     const shouldPatchCurrentLesson =
-      Boolean(effectiveArtifactLifecycle.lessonPlan) && isLikelyLessonPatchInstruction(normalizedQuery);
+      Boolean(effectiveArtifactLifecycle.lessonPlan) &&
+      isLikelyLessonPatchInstruction(normalizedQuery);
 
     if (shouldPatchCurrentLesson) {
       void (async () => {
@@ -361,20 +409,22 @@ function AppContent() {
           const currentLessonPlan = effectiveArtifactLifecycle.lessonPlan;
 
           if (!currentLessonPlan) {
-            toast.warning("当前课时计划尚未完成结构化校验", {
-              description: "请等待 JSON 课时计划生成完成并切换为正式打印版后，再发起局部修改。",
+            toast.warning("课时计划尚未就绪", {
+              description: "请等结构化课时计划生成完成后，再执行局部修改。",
             });
             return;
           }
 
-          const patchResult = await requestCompetitionLessonPatch({
-            instruction: normalizedQuery,
-            lessonPlan: currentLessonPlan,
-            projectId: explicitProjectId ?? undefined,
-          });
+          const patchResult = unwrapWorkspaceActionResult(
+            await generateCompetitionLessonPatchAction({
+              instruction: normalizedQuery,
+              lessonPlan: currentLessonPlan,
+            }),
+          );
           const changedPaths = patchResult.patch.operations.map((operation) => operation.path);
           const summary =
-            patchResult.patchSummary ?? `结构化字段修改：${summarizeCompetitionLessonPatch(changedPaths)}`;
+            patchResult.patchSummary ??
+            `Structured fields updated: ${summarizeCompetitionLessonPatch(changedPaths)}`;
 
           setLessonConfirmed(false);
           setHasLiveArtifactAuthority(true);
@@ -388,18 +438,21 @@ function AppContent() {
           ]);
 
           if (explicitProjectId) {
-            const payload = await requestSaveLessonArtifactVersion(explicitProjectId, {
-              lessonPlan: patchResult.lessonPlan,
-              summary,
-            });
-            setPersistedVersions(payload.versions);
+            const saveResult = unwrapWorkspaceActionResult(
+              await saveLessonArtifactVersionAction({
+                lessonPlan: patchResult.lessonPlan,
+                projectId: explicitProjectId,
+                summary,
+              }),
+            );
+            setPersistedVersions(saveResult.versions);
           }
 
-          toast.success("已按对话修改课时计划", {
-            description: `${summary}。右侧正式打印版已更新。`,
+          toast.success("课时计划已更新", {
+            description: `${summary}。打印视图已同步更新。`,
           });
         } catch (patchError) {
-          toast.error("课时计划局部修改失败", {
+          toast.error("课时计划修改失败", {
             description: patchError instanceof Error ? patchError.message : "请稍后重试。",
           });
         }
@@ -413,6 +466,7 @@ function AppContent() {
     if (explicitProjectId) {
       setIsArtifactSyncPendingState(true);
     }
+
     await sendMessage(
       prompt.files.length
         ? { text: normalizedQuery, files: prompt.files }
@@ -433,11 +487,12 @@ function AppContent() {
     if (projectId) {
       setIsArtifactSyncPendingState(true);
     }
+
     const lessonPlanJson = JSON.stringify(currentLessonPlan);
     const screenPlan = buildLessonScreenPlanFromLessonPlan(currentLessonPlan);
 
     await sendMessage(
-      { text: "我已确认课时计划无误，请基于该课时计划生成互动大屏。" },
+      { text: "课时计划已确认，请生成互动大屏。" },
       { body: withProjectContext({ mode: "html", lessonPlan: lessonPlanJson, screenPlan }) },
     );
   };
@@ -446,12 +501,28 @@ function AppContent() {
     void (async () => {
       const normalizedQuery = query.trim();
 
-      if (!normalizedQuery) {
+      if (!normalizedQuery || isProjectDirectoryLoading) {
         return;
       }
 
-      const nextProjectId = projectId ?? (await createPersistentProject(normalizedQuery));
+      let nextProjectId = projectId;
+
+      if (!nextProjectId) {
+        try {
+          nextProjectId = await createPersistentProject(normalizedQuery);
+        } catch (createProjectError) {
+          toast.error("项目初始化失败", {
+            description:
+              createProjectError instanceof Error
+                ? `${createProjectError.message}。将继续使用临时会话模式。`
+                : "将继续使用临时会话模式。",
+          });
+          nextProjectId = null;
+        }
+      }
+
       await submitPrompt(normalizedQuery, nextProjectId);
+
       if (!projectId && nextProjectId) {
         router.replace(`${pathname}?projectId=${nextProjectId}`);
       }
@@ -459,7 +530,7 @@ function AppContent() {
   };
 
   const handleSelectProject = (project: PersistedProjectSummary) => {
-    if (project.id === projectId || isLoading) {
+    if (project.id === projectId || isLoading || isProjectDirectoryLoading) {
       setIsProjectSheetOpen(false);
       return;
     }
@@ -477,12 +548,13 @@ function AppContent() {
   };
 
   const handleDeleteProject = (project: PersistedProjectSummary) => {
-    if (deletingProjectId) {
+    if (deletingProjectId || isProjectDirectoryLoading) {
       return;
     }
 
     void (async () => {
       setDeletingProjectId(project.id);
+      setIsProjectDirectoryLoading(true);
 
       try {
         await deletePersistentProject(project.id);
@@ -491,14 +563,15 @@ function AppContent() {
           handleResetWorkspace();
         }
 
-        toast.success("历史课时计划已删除", {
-          description: `“${project.title}”已从历史列表隐藏。`,
+        toast.success("项目已移除", {
+          description: `“${project.title}”已从历史列表中隐藏。`,
         });
       } catch (deleteError) {
-        toast.error("删除历史课时计划失败", {
+        toast.error("项目删除失败", {
           description: deleteError instanceof Error ? deleteError.message : "请稍后重试。",
         });
       } finally {
+        setIsProjectDirectoryLoading(false);
         setDeletingProjectId(null);
       }
     })();
@@ -513,6 +586,7 @@ function AppContent() {
     setMessages([]);
     setPersistedVersions([]);
     setCurrentProject(null);
+
     if (projectId) {
       router.replace(pathname);
     }
@@ -524,7 +598,7 @@ function AppContent() {
         <DialogHeader>
           <DialogTitle>账号与持久化</DialogTitle>
           <DialogDescription>
-            登录后启用 AI 生成、Supabase 项目保存、历史恢复和版本追踪；匿名 AI 仅在显式配置后可用。
+            登录后即可启用项目持久化、历史恢复与版本追踪。
           </DialogDescription>
         </DialogHeader>
         <AuthPanel
@@ -532,32 +606,53 @@ function AppContent() {
           inviteToken={inviteToken}
           key={`${accountInitialTab}-${inviteToken ?? "no-invite"}`}
           onAuthChanged={() => {
-            setAuthRevision((revision) => revision + 1);
+            router.refresh();
           }}
         />
       </DialogContent>
     </Dialog>
   );
 
-  const handleRestoreArtifactVersion = async (snapshot: { persistedVersionId?: string; stage: "lesson" | "html"; title: string }) => {
-    if (!projectId || !snapshot.persistedVersionId || isLoading || isRestoringArtifactVersionState) {
+  const handleRestoreArtifactVersion = async (snapshot: {
+    persistedVersionId?: string;
+    stage: "lesson" | "html";
+    title: string;
+  }) => {
+    if (
+      !projectId ||
+      !snapshot.persistedVersionId ||
+      isLoading ||
+      isRestoringArtifactVersionState ||
+      isProjectDirectoryLoading
+    ) {
       return;
     }
+
     setIsRestoringArtifactVersionState(true);
     setArtifactHistoryLoading(true);
+
     try {
-      const payload = await requestArtifactVersionRestore(projectId, snapshot.persistedVersionId);
-      setPersistedVersions(payload.versions);
+      const restoreResult = unwrapWorkspaceActionResult(
+        await restoreArtifactVersionAction({
+          projectId,
+          versionId: snapshot.persistedVersionId,
+        }),
+      );
+      setPersistedVersions(restoreResult.versions);
       setLessonConfirmed(false);
       setHasLiveArtifactAuthority(false);
 
-      // 业务状态描述权归后端：从 API 响应的 uiHints 中执行 UI 指令
-      if (payload.uiHints.length > 0) {
-        applyUiHints(payload.uiHints, {
+      if (restoreResult.uiHints.length > 0) {
+        applyUiHints(restoreResult.uiHints, {
           setView: () => {},
-          showToast: ({ level, title: toastTitle, description }) => {
-            const toaster = level === "error" ? toast.error : level === "warning" ? toast.warning : toast.success;
-            toaster(toastTitle, description ? { description } : undefined);
+          showToast: ({ level, title, description }) => {
+            const show =
+              level === "error"
+                ? toast.error
+                : level === "warning"
+                  ? toast.warning
+                  : toast.success;
+            show(title, description ? { description } : undefined);
           },
         });
       } else {
@@ -574,119 +669,297 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">
-
+    <div className="flex h-screen w-screen overflow-hidden bg-background font-sans text-foreground">
       <AnimatePresence>
         {isProjectSheetOpen && (
           <motion.div
-            initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsProjectSheetOpen(false)}
             className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            onClick={() => setIsProjectSheetOpen(false)}
           />
         )}
       </AnimatePresence>
+
       <motion.aside
-        initial={false}
         animate={{ width: isProjectSheetOpen ? 260 : 64 }}
+        className={`z-50 flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar ${
+          isProjectSheetOpen ? "fixed inset-y-0 left-0 lg:relative" : "hidden lg:flex"
+        }`}
+        initial={false}
         transition={{ duration: 0.25, ease: [0.25, 1, 0.5, 1] }}
-        className={`z-50 flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar overflow-hidden ${isProjectSheetOpen ? "fixed inset-y-0 left-0 lg:relative" : "hidden lg:flex"}`}
       >
-        <div className="flex flex-col px-3 pt-4 pb-2 shrink-0">
-          <div className={`flex items-center h-10 ${isProjectSheetOpen ? "justify-between px-1" : "justify-center"}`}>
-            <button className={`flex items-center gap-2 hover:opacity-80 transition-opacity ${isProjectSheetOpen ? "" : "justify-center"}`} onClick={handleResetWorkspace}>
+        <div className="shrink-0 px-3 pb-2 pt-4">
+          <div
+            className={`flex h-10 items-center ${
+              isProjectSheetOpen ? "justify-between px-1" : "justify-center"
+            }`}
+          >
+            <button
+              className={`flex items-center gap-2 transition-opacity hover:opacity-80 ${
+                isProjectSheetOpen ? "" : "justify-center"
+              }`}
+              onClick={handleResetWorkspace}
+            >
               <BrandLogo className={isProjectSheetOpen ? "size-7" : "size-8"} />
-              {isProjectSheetOpen && <span className="font-bold text-[15px] text-foreground whitespace-nowrap">跃课</span>}
+              {isProjectSheetOpen && (
+                <span className="whitespace-nowrap text-[15px] font-bold text-foreground">
+                  工作区
+                </span>
+              )}
             </button>
             {isProjectSheetOpen && (
-              <Button variant="ghost" size="icon" className="size-8 text-muted-foreground hover:text-foreground rounded-lg" onClick={() => setIsProjectSheetOpen(false)}>
+              <Button
+                className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
+                onClick={() => setIsProjectSheetOpen(false)}
+                size="icon"
+                variant="ghost"
+              >
                 <PanelLeftClose className="size-[18px]" />
               </Button>
             )}
           </div>
           <div className="mt-3 flex flex-col gap-1">
-            <Button variant="ghost" className={`text-foreground ${isProjectSheetOpen ? "w-full justify-start gap-3 h-10 px-3 rounded-xl" : "w-10 h-10 mx-auto justify-center px-0 rounded-xl"}`} onClick={() => { handleResetWorkspace(); if (window.innerWidth < 1024) setIsProjectSheetOpen(false); }}>
+            <Button
+              className={`text-foreground ${
+                isProjectSheetOpen
+                  ? "h-10 w-full justify-start gap-3 rounded-xl px-3"
+                  : "mx-auto h-10 w-10 justify-center rounded-xl px-0"
+              }`}
+              onClick={() => {
+                handleResetWorkspace();
+                if (window.innerWidth < 1024) {
+                  setIsProjectSheetOpen(false);
+                }
+              }}
+              variant="ghost"
+            >
               <Plus className="size-5 shrink-0" />
-              {isProjectSheetOpen && <span className="text-sm font-medium">新对话</span>}
+              {isProjectSheetOpen && <span className="text-sm font-medium">新建对话</span>}
             </Button>
             {!isProjectSheetOpen && (
-              <Button variant="ghost" size="icon" className="size-10 mx-auto rounded-xl text-muted-foreground hover:text-foreground" onClick={() => setIsProjectSheetOpen(true)}>
+              <Button
+                className="mx-auto size-10 rounded-xl text-muted-foreground hover:text-foreground"
+                onClick={() => setIsProjectSheetOpen(true)}
+                size="icon"
+                variant="ghost"
+              >
                 <PanelLeftOpen className="size-5" />
               </Button>
             )}
           </div>
         </div>
-        <div className={`flex-1 overflow-hidden flex flex-col transition-opacity duration-200 ${isProjectSheetOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-          <div className="px-4 py-2 shrink-0">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">最近</h3>
+
+        <div
+          className={`flex flex-1 flex-col overflow-hidden transition-opacity duration-200 ${
+            isProjectSheetOpen ? "opacity-100" : "pointer-events-none opacity-0"
+          }`}
+        >
+          <div className="shrink-0 px-4 py-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              最近项目
+            </h3>
           </div>
           <div className="flex-1 overflow-y-auto px-3 pb-4" style={{ minWidth: 260 }}>
-            <ProjectDirectoryPanel activeProjectId={projectId} deletingProjectId={deletingProjectId} isLoading={isProjectDirectoryLoading} onDeleteProject={handleDeleteProject} onSelectProject={(project) => { handleSelectProject(project); if (window.innerWidth < 1024) setIsProjectSheetOpen(false); }} projects={projects} />
+            <ProjectDirectoryPanel
+              activeProjectId={projectId}
+              deletingProjectId={deletingProjectId}
+              isLoading={isProjectDirectoryLoading}
+              onDeleteProject={handleDeleteProject}
+              onSelectProject={(project) => {
+                handleSelectProject(project);
+                if (window.innerWidth < 1024) {
+                  setIsProjectSheetOpen(false);
+                }
+              }}
+              projects={projects}
+            />
           </div>
         </div>
-        <div className="mt-auto p-3 shrink-0">
+
+        <div className="mt-auto shrink-0 p-3">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" className={`${isProjectSheetOpen ? "w-full justify-start gap-3 h-12 px-3 rounded-xl" : "w-10 h-10 mx-auto justify-center px-0 rounded-full"}`} onClick={() => setIsAuthDialogOpen(true)}>
-                <UserCircle className={`shrink-0 text-muted-foreground ${isProjectSheetOpen ? "size-6" : "size-5"}`} />
-                {isProjectSheetOpen && <span className="text-[13px] font-medium text-foreground">账号设置</span>}
+              <Button
+                className={`${
+                  isProjectSheetOpen
+                    ? "h-12 w-full justify-start gap-3 rounded-xl px-3"
+                    : "mx-auto h-10 w-10 justify-center rounded-full px-0"
+                }`}
+                onClick={() => setIsAuthDialogOpen(true)}
+                variant="ghost"
+              >
+                <UserCircle
+                  className={`shrink-0 text-muted-foreground ${
+                    isProjectSheetOpen ? "size-6" : "size-5"
+                  }`}
+                />
+                {isProjectSheetOpen && (
+                  <span className="text-[13px] font-medium text-foreground">账号</span>
+                )}
               </Button>
             </TooltipTrigger>
-            {!isProjectSheetOpen && <TooltipContent side="right" sideOffset={8}>账号设置</TooltipContent>}
+            {!isProjectSheetOpen && (
+              <TooltipContent side="right" sideOffset={8}>
+                账号
+              </TooltipContent>
+            )}
           </Tooltip>
-
         </div>
       </motion.aside>
-      <div className="flex-1 flex flex-col min-w-0 relative">
+
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <AnimatePresence mode="popLayout">
           {!hasWorkspaceStarted ? (
-            <motion.main key="landing-hero" exit={{ opacity: 0, y: -20, filter: "blur(4px)" }} transition={{ duration: 0.3 }} className="flex h-full flex-col items-center justify-center p-6 relative">
-              <Button variant="ghost" size="icon" className="absolute top-4 left-4 lg:hidden text-muted-foreground rounded-xl" onClick={() => setIsProjectSheetOpen(true)}>
+            <motion.main
+              className="relative flex h-full flex-col items-center justify-center p-6"
+              exit={{ opacity: 0, y: -20, filter: "blur(4px)" }}
+              key="landing-hero"
+              transition={{ duration: 0.3 }}
+            >
+              <Button
+                className="absolute left-4 top-4 rounded-xl text-muted-foreground lg:hidden"
+                onClick={() => setIsProjectSheetOpen(true)}
+                size="icon"
+                variant="ghost"
+              >
                 <PanelLeftOpen className="size-5" />
               </Button>
-              <motion.div animate={{ opacity: 1, y: 0, scale: 1 }} className="w-full max-w-3xl space-y-10 text-center" initial={{ opacity: 0, y: 16, scale: 0.98 }} transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}>
+              <motion.div
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className="w-full max-w-3xl space-y-10 text-center"
+                initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+              >
                 <div className="space-y-5">
                   <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border border-brand/20 bg-brand/5">
                     <BrandLogo className="size-8" priority />
                   </div>
-                  <h1 className="text-4xl font-black tracking-tight text-foreground md:text-5xl lg:text-[56px] leading-[1.1]">今天准备哪节<span className="text-brand">体育课</span>？</h1>
-                  <p className="mx-auto max-w-lg text-[15px] leading-relaxed text-muted-foreground">直接描述课程条件，系统会先生成可审阅课时计划。需要找旧课时计划时，展开左侧栏查看历史记录。</p>
+                  <h1 className="text-4xl font-black leading-[1.1] tracking-tight text-foreground md:text-5xl lg:text-[56px]">
+                    今天准备哪节<span className="text-brand">体育课</span>？
+                  </h1>
+                  <p className="mx-auto max-w-lg text-[15px] leading-relaxed text-muted-foreground">
+                    直接描述课程条件，系统会先生成可审阅课时计划。需要找旧课时计划时，展开左侧栏查看历史记录。
+                  </p>
                 </div>
-                <motion.form layoutId="prompt-input-container" className="group relative flex min-h-[72px] w-full items-center gap-2 rounded-2xl border border-border/80 bg-card/60 px-4 py-2 shadow-lg backdrop-blur-sm transition-colors focus-within:border-brand/50 focus-within:bg-card" onSubmit={(event) => { event.preventDefault(); const input = (event.currentTarget.elements.namedItem("prompt") as HTMLInputElement); if (input.value.trim()) handleStart(input.value.trim()); }}>
-                  <Button aria-label="补充课程条件" className="shrink-0 rounded-xl bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground" size="icon" type="button"><Plus className="size-5" /></Button>
-                  <input name="prompt" aria-label="课程主题" className="h-14 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/50" placeholder="描述你的体育课，例如：三年级篮球运球接力，40人，半场，40分钟" type="text" />
-                  <Button aria-label="生成课时计划" className="size-11 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-sm hover:bg-brand/90" size="icon" type="submit"><MessageSquareText className="size-[22px]" /></Button>
+                <motion.form
+                  className="group relative flex min-h-[72px] w-full items-center gap-2 rounded-2xl border border-border/80 bg-card/60 px-4 py-2 shadow-lg backdrop-blur-sm transition-colors focus-within:border-brand/50 focus-within:bg-card"
+                  layoutId="prompt-input-container"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const input = event.currentTarget.elements.namedItem("prompt") as HTMLInputElement;
+                    if (input.value.trim()) {
+                      handleStart(input.value.trim());
+                    }
+                  }}
+                >
+                  <Button
+                    aria-label="添加课时要求"
+                    className="shrink-0 rounded-xl bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    size="icon"
+                    type="button"
+                  >
+                    <Plus className="size-5" />
+                  </Button>
+                  <input
+                    aria-label="课时主题"
+                    className="h-14 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground/50"
+                    name="prompt"
+                    placeholder="例如：三年级篮球接力，40 人，半个篮球场，40 分钟"
+                    type="text"
+                  />
+                  <Button
+                    aria-label="生成课时计划"
+                    className="size-11 shrink-0 rounded-xl bg-brand text-brand-foreground shadow-sm hover:bg-brand/90"
+                    size="icon"
+                    type="submit"
+                  >
+                    <MessageSquareText className="size-[22px]" />
+                  </Button>
                 </motion.form>
               </motion.div>
             </motion.main>
           ) : (
-            <motion.div key="workspace-panels" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, delay: 0.1 }} className="flex h-full w-full min-w-0">
-              <div className="hidden h-full w-[320px] shrink-0 2xl:w-[360px] overflow-hidden lg:block border-r border-border/40">
-                <ChatPanel error={error} isLoading={isLoading} messages={messages} onSubmitPrompt={(query) => void submitPrompt(query)} projectTitle={currentProject?.title} status={status} stop={stop} />
+            <motion.div
+              animate={{ opacity: 1 }}
+              className="flex h-full w-full min-w-0"
+              initial={{ opacity: 0 }}
+              key="workspace-panels"
+              transition={{ duration: 0.4, delay: 0.1 }}
+            >
+              <div className="hidden h-full w-[320px] shrink-0 overflow-hidden border-r border-border/40 lg:block 2xl:w-[360px]">
+                <ChatPanel
+                  error={error}
+                  isLoading={isLoading}
+                  messages={messages}
+                  onSubmitPrompt={(query) => void submitPrompt(query)}
+                  projectTitle={currentProject?.title}
+                  status={status}
+                  stop={stop}
+                />
               </div>
               <Sheet>
                 <SheetTrigger asChild>
-                  <Button className="fixed bottom-4 left-4 z-50 rounded-full shadow-lg lg:hidden" size="icon" type="button" variant="brand"><MessageSquareText className="size-5" /></Button>
+                  <Button
+                    className="fixed bottom-4 left-4 z-50 rounded-full shadow-lg lg:hidden"
+                    size="icon"
+                    type="button"
+                    variant="brand"
+                  >
+                    <MessageSquareText className="size-5" />
+                  </Button>
                 </SheetTrigger>
                 <SheetContent className="w-[92vw] overflow-hidden p-0 sm:max-w-md lg:hidden" side="left">
-                  <SheetHeader className="sr-only"><SheetTitle>创作对话</SheetTitle><SheetDescription>移动端对话抽屉</SheetDescription></SheetHeader>
-                  <ChatPanel error={error} isLoading={isLoading} messages={messages} onSubmitPrompt={(query) => void submitPrompt(query)} projectTitle={currentProject?.title} status={status} stop={stop} />
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>对话</SheetTitle>
+                    <SheetDescription>移动端对话抽屉</SheetDescription>
+                  </SheetHeader>
+                  <ChatPanel
+                    error={error}
+                    isLoading={isLoading}
+                    messages={messages}
+                    onSubmitPrompt={(query) => void submitPrompt(query)}
+                    projectTitle={currentProject?.title}
+                    status={status}
+                    stop={stop}
+                  />
                 </SheetContent>
               </Sheet>
-              <main className="relative flex-1 h-full min-w-0 overflow-hidden">
-                <Button variant="ghost" size="icon" className="absolute top-4 left-4 z-30 lg:hidden text-muted-foreground rounded-xl" onClick={() => setIsProjectSheetOpen(true)}><PanelLeftOpen className="size-5" /></Button>
-                <SmartEduArtifact canGenerateHtml={canGenerateHtml} isHtmlGenerationPending={lessonConfirmed && isLoading} isLoading={isLoading} isRestoringVersion={isRestoringArtifactVersionState} lifecycle={effectiveArtifactLifecycle} projectId={projectId} onGenerateHtml={() => { void generateHtmlFromLesson(); }} onRestoreArtifactVersion={(snapshot) => { void handleRestoreArtifactVersion(snapshot); }} />
+              <main className="relative h-full min-w-0 flex-1 overflow-hidden">
+                <Button
+                  className="absolute left-4 top-4 z-30 rounded-xl text-muted-foreground lg:hidden"
+                  onClick={() => setIsProjectSheetOpen(true)}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <PanelLeftOpen className="size-5" />
+                </Button>
+                <SmartEduArtifact
+                  canGenerateHtml={canGenerateHtml}
+                  isHtmlGenerationPending={lessonConfirmed && isLoading}
+                  isLoading={isLoading}
+                  isRestoringVersion={isRestoringArtifactVersionState}
+                  lifecycle={effectiveArtifactLifecycle}
+                  onGenerateHtml={() => {
+                    void generateHtmlFromLesson();
+                  }}
+                  onRestoreArtifactVersion={(snapshot) => {
+                    void handleRestoreArtifactVersion(snapshot);
+                  }}
+                  projectId={projectId}
+                />
               </main>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
       {authDialog}
     </div>
   );
 }
 
-export default function SmartEduWorkspace() {
-  return <AppContent />;
+export default function SmartEduWorkspace(props: SmartEduWorkspaceProps) {
+  return <AppContent {...props} />;
 }

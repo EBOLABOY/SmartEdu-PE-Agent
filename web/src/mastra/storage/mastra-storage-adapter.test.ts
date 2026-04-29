@@ -6,51 +6,41 @@ import {
   type MastraMessage,
 } from "./mastra-storage-adapter";
 
-// ---------------------------------------------------------------------------
-// extractUiMessageId 无法直接导入（非导出），通过构造行为间接验证
-// ---------------------------------------------------------------------------
-
 function buildTestMessage(overrides: Partial<MastraMessage> = {}): MastraMessage {
   return {
     id: "msg-001",
     threadId: "project-aaa",
     role: "user",
-    content: "三年级篮球运球",
+    content: "三年级排球双循环赛制",
     createdAt: new Date().toISOString(),
     ...overrides,
   };
 }
 
-// ---------------------------------------------------------------------------
-// createMastraStorageAdapter 工厂函数
-// ---------------------------------------------------------------------------
-
 describe("createMastraStorageAdapter", () => {
-  it("Supabase 客户端为 null 时返回 null", () => {
+  it("returns null when supabase client is unavailable", () => {
     expect(createMastraStorageAdapter(null)).toBeNull();
   });
 
-  it("Supabase 客户端存在时返回适配器实例", () => {
+  it("returns an adapter instance when supabase client exists", () => {
     const mockSupabase = {} as never;
     const adapter = createMastraStorageAdapter(mockSupabase);
+
     expect(adapter).toBeInstanceOf(SupabaseMastraStorageAdapter);
   });
 });
 
-// ---------------------------------------------------------------------------
-// listMessages — 历史查询与映射
-// ---------------------------------------------------------------------------
-
 describe("SupabaseMastraStorageAdapter.listMessages", () => {
-  it("没有数据时返回空数组", async () => {
+  it("returns an empty array when there are no active messages", async () => {
+    const limitFn = vi.fn().mockResolvedValue({ data: [], error: null });
+    const orderFn = vi.fn().mockReturnValue({ limit: limitFn });
+    const activeEqFn = vi.fn().mockReturnValue({ order: orderFn });
+    const projectEqFn = vi.fn().mockReturnValue({ eq: activeEqFn });
+
     const mockSupabase = {
       from: vi.fn(() => ({
         select: () => ({
-          eq: () => ({
-            order: () => ({
-              limit: () => Promise.resolve({ data: [], error: null }),
-            }),
-          }),
+          eq: projectEqFn,
         }),
       })),
     } as never;
@@ -58,10 +48,12 @@ describe("SupabaseMastraStorageAdapter.listMessages", () => {
     const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
     const result = await adapter.listMessages({ threadId: "project-aaa" });
 
+    expect(projectEqFn).toHaveBeenCalledWith("project_id", "project-aaa");
+    expect(activeEqFn).toHaveBeenCalledWith("is_active", true);
     expect(result).toEqual([]);
   });
 
-  it("查询包含指定 order 并将结果反转为正序", async () => {
+  it("reads only active messages and reorders them into chronological order", async () => {
     const dbRows = [
       {
         ui_message_id: "msg-002",
@@ -85,12 +77,13 @@ describe("SupabaseMastraStorageAdapter.listMessages", () => {
 
     const limitFn = vi.fn().mockResolvedValue({ data: dbRows, error: null });
     const orderFn = vi.fn().mockReturnValue({ limit: limitFn });
-    const eqFn = vi.fn().mockReturnValue({ order: orderFn });
+    const activeEqFn = vi.fn().mockReturnValue({ order: orderFn });
+    const projectEqFn = vi.fn().mockReturnValue({ eq: activeEqFn });
 
     const mockSupabase = {
       from: vi.fn(() => ({
         select: () => ({
-          eq: eqFn,
+          eq: projectEqFn,
         }),
       })),
     } as never;
@@ -98,33 +91,33 @@ describe("SupabaseMastraStorageAdapter.listMessages", () => {
     const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
     const result = await adapter.listMessages({ threadId: "project-aaa", limit: 10 });
 
-    expect(eqFn).toHaveBeenCalledWith("project_id", "project-aaa");
+    expect(projectEqFn).toHaveBeenCalledWith("project_id", "project-aaa");
+    expect(activeEqFn).toHaveBeenCalledWith("is_active", true);
     expect(orderFn).toHaveBeenCalledWith("created_at", { ascending: false });
     expect(limitFn).toHaveBeenCalledWith(10);
-
     expect(result).toHaveLength(2);
-    // 验证反转：原本 dbRows[0] 是 msg-002，返回的第一条应该是 msg-001
-    expect(result[0].id).toBe("msg-001");
-    expect(result[0].role).toBe("user");
-    expect(result[0].metadata?.uiMessageId).toBe("msg-001");
-    expect(result[0].metadata?.uiMessage).toBe('{"type":"stringified"}');
-
-    expect(result[1].id).toBe("msg-002");
-    expect(result[1].content).toBe("这是第二条");
-    expect(result[1].metadata?.uiMessage).toEqual({ foo: "bar" });
+    expect(result[0]).toMatchObject({
+      id: "msg-001",
+      role: "user",
+      content: "这是第一条",
+    });
+    expect(result[0]?.metadata?.uiMessage).toBe('{"type":"stringified"}');
+    expect(result[1]).toMatchObject({
+      id: "msg-002",
+      role: "assistant",
+      content: "这是第二条",
+    });
+    expect(result[1]?.metadata?.uiMessage).toEqual({ foo: "bar" });
   });
 });
 
-// ---------------------------------------------------------------------------
-// saveMessages — upsert 行构造
-// ---------------------------------------------------------------------------
-
 describe("SupabaseMastraStorageAdapter.saveMessages", () => {
-  it("空消息数组时不触发数据库操作", async () => {
-    const mockSupabase = {} as never;
+  it("does nothing when the input message list is empty", async () => {
+    const mockSupabase = {
+      from: vi.fn(),
+    } as never;
     const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
 
-    // 不应抛错
     await expect(
       adapter.saveMessages({
         threadId: "project-aaa",
@@ -132,10 +125,11 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
         messages: [],
       }),
     ).resolves.toBeUndefined();
+
+    expect(mockSupabase.from).not.toHaveBeenCalled();
   });
 
-  it("消息写入时调用 conversations 查询和 messages upsert", async () => {
-    const upsertFn = vi.fn().mockResolvedValue({ error: null });
+  it("upserts the active branch and deactivates stale messages", async () => {
     const conversationSelectResult = {
       data: {
         id: "conv-001",
@@ -147,7 +141,18 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
       error: null,
     };
 
-    // 构造 Supabase mock 链式调用
+    const upsertFn = vi.fn().mockResolvedValue({ error: null });
+    const updateInFn = vi.fn().mockResolvedValue({ error: null });
+    const updateEqFn = vi.fn().mockReturnValue({ in: updateInFn });
+    const updateFn = vi.fn().mockReturnValue({ eq: updateEqFn });
+    const activeRows = {
+      data: [{ ui_message_id: "ui-msg-001" }, { ui_message_id: "stale-001" }],
+      error: null,
+    };
+    const activeEqSecondFn = vi.fn().mockResolvedValue(activeRows);
+    const activeEqFirstFn = vi.fn().mockReturnValue({ eq: activeEqSecondFn });
+    const selectFn = vi.fn().mockReturnValue({ eq: activeEqFirstFn });
+
     const mockSupabase = {
       from: vi.fn((table: string) => {
         if (table === "conversations") {
@@ -166,6 +171,8 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
 
         if (table === "messages") {
           return {
+            select: selectFn,
+            update: updateFn,
             upsert: upsertFn,
           };
         }
@@ -175,7 +182,6 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
     } as never;
 
     const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await adapter.saveMessages({
       threadId: "project-aaa",
@@ -189,36 +195,36 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
       ],
     });
 
-    // 验证 upsert 被调用，且包含正确的 onConflict 策略
     expect(upsertFn).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
-          project_id: "project-aaa",
-          ui_message_id: "ui-msg-001",
           conversation_id: "conv-001",
           created_by: "user-001",
+          is_active: true,
+          project_id: "project-aaa",
           request_id: "req-001",
           role: "user",
+          ui_message_id: "ui-msg-001",
         }),
       ]),
       { onConflict: "project_id,ui_message_id" },
     );
-
-    warnSpy.mockRestore();
+    expect(selectFn).toHaveBeenCalledWith("ui_message_id");
+    expect(activeEqFirstFn).toHaveBeenCalledWith("project_id", "project-aaa");
+    expect(activeEqSecondFn).toHaveBeenCalledWith("is_active", true);
+    expect(updateFn).toHaveBeenCalledWith({ is_active: false });
+    expect(updateEqFn).toHaveBeenCalledWith("project_id", "project-aaa");
+    expect(updateInFn).toHaveBeenCalledWith("ui_message_id", ["stale-001"]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// createThread — conversations 表 INSERT
-// ---------------------------------------------------------------------------
-
 describe("SupabaseMastraStorageAdapter.createThread", () => {
-  it("创建 Thread 时将 threadId 映射为 project_id", async () => {
+  it("maps threadId to project_id when creating a conversation", async () => {
     const insertedRow = {
       id: "conv-new-001",
       created_by: "user-001",
       project_id: "project-bbb",
-      title: "三年级篮球",
+      title: "三年级排球",
       created_at: "2026-04-28T00:00:00Z",
       updated_at: "2026-04-28T00:00:00Z",
     };
@@ -239,19 +245,20 @@ describe("SupabaseMastraStorageAdapter.createThread", () => {
     const thread = await adapter.createThread({
       threadId: "project-bbb",
       resourceId: "user-001",
-      title: "三年级篮球",
+      title: "三年级排球",
     });
 
-    expect(thread.id).toBe("conv-new-001");
-    expect(thread.resourceId).toBe("user-001");
-    expect(thread.title).toBe("三年级篮球");
+    expect(thread).toMatchObject({
+      id: "conv-new-001",
+      resourceId: "user-001",
+      title: "三年级排球",
+    });
     expect(thread.metadata?.projectId).toBe("project-bbb");
-
     expect(insertFn).toHaveBeenCalledWith(
       expect.objectContaining({
         created_by: "user-001",
         project_id: "project-bbb",
-        title: "三年级篮球",
+        title: "三年级排球",
       }),
     );
   });

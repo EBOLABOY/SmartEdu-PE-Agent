@@ -1,5 +1,4 @@
 import type { DeepPartial } from "ai";
-import { deepmergeCustom } from "deepmerge-ts";
 
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
@@ -87,49 +86,84 @@ const STREAMING_COMPETITION_LESSON_DRAFT: CompetitionLessonPlan = {
   },
 };
 
-const mergeLessonDraft = deepmergeCustom<unknown>({
-  filterValues: (values) => values.filter((value) => value !== undefined && value !== null),
-  mergeArrays: (values, utils) => {
-    const length = values.reduce((max, value) => Math.max(max, value.length), 0);
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
-    return Array.from({ length }, (_, index) => {
-      const indexedValues = values
-        .map((value) => value[index])
-        .filter((value) => value !== undefined && value !== null);
+function pickLastDefinedValue(values: unknown[]) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = values[index];
 
-      return indexedValues.length > 1 ? utils.deepmerge(...indexedValues) : indexedValues[0];
-    }).filter((value) => value !== undefined);
-  },
-  mergeOthers: (values) => {
-    for (let index = values.length - 1; index >= 0; index -= 1) {
-      const value = values[index];
-
-      if (typeof value === "string") {
-        if (value.trim()) {
-          return value;
-        }
-        continue;
-      }
-
-      if (typeof value === "number") {
-        if (Number.isFinite(value)) {
-          return value;
-        }
-        continue;
-      }
-
-      return value;
+    if (value === undefined || value === null) {
+      continue;
     }
 
+    if (typeof value === "string") {
+      if (value.trim()) {
+        return value;
+      }
+      continue;
+    }
+
+    if (typeof value === "number") {
+      if (Number.isFinite(value)) {
+        return value;
+      }
+      continue;
+    }
+
+    return value;
+  }
+
+  return undefined;
+}
+
+function mergeLessonDraftArrays(values: unknown[][]): unknown[] {
+  const length = values.reduce((max, value) => Math.max(max, value.length), 0);
+
+  return Array.from({ length }, (_, index) =>
+    mergeLessonDraftValue(...values.map((value) => value[index])),
+  ).filter((value) => value !== undefined);
+}
+
+function mergeLessonDraftObjects(values: Array<Record<string, unknown>>) {
+  const result: Record<string, unknown> = {};
+  const keys = new Set(values.flatMap((value) => Object.keys(value)));
+
+  for (const key of keys) {
+    const mergedValue = mergeLessonDraftValue(...values.map((value) => value[key]));
+
+    if (mergedValue !== undefined) {
+      result[key] = mergedValue;
+    }
+  }
+
+  return result;
+}
+
+function mergeLessonDraftValue(...values: unknown[]): unknown {
+  const definedValues = values.filter((value) => value !== undefined && value !== null);
+
+  if (!definedValues.length) {
     return undefined;
-  },
-});
+  }
+
+  if (definedValues.every(Array.isArray)) {
+    return mergeLessonDraftArrays(definedValues);
+  }
+
+  if (definedValues.every(isPlainObject)) {
+    return mergeLessonDraftObjects(definedValues);
+  }
+
+  return pickLastDefinedValue(definedValues);
+}
 
 export function buildCompetitionLessonDraft(
   partial?: DeepPartial<CompetitionLessonPlan>,
   fallback: CompetitionLessonPlan = STREAMING_COMPETITION_LESSON_DRAFT,
 ): CompetitionLessonPlan {
-  const parsed = competitionLessonPlanSchema.safeParse(mergeLessonDraft(fallback, partial ?? {}));
+  const parsed = competitionLessonPlanSchema.safeParse(mergeLessonDraftValue(fallback, partial ?? {}));
 
   return parsed.success ? parsed.data : fallback;
 }

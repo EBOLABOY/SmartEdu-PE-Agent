@@ -18,7 +18,7 @@ export function createPeTeacherAgent(model: AgentConfig["model"]) {
     instructions: PE_TEACHER_SYSTEM_PROMPT,
     model,
     tools: {
-      searchStandardsTool,
+      searchStandards: searchStandardsTool,
     },
   });
 }

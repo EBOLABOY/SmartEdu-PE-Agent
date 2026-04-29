@@ -154,10 +154,9 @@ export const workflowStandardsSnapshotSchema = z
   .object({
     corpusId: z.string().trim().min(1),
     displayName: z.string().trim().min(1),
-    sourceName: z.string().trim().min(1),
     issuer: z.string().trim().min(1),
     version: z.string().trim().min(1),
-    url: z.string().url(),
+    url: z.string().url().nullable(),
     references: z.array(workflowStandardsReferenceSchema),
   })
   .strict();

@@ -17,6 +17,11 @@ describe("artifact-ui-hints", () => {
     expect(
       createUiHintSignature({
         requestId: "request-1",
+      } as any),
+    ).toBeUndefined();
+    expect(
+      createUiHintSignature({
+        requestId: "request-1",
         uiHints: [
           {
             action: "switch_tab",

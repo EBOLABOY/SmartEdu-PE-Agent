@@ -29,7 +29,6 @@ const messageWithStandards = {
         standards: {
           corpusId: "cn-compulsory-2022",
           displayName: "义务教育体育与健康课程标准",
-          sourceName: "义务教育体育与健康课程标准（2022年版）",
           issuer: "中华人民共和国教育部",
           version: "2022",
           url: "https://example.com/standards.pdf",

@@ -1,13 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  createProjectChatPersistence,
   deriveConversationTitle,
   getPersistedMessageContent,
 } from "@/lib/persistence/project-chat-store";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 
 describe("project-chat-store", () => {
-  it("会把首条用户消息压缩为会话标题", () => {
+  it("derives the conversation title from the first user message", () => {
     const title = deriveConversationTitle([
       {
         id: "user-1",
@@ -15,7 +16,7 @@ describe("project-chat-store", () => {
         parts: [
           {
             type: "text",
-            text: "  三年级   篮球运球接力   课堂需要   配合计时器与分组积分   ",
+            text: "  三年级  篮球运球接力   课堂需要  配合计时器与分组积分   ",
           },
         ],
       } as SmartEduUIMessage,
@@ -24,7 +25,7 @@ describe("project-chat-store", () => {
     expect(title).toBe("三年级 篮球运球接力 课堂需要 配合计时器与分组积分");
   });
 
-  it("会从结构化 lesson Artifact 中提取消息摘要", () => {
+  it("extracts summary text from a structured lesson artifact", () => {
     const content = getPersistedMessageContent({
       id: "assistant-lesson",
       role: "assistant",
@@ -49,7 +50,7 @@ describe("project-chat-store", () => {
     expect(content).toContain("篮球运球接力");
   });
 
-  it("会把结构化 html Artifact 摘要化为工作台提示文案", () => {
+  it("collapses html artifacts into a workspace hint", () => {
     const content = getPersistedMessageContent({
       id: "assistant-html",
       role: "assistant",
@@ -72,5 +73,82 @@ describe("project-chat-store", () => {
     } as SmartEduUIMessage);
 
     expect(content).toBe("互动大屏已生成，请在右侧工作台查看。");
+  });
+
+  it("appends active messages without deactivating the existing branch", async () => {
+    const conversationUpdateEqFn = vi.fn().mockResolvedValue({ error: null });
+    const conversationUpdateFn = vi.fn().mockReturnValue({ eq: conversationUpdateEqFn });
+    const conversationSelectLimitFn = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: "conv-001",
+          title: "旧标题",
+          updated_at: "2026-04-29T10:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    const conversationSelectOrderFn = vi.fn().mockReturnValue({ limit: conversationSelectLimitFn });
+    const conversationSelectEqFn = vi.fn().mockReturnValue({ order: conversationSelectOrderFn });
+
+    const existingRowsInFn = vi.fn().mockResolvedValue({
+      data: [{ ui_message_id: "user-1" }],
+      error: null,
+    });
+    const existingRowsEqFn = vi.fn().mockReturnValue({ in: existingRowsInFn });
+    const messageSelectFn = vi
+      .fn()
+      .mockReturnValueOnce({ eq: existingRowsEqFn });
+    const upsertFn = vi.fn().mockResolvedValue({ error: null });
+
+    const mockSupabase = {
+      from: vi.fn((table: string) => {
+        if (table === "conversations") {
+          return {
+            select: () => ({
+              eq: conversationSelectEqFn,
+            }),
+            update: conversationUpdateFn,
+          };
+        }
+
+        if (table === "messages") {
+          return {
+            select: messageSelectFn,
+            upsert: upsertFn,
+          };
+        }
+
+        return {};
+      }),
+    } as never;
+
+    const persistence = createProjectChatPersistence(mockSupabase, "user-001");
+
+    await persistence?.saveMessages({
+      projectId: "project-aaa",
+      requestId: "req-001",
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          parts: [{ type: "text", text: "三年级排球双循环赛制" }],
+        } as SmartEduUIMessage,
+      ],
+    });
+
+    expect(upsertFn).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          conversation_id: "conv-001",
+          created_by: "user-001",
+          is_active: true,
+          project_id: "project-aaa",
+          request_id: "req-001",
+          ui_message_id: "user-1",
+        }),
+      ]),
+      { onConflict: "project_id,ui_message_id" },
+    );
   });
 });

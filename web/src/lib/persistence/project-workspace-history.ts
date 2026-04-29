@@ -20,6 +20,8 @@ import { toIsoDateTime } from "@/lib/date-time";
 import type { Database } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
+import { resolveArtifactVersionContent } from "./artifact-content-store";
+
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
 type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
@@ -44,12 +46,16 @@ function normalizeDisplayTitle(value: string | null | undefined) {
     return normalized;
   }
 
-  return `${normalized.slice(0, MAX_PROJECT_DISPLAY_TITLE_LENGTH - 1).trimEnd()}…`;
+  return `${normalized
+    .slice(0, MAX_PROJECT_DISPLAY_TITLE_LENGTH - 1)
+    .trimEnd()}…`;
 }
 
 function parseLessonPlan(content: string): CompetitionLessonPlan | undefined {
   try {
-    return competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(content)));
+    return competitionLessonPlanSchema.parse(
+      JSON.parse(extractJsonObjectText(content)),
+    );
   } catch {
     return undefined;
   }
@@ -78,7 +84,8 @@ function deriveLessonTitleOverride(input: {
       ? parseLessonPlan(input.lessonContent)?.title
       : undefined;
 
-  return normalizeDisplayTitle(lessonTitle) ?? normalizeDisplayTitle(input.artifactTitle);
+  return normalizeDisplayTitle(lessonTitle) ??
+    normalizeDisplayTitle(input.artifactTitle);
 }
 
 function toPersistedProjectSummary(
@@ -165,7 +172,14 @@ async function getLessonTitleOverridesByProjectId(
       throw versionRowsError;
     }
 
-    ((versionRows ?? []) as ArtifactVersionRow[]).forEach((version) => {
+    (
+      await Promise.all(
+        ((versionRows ?? []) as ArtifactVersionRow[]).map(async (version) => ({
+          ...version,
+          content: await resolveArtifactVersionContent(version),
+        })),
+      )
+    ).forEach((version) => {
       versionById.set(version.id, version);
     });
   }
@@ -205,7 +219,9 @@ export async function listProjectsForUser(supabase: SmartEduSupabaseClient) {
     projectRows.map((row) => row.id),
   );
 
-  return projectRows.map((row) => toPersistedProjectSummary(row, titleOverrides.get(row.id)));
+  return projectRows.map((row) =>
+    toPersistedProjectSummary(row, titleOverrides.get(row.id)),
+  );
 }
 
 export async function getProjectWorkspaceHistory(
@@ -223,8 +239,13 @@ export async function getProjectWorkspaceHistory(
   }
 
   const projectRow = project as ProjectRow;
-  const titleOverrides = await getLessonTitleOverridesByProjectId(supabase, [projectRow.id]);
-  const persistedProject = toPersistedProjectSummary(projectRow, titleOverrides.get(projectRow.id));
+  const titleOverrides = await getLessonTitleOverridesByProjectId(supabase, [
+    projectRow.id,
+  ]);
+  const persistedProject = toPersistedProjectSummary(
+    projectRow,
+    titleOverrides.get(projectRow.id),
+  );
   const { data: conversations, error: conversationsError } = await supabase
     .from("conversations")
     .select("*")
@@ -236,7 +257,8 @@ export async function getProjectWorkspaceHistory(
     throw conversationsError;
   }
 
-  const latestConversation = (conversations as ConversationRow[] | null | undefined)?.[0];
+  const latestConversation =
+    (conversations as ConversationRow[] | null | undefined)?.[0];
 
   if (!latestConversation) {
     return {
@@ -250,6 +272,7 @@ export async function getProjectWorkspaceHistory(
     .from("messages")
     .select("*")
     .eq("conversation_id", latestConversation.id)
+    .eq("is_active", true)
     .order("created_at", { ascending: true });
 
   if (messageRowsError) {
@@ -257,8 +280,14 @@ export async function getProjectWorkspaceHistory(
   }
 
   const messages = (
-    await Promise.all(((messageRows ?? []) as MessageRow[]).map((row) => toPersistedProjectMessage(row)))
-  ).filter((message): message is PersistedProjectMessage => message !== null);
+    await Promise.all(
+      ((messageRows ?? []) as MessageRow[]).map((row) =>
+        toPersistedProjectMessage(row),
+      ),
+    )
+  ).filter(
+    (message): message is PersistedProjectMessage => message !== null,
+  );
 
   return {
     project: persistedProject,

@@ -9,7 +9,6 @@ export const AI_GATEWAY_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 
 const AI_GATEWAY_PATHS = new Set([
   "/api/chat",
-  "/api/competition-lesson-patches",
 ]);
 
 export function isAiGatewayRateLimitedPath(pathname: string) {

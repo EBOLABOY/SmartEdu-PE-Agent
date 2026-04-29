@@ -9,8 +9,10 @@ import {
 
 import {
   buildStandardsContextFromReferences,
+} from "../knowledge/standards_context";
+import {
   resolveStandardsMarketMetadata,
-} from "../knowledge/local_scoring_standards_provider";
+} from "../knowledge/standards_market_metadata";
 import {
   getStandardsRetrievalProvider,
 } from "../knowledge/provider-registry";
@@ -31,8 +33,10 @@ export type {
 
 export {
   buildStandardsContextFromReferences,
+} from "../knowledge/standards_context";
+export {
   resolveStandardsMarketMetadata,
-} from "../knowledge/local_scoring_standards_provider";
+} from "../knowledge/standards_market_metadata";
 
 export async function searchStandards(
   query: string,
@@ -60,22 +64,22 @@ export const searchStandardsToolInputSchema = z.object({
 });
 
 export const searchStandardsTool = createTool({
-  id: "search-standards",
+  id: "searchStandards",
   description: "检索体育课程标准结构化条目，用于生成合规体育课时计划，并返回目标市场与语料解析信息。",
   inputSchema: searchStandardsToolInputSchema,
   outputSchema: z.object({
     requestedMarket: standardsMarketSchema,
     resolvedMarket: standardsMarketSchema,
-    corpus: z.object({
-      corpusId: z.string(),
-      displayName: z.string(),
-      officialStatus: z.string(),
-      sourceName: z.string(),
-      issuer: z.string(),
-      version: z.string(),
-      url: z.string().url(),
-      availability: z.enum(["ready", "planned"]),
-    }),
+    corpus: z
+      .object({
+        corpusId: z.string(),
+        displayName: z.string(),
+        issuer: z.string(),
+        version: z.string(),
+        url: z.string().url().nullable(),
+        availability: z.enum(["ready", "planned"]),
+      })
+      .nullable(),
     warning: z.string().optional(),
     references: z.array(
       z.object({

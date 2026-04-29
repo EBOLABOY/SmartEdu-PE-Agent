@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  resetStandardsRetrievalProvider,
+  setStandardsRetrievalProvider,
+} from "@/mastra/knowledge/provider-registry";
 import { createLessonAuthoringWorkflow } from "@/mastra/workflows/lesson_workflow";
 
 function createIntentResult(
@@ -14,47 +18,6 @@ function createIntentResult(
   };
 }
 
-function createReadyIntake() {
-  return {
-    intake: {
-      readyToGenerate: true,
-      known: {
-        grade: "五年级",
-        topic: "篮球行进间运球",
-        studentCount: 40,
-      },
-      missing: [],
-      clarifications: [],
-      summary: "五年级篮球行进间运球，学生人数默认 40 人。",
-      reason: "年级和课题已明确。",
-    },
-    modelMessageCount: 1,
-    source: "agent" as const,
-  };
-}
-
-function createClarifyIntake() {
-  return {
-    intake: {
-      readyToGenerate: false,
-      known: {
-        topic: "篮球课",
-      },
-      missing: ["grade" as const],
-      clarifications: [
-        {
-          field: "grade" as const,
-          question: "本次课是几年级？",
-        },
-      ],
-      reason: "缺少年级。",
-    },
-    memoryUsed: true,
-    modelMessageCount: 1,
-    source: "agent" as const,
-  };
-}
-
 function createUserMessage(text: string) {
   return {
     id: "user-1",
@@ -64,18 +27,28 @@ function createUserMessage(text: string) {
 }
 
 describe("lesson-workflow", () => {
-  it("会规划 structured-only 推流链路，并把 ready intake brief 注入系统提示词", async () => {
+  afterEach(() => {
+    resetStandardsRetrievalProvider();
+  });
+
+  it("generate_lesson 直接进入 structured-only 生成链路，并把 memory 注入系统提示词", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_lesson"));
-    const runLessonIntake = vi.fn().mockResolvedValue(createReadyIntake());
-    const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
+    const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
         query: "五年级篮球运球课",
         mode: "lesson",
         market: "cn-compulsory-2022",
+        memory: {
+          defaults: {
+            grade: "五年级",
+            topic: "篮球行进间运球",
+          },
+          updatedAt: "2026-04-28T03:00:00.000Z",
+        },
         messages: [createUserMessage("五年级篮球行进间运球")],
-        requestId: "request-workflow-ready",
+        requestId: "request-workflow-generate",
       },
     });
 
@@ -85,16 +58,12 @@ describe("lesson-workflow", () => {
       return;
     }
 
-    expect(runLessonIntake).toHaveBeenCalledOnce();
     expect(runLessonIntent).toHaveBeenCalledOnce();
     expect(result.result.decision.type).toBe("generate");
     expect(result.result.decision.intentResult.intent).toBe("generate_lesson");
-    if (result.result.decision.type !== "generate") {
-      return;
-    }
-    expect(result.result.decision.intakeResult?.intake.summary).toContain("五年级篮球行进间运球");
-    expect(result.result.system).toContain("课时计划生成 Agent 启动前的信息收集结果");
-    expect(result.result.system).toContain("searchStandardsTool 已挂载给当前 Agent");
+    expect(result.result.system).toContain("工作流不再在正式生成前执行信息收集或必要追问");
+    expect(result.result.system).toContain("项目教学记忆");
+    expect(result.result.system).toContain("searchStandards");
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
     expect(result.result.generationPlan.protocolVersion).toBe("structured-v1");
     expect(result.result.generationPlan.outputProtocol).toBe("lesson-json");
@@ -108,30 +77,25 @@ describe("lesson-workflow", () => {
       },
     ]);
     expect(result.result.trace.map((entry) => entry.step)).toEqual(
-      expect.arrayContaining(["delegate-standards-tooling"]),
+      expect.arrayContaining(["delegate-standards-tooling", "construct-generation-prompt"]),
     );
     expect(result.result.trace.map((entry) => entry.step)).not.toEqual(
-      expect.arrayContaining(["retrieve-standards-context"]),
+      expect.arrayContaining(["prepare-intent-clarification-response"]),
     );
   });
 
-  it("信息不足时返回 clarify decision，并跳过正式生成准备分支", async () => {
-    const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_lesson"));
-    const runLessonIntake = vi.fn().mockResolvedValue(createClarifyIntake());
-    const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
+  it("入口意图不明确时返回 clarify decision，并跳过正式生成分支", async () => {
+    const runLessonIntent = vi.fn().mockResolvedValue(
+      createIntentResult("clarify", "还无法判断你是要生成、修改还是咨询。", 0.36),
+    );
+    const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
-        query: "帮我写一个篮球课课时计划",
+        query: "帮我看看这个",
         mode: "lesson",
         market: "cn-compulsory-2022",
-        messages: [createUserMessage("帮我写一个篮球课课时计划")],
-        memory: {
-          defaults: {
-            grade: "五年级",
-          },
-          updatedAt: "2026-04-28T03:00:00.000Z",
-        },
+        messages: [createUserMessage("帮我看看这个")],
         requestId: "request-workflow-clarify",
       },
     });
@@ -145,32 +109,26 @@ describe("lesson-workflow", () => {
     expect(result.result.decision).toMatchObject({
       type: "clarify",
       intentResult: expect.objectContaining({
-        intent: "generate_lesson",
+        intent: "clarify",
       }),
-      text: expect.stringContaining("本次课是几年级？"),
+      text: expect.stringContaining("请明确你是要"),
     });
-    expect(result.result.uiHints).toEqual([]);
     expect(result.result.trace).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          step: "collect-lesson-requirements",
-          status: "blocked",
-        }),
-        expect.objectContaining({
-          step: "prepare-clarification-response",
+          step: "prepare-intent-clarification-response",
           status: "blocked",
         }),
       ]),
     );
     expect(result.result.trace.map((entry) => entry.step)).not.toEqual(
-      expect.arrayContaining(["retrieve-standards-context", "construct-generation-prompt", "validate-generation-safety"]),
+      expect.arrayContaining(["construct-generation-prompt", "validate-generation-safety"]),
     );
   });
 
-  it("会拦截未确认课时计划的 HTML 生成，且不运行 lesson intake", async () => {
+  it("未提供已确认课时计划时会拦截 HTML 生成", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_html"));
-    const runLessonIntake = vi.fn();
-    const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
+    const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
@@ -180,7 +138,6 @@ describe("lesson-workflow", () => {
       },
     });
 
-    expect(runLessonIntake).not.toHaveBeenCalled();
     expect(result.status).toBe("failed");
 
     if (result.status === "failed" && result.error instanceof Error) {
@@ -190,8 +147,7 @@ describe("lesson-workflow", () => {
 
   it("会把结构化大屏模块计划注入 HTML 阶段系统提示词", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_html"));
-    const runLessonIntake = vi.fn();
-    const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
+    const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
@@ -211,7 +167,6 @@ describe("lesson-workflow", () => {
       },
     });
 
-    expect(runLessonIntake).not.toHaveBeenCalled();
     expect(result.status).toBe("success");
 
     if (result.status !== "success") {
@@ -229,16 +184,49 @@ describe("lesson-workflow", () => {
       },
     ]);
     expect(result.result.system).toContain("data-support-module");
-    expect(result.result.system).toContain("比赛展示：supportModule=scoreboard");
+    expect(result.result.system).toContain("比赛展示");
     expect(result.result.system).toContain("durationSeconds=360");
   });
 
-  it("咨询课标时会直接返回 respond decision，并跳过 intake", async () => {
+  it("咨询课标时直接返回 respond decision", async () => {
+    setStandardsRetrievalProvider({
+      id: "workflow-test-provider",
+      search: vi.fn().mockResolvedValue({
+        requestedMarket: "cn-compulsory-2022",
+        resolvedMarket: "cn-compulsory-2022",
+        references: [
+          {
+            id: "std-1",
+            title: "课堂安全与风险防控",
+            summary: "强调场地器材检查与风险预案。",
+            source: "义务教育体育与健康课程标准（2022年版）",
+            officialVersion: "2022",
+            gradeBands: ["5-6年级"],
+            module: "安全管理",
+            sectionPath: ["课程实施", "安全教育与风险防控"],
+            keywords: ["安全", "风险"],
+            requirements: ["课前检查场地器材。"],
+            teachingImplications: ["明确安全距离和轮换规则。"],
+            citation: "课程标准 第10页",
+            score: 88,
+          },
+        ],
+        context: "1. 课堂安全与风险防控\n   课标要求：\n    - 课前检查场地器材。",
+        corpus: {
+          corpusId: "cn-compulsory-2022",
+          displayName: "义务教育体育与健康课程标准（2022年版）结构化知识库",
+          issuer: "中华人民共和国教育部",
+          version: "2022",
+          url: "https://example.com/standards.pdf",
+          availability: "ready" as const,
+        },
+      }),
+    });
+
     const runLessonIntent = vi.fn().mockResolvedValue(
       createIntentResult("consult_standards", "用户主要在询问课标与安全依据。"),
     );
-    const runLessonIntake = vi.fn();
-    const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
+    const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {
@@ -255,7 +243,6 @@ describe("lesson-workflow", () => {
       return;
     }
 
-    expect(runLessonIntake).not.toHaveBeenCalled();
     expect(result.result.decision).toMatchObject({
       type: "respond",
       intentResult: expect.objectContaining({
@@ -264,15 +251,14 @@ describe("lesson-workflow", () => {
       text: expect.stringContaining("课标"),
     });
     expect(result.result.uiHints).toEqual([]);
-    expect(result.result.standards.referenceCount).toBeGreaterThan(0);
+    expect(result.result.standards.referenceCount).toBe(1);
   });
 
-  it("入口意图置信度较低时会附带提示性 toast hint", async () => {
+  it("入口意图置信度较低时会附带 toast hint", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(
       createIntentResult("patch_lesson", "用户似乎想修改现有课时计划中的安全要求。", 0.41),
     );
-    const runLessonIntake = vi.fn();
-    const workflow = createLessonAuthoringWorkflow({ runLessonIntent, runLessonIntake });
+    const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
     const result = await run.start({
       inputData: {

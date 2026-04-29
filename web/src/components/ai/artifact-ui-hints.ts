@@ -19,7 +19,7 @@ export type ArtifactUiHintHandlers = {
 export function createUiHintSignature(
   trace: Pick<WorkflowTraceData, "requestId" | "uiHints"> | undefined,
 ) {
-  if (!trace || trace.uiHints.length === 0) {
+  if (!trace || !trace.uiHints || trace.uiHints.length === 0) {
     return undefined;
   }
 

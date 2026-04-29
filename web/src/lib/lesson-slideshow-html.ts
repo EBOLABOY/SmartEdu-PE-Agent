@@ -124,7 +124,7 @@ const BOARD_KEYWORDS = /战术|攻防|配合|跑位|阵型|路线|传接球|掩�
 function stripMarkdown(value: string) {
   return value
     .replace(/<[^>]+>/g, "")
-    .replace(/[`*_#>-]/g, "")
+    .replace(/[`*_#>]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }

@@ -26,8 +26,8 @@ describe("pe_teacher", () => {
     const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
     const globalTools = mastra.listTools();
 
-    expect(Object.keys(agentTools ?? {})).toContain("searchStandardsTool");
-    expect(globalTools).toHaveProperty("searchStandardsTool");
+    expect(Object.keys(agentTools ?? {})).toContain("searchStandards");
+    expect(globalTools).toHaveProperty("searchStandards");
   });
 
   it("lesson 阶段要求流式输出带 lessonPlan 的 AgentLessonGeneration JSON", () => {

@@ -1,9 +1,13 @@
 "use client";
 
 import { Info, Maximize2, Minimize2, ShieldAlert } from "lucide-react";
-import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
+import React, { useEffect, useState, type CSSProperties } from "react";
 
-import { analyzeSandboxHtml, injectSandboxCsp } from "@/lib/sandbox-html";
+import {
+  analyzeBrowserSandboxHtml,
+  injectBrowserSandboxCsp,
+  type SandboxSecurityReport,
+} from "@/lib/browser-sandbox-html";
 import {
   buildSandboxFrameStyle,
   calculateSandboxScale,
@@ -14,6 +18,10 @@ import {
 interface IframeSandboxProps {
   htmlContent: string;
 }
+
+type SandboxRenderState = SandboxSecurityReport & {
+  sandboxedHtml: string;
+};
 
 function useSandboxViewport() {
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
@@ -157,13 +165,35 @@ function SandboxChrome({
   );
 }
 
+function useSandboxSecurity(htmlContent: string) {
+  const [report, setReport] = useState<SandboxRenderState | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+      return;
+    }
+
+    const securityReport = analyzeBrowserSandboxHtml(htmlContent);
+
+    setReport({
+      ...securityReport,
+      sandboxedHtml:
+        securityReport.blockedReasons.length === 0
+          ? injectBrowserSandboxCsp(htmlContent)
+          : "",
+    });
+  }, [htmlContent]);
+
+  return report;
+}
+
 export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
   const [setViewportElement, frameStyle, isFullscreen, toggleFullscreen] = useSandboxViewport();
-  const securityReport = useMemo(() => analyzeSandboxHtml(htmlContent), [htmlContent]);
-  const sandboxedHtml = useMemo(
-    () => (securityReport.blockedReasons.length === 0 ? injectSandboxCsp(htmlContent) : ""),
-    [htmlContent, securityReport.blockedReasons.length],
-  );
+  const securityReport = useSandboxSecurity(htmlContent);
+
+  if (!securityReport) {
+    return <div className="h-full w-full animate-pulse bg-slate-950" />;
+  }
 
   if (securityReport.blockedReasons.length > 0) {
     return <BlockedSandboxState blockedReasons={securityReport.blockedReasons} />;
@@ -171,7 +201,7 @@ export default function IframeSandbox({ htmlContent }: IframeSandboxProps) {
 
   return (
     <div ref={setViewportElement} className="relative h-full w-full overflow-hidden bg-slate-950">
-      <SandboxFrame frameStyle={frameStyle} htmlContent={sandboxedHtml} />
+      <SandboxFrame frameStyle={frameStyle} htmlContent={securityReport.sandboxedHtml} />
       <SandboxChrome
         frameStyle={frameStyle}
         isFullscreen={isFullscreen}

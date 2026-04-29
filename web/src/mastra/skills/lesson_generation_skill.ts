@@ -1,5 +1,4 @@
 import type { MastraModelOutput } from "@mastra/core/stream";
-import { toAISdkStream } from "@mastra/ai-sdk";
 import {
   convertToModelMessages,
   type DeepPartial,
@@ -14,6 +13,7 @@ import {
   unwrapAgentLessonGenerationResult,
 } from "@/lib/competition-lesson-contract";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
@@ -184,12 +184,10 @@ async function streamCompetitionLessonPlanWithMastraAgent({
     partialOutputStream: createLessonPartialOutputStream(result),
     stream:
       toUIMessageStream?.(result) ??
-      (toAISdkStream(result, {
-        from: "agent",
-        version: "v6",
+      createMastraAgentUiMessageStream(result, {
         sendStart: false,
         sendFinish: true,
-      }) as ReadableStream<UIMessageChunk>),
+      }),
   };
 }
 

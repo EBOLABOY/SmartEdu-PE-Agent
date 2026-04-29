@@ -7,12 +7,15 @@ import { toIsoDateTime } from "@/lib/date-time";
 import type { Database } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
+import { resolveArtifactVersionContent } from "./artifact-content-store";
+
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
 
 function toPersistedArtifactVersion(
   row: ArtifactVersionRow,
   artifact?: ArtifactRow,
+  resolvedContent = row.content,
 ): PersistedArtifactVersion {
   const parsedTrace = workflowTraceDataSchema.safeParse(row.workflow_trace);
 
@@ -22,7 +25,7 @@ function toPersistedArtifactVersion(
     stage: row.stage,
     ...(artifact?.title ? { title: artifact.title } : {}),
     contentType: row.content_type,
-    content: row.content,
+    content: resolvedContent,
     status: row.status,
     protocolVersion: row.protocol_version,
     versionNumber: row.version_number,
@@ -37,15 +40,17 @@ export async function listArtifactVersionsByProject(
   supabase: SmartEduSupabaseClient,
   projectId: string,
 ) {
-  const [{ data: versionRows, error: versionRowsError }, { data: artifactRows, error: artifactRowsError }] =
-    await Promise.all([
-      supabase
-        .from("artifact_versions")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: true }),
-      supabase.from("artifacts").select("*").eq("project_id", projectId),
-    ]);
+  const [
+    { data: versionRows, error: versionRowsError },
+    { data: artifactRows, error: artifactRowsError },
+  ] = await Promise.all([
+    supabase
+      .from("artifact_versions")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true }),
+    supabase.from("artifacts").select("*").eq("project_id", projectId),
+  ]);
 
   if (versionRowsError) {
     throw versionRowsError;
@@ -56,9 +61,15 @@ export async function listArtifactVersionsByProject(
   }
 
   const artifactById = new Map((artifactRows ?? []).map((row) => [row.id, row]));
+  const hydratedVersionRows = await Promise.all(
+    (versionRows ?? []).map(async (row) => ({
+      ...row,
+      content: await resolveArtifactVersionContent(row),
+    })),
+  );
 
-  return (versionRows ?? []).map((row) =>
-    toPersistedArtifactVersion(row, artifactById.get(row.artifact_id)),
+  return hydratedVersionRows.map((row) =>
+    toPersistedArtifactVersion(row, artifactById.get(row.artifact_id), row.content),
   );
 }
 
