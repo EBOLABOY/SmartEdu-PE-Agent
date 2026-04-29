@@ -5,6 +5,10 @@ import {
   buildPeTeacherSystemPrompt,
   PE_TEACHER_SYSTEM_PROMPT,
 } from "../skills/pe_teacher_prompt";
+import {
+  submitHtmlScreenTool,
+  submitLessonPlanTool,
+} from "../tools/output_tools";
 import { searchStandardsTool } from "../tools/search_standards";
 
 export type { GenerationMode, PeTeacherContext } from "@/lib/lesson-authoring-contract";
@@ -19,6 +23,8 @@ export function createPeTeacherAgent(model: AgentConfig["model"]) {
     model,
     tools: {
       searchStandards: searchStandardsTool,
+      submit_html_screen: submitHtmlScreenTool,
+      submit_lesson_plan: submitLessonPlanTool,
     },
   });
 }

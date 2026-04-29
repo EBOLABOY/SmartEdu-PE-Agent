@@ -59,6 +59,7 @@ import {
   type PersistedProjectSummary,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
+import { buildLessonChatRequestBody } from "@/lib/workspace/chat-request";
 import { isLikelyLessonPatchInstruction } from "@/lib/workspace/prompt-intent";
 const EMPTY_MESSAGES: SmartEduUIMessage[] = [];
 const EMPTY_PERSISTED_VERSIONS: PersistedArtifactVersion[] = [];
@@ -392,6 +393,7 @@ function AppContent({
   const submitPrompt = async (submission: PromptSubmission, explicitProjectId = projectId) => {
     const prompt = normalizePromptSubmission(submission);
     const normalizedQuery = prompt.text.trim();
+    const currentLessonPlan = effectiveArtifactLifecycle.lessonPlan;
 
     if (!normalizedQuery || isLoading) {
       return;
@@ -400,7 +402,7 @@ function AppContent({
     setIsProjectSheetOpen(false);
 
     const shouldPatchCurrentLesson =
-      Boolean(effectiveArtifactLifecycle.lessonPlan) &&
+      Boolean(currentLessonPlan) &&
       isLikelyLessonPatchInstruction(normalizedQuery);
 
     if (shouldPatchCurrentLesson) {
@@ -471,7 +473,14 @@ function AppContent({
       prompt.files.length
         ? { text: normalizedQuery, files: prompt.files }
         : { text: normalizedQuery },
-      { body: withProjectContext({ mode: "lesson" }, explicitProjectId) },
+      {
+        body: withProjectContext(
+          buildLessonChatRequestBody({
+            currentLessonPlan,
+          }),
+          explicitProjectId,
+        ),
+      },
     );
   };
 

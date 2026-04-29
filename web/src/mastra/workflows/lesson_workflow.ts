@@ -32,7 +32,7 @@ import {
 import { runStandardsRetrievalSkill } from "../skills/standards_retrieval_skill";
 import { resolveStandardsMarketMetadata } from "../tools/search_standards";
 
-const MAX_WORKFLOW_AGENT_STEPS = 3;
+const MAX_WORKFLOW_AGENT_STEPS = 5;
 const LOW_CONFIDENCE_INTENT_THRESHOLD = 0.7;
 
 export const lessonWorkflowInputSchema = z.object({

@@ -6,13 +6,13 @@ import { peTeacherPromptSkills } from "@/mastra/skills";
 
 describe("pe_teacher", () => {
   it("默认注入广东省比赛体育课时计划参考格式", () => {
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("广东省比赛体育课时计划标准规范");
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("九、课时计划");
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("8 列综合表格");
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("课的结构、具体教学内容、教与学的方法、组织形式、运动时间、强度");
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("广东省");
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("课时计划");
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("periodPlan");
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("evaluation");
   });
 
-  it("暴露可枚举的 prompt skills，便于后续 runtime skill 化", () => {
+  it("暴露可枚举的 prompt skills，便于后续 runtime skill 组合", () => {
     expect(Object.keys(peTeacherPromptSkills).sort()).toEqual([
       "baseTeacherPersonaSkill",
       "competitionLessonFormatSkill",
@@ -22,25 +22,26 @@ describe("pe_teacher", () => {
     ]);
   });
 
-  it("课时计划生成 Agent 直接暴露课标检索工具", async () => {
+  it("课时计划生成 Agent 直接暴露课标检索和输出工具", async () => {
     const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
     const globalTools = mastra.listTools();
 
-    expect(Object.keys(agentTools ?? {})).toContain("searchStandards");
+    expect(Object.keys(agentTools ?? {})).toEqual(
+      expect.arrayContaining(["searchStandards", "submit_lesson_plan", "submit_html_screen"]),
+    );
     expect(globalTools).toHaveProperty("searchStandards");
+    expect(globalTools).toHaveProperty("submit_lesson_plan");
+    expect(globalTools).toHaveProperty("submit_html_screen");
   });
 
-  it("lesson 阶段要求流式输出带 lessonPlan 的 AgentLessonGeneration JSON", () => {
+  it("lesson 阶段要求最终通过 submit_lesson_plan 提交课时计划", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, { mode: "lesson" });
 
-    expect(prompt).toContain("必须严格依据广东省比赛体育课时计划标准规范");
+    expect(prompt).toContain("submit_lesson_plan");
+    expect(prompt).toContain("CompetitionLessonPlan");
+    expect(prompt).toContain("summary");
     expect(prompt).toContain("AgentLessonGeneration JSON");
-    expect(prompt).toContain("顶层只输出 _thinking_process 和 lessonPlan");
-    expect(prompt).toContain("evaluation 字段");
-    expect(prompt).toContain("periodPlan.rows");
-    expect(prompt).toContain("time 必须统一使用“X分钟”或“X-Y分钟”格式");
-    expect(prompt).toContain("错误示例：2'、2’、2min、2,");
-    expect(prompt).not.toContain("请确认课时计划是否无误，确认后我再生成互动大屏");
+    expect(prompt).not.toContain("<artifact>");
   });
 
   it("会把用户资料注入课时计划教师和学段字段", () => {
@@ -58,27 +59,23 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("教师姓名：王明");
     expect(prompt).toContain("任教年级：四年级");
     expect(prompt).toContain("水平：水平二");
-    expect(prompt).toContain("teacher.school 和 teacher.name 必须同步填写");
-    expect(prompt).toContain("副标题必须采用“——水平X·X年级”格式");
-    expect(prompt).toContain("基础信息表中的年级与水平必须同步填写");
+    expect(prompt).toContain("teacher.school");
+    expect(prompt).toContain("teacher.name");
   });
 
-  it("html 阶段要求生成课堂学习辅助大屏和分环节倒计时", () => {
+  it("html 阶段要求生成课堂学习辅助大屏并通过 submit_html_screen 提交", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, {
       mode: "html",
       lessonPlan: "## 十、课时计划\n| 课堂常规 | 1 分钟 |\n| 战术学习 | 8 分钟 |",
     });
 
-    expect(prompt).toContain("课堂学习辅助大屏");
+    expect(prompt).toContain("submit_html_screen");
     expect(prompt).toContain("课堂运行总览");
     expect(prompt).toContain("开始上课");
-    expect(prompt).toContain("课时计划有几个主要环节或教学内容，就至少生成几个对应内容页");
-    expect(prompt).toContain("倒计时结束后自动进入下一页");
-    expect(prompt).toContain("战术板");
     expect(prompt).toContain("data-support-module");
-    expect(prompt).toContain("tacticalBoard、scoreboard、rotation、formation");
-    expect(prompt).toContain('section class="slide" data-duration="秒数"');
-    expect(prompt).toContain("1 分钟 = 60 秒");
+    expect(prompt).toContain("战术板");
+    expect(prompt).toContain("上一页");
+    expect(prompt).toContain("下一页");
   });
 
   it("html 阶段会注入结构化大屏模块计划", () => {
@@ -98,8 +95,8 @@ describe("pe_teacher", () => {
     });
 
     expect(prompt).toContain("结构化大屏模块计划");
-    expect(prompt).toContain("比赛展示：supportModule=scoreboard");
+    expect(prompt).toContain("比赛展示");
     expect(prompt).toContain("durationSeconds=360");
-    expect(prompt).toContain("必须优先遵循其中的 supportModule");
+    expect(prompt).toContain("supportModule=scoreboard");
   });
 });

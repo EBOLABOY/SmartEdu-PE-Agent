@@ -45,22 +45,62 @@ export type LessonIntentGenerateRunner = (
 ) => Promise<LessonIntent>;
 
 const DEFAULT_LESSON_INTENT_MODEL_ID = "gpt-4.1-mini";
+const htmlIntentPattern = /互动大屏|大屏|投屏|html|页面|课件|幻灯|屏幕|展示页/i;
+const patchLessonPattern =
+  /修改|调整|补充|优化|完善|删改|删除|替换|改成|修正|更新|局部|润色|重写其中/;
+const standardsConsultPattern =
+  /课标|标准|依据|要求|核心素养|合规|安全性|安全吗|是否符合|适不适合|评价依据|政策/;
+const standardsGenerationPattern = /生成|写|设计|输出|产出|大屏|html/;
+const vagueClarifyPattern = /这个|那个|看一个|看看|先帮我/;
+const explicitLessonTermsPattern = /(课时计划|教案|大屏|课标|标准)/;
 
 function getLessonIntentModelId() {
   return process.env.AI_LESSON_INTENT_MODEL ?? process.env.AI_MODEL ?? DEFAULT_LESSON_INTENT_MODEL_ID;
 }
 
+function hasConfirmedLessonPlan(lessonPlan?: string) {
+  return Boolean(lessonPlan?.trim());
+}
+
+function isHtmlIntentQuery(query: string) {
+  return htmlIntentPattern.test(query);
+}
+
+function isStandardsConsultQuery(query: string) {
+  return standardsConsultPattern.test(query) && !standardsGenerationPattern.test(query);
+}
+
+function resolveDeterministicIntent(input: {
+  lessonPlan?: string;
+  mode: GenerationMode;
+  query: string;
+}): LessonIntent | null {
+  if (input.mode === "html" || hasConfirmedLessonPlan(input.lessonPlan)) {
+    return null;
+  }
+
+  if (isHtmlIntentQuery(input.query) || isStandardsConsultQuery(input.query)) {
+    return null;
+  }
+
+  return {
+    intent: "generate_lesson",
+    confidence: 1,
+    reason: "当前工作区还没有已确认的课时计划，直接进入新课时生成流程。",
+  };
+}
+
 function buildIntentSystemPrompt() {
   return [
     "你是体育教学智能体的入口意图分类器。",
-    "你只能在以下意图中四选一并返回结构化对象：clarify、generate_lesson、patch_lesson、generate_html、consult_standards。",
+    "你只能在以下意图中选择一个并返回结构化对象：clarify、generate_lesson、patch_lesson、generate_html、consult_standards。",
     "判定规则：",
-    "1. 用户要求写新课时计划、补全完整课时计划、重新生成课时计划，或仍沿用“教案”说法表达同类诉求时，使用 generate_lesson。",
-    "2. 用户要求修改、调整、补充、删改现有课时计划，或修改现有教案，且当前已有 lessonPlan，可使用 patch_lesson。",
-    "3. 用户要求生成互动大屏、课堂投屏 HTML、页面、课件，使用 generate_html。",
-    "4. 用户主要在咨询课标、安全性、是否合规、教学依据、评价依据，而不是要求生成成品，使用 consult_standards。",
-    "5. 用户意图过于模糊、缺少任务方向，或只是泛泛追问下一步怎么做，使用 clarify。",
-    "6. confidence 使用 0 到 1 的小数；reason 简明说明判定依据。",
+    "1. 用户要新写、补全、重写课时计划或教案时，返回 generate_lesson。",
+    "2. 用户要修改、调整、补充现有课时计划，且当前已有 lessonPlan 时，返回 patch_lesson。",
+    "3. 用户要生成互动大屏、投屏 HTML、页面或课件时，返回 generate_html。",
+    "4. 用户主要在咨询课标、安全、合规、评价依据，而不是要你产出成品时，返回 consult_standards。",
+    "5. 用户意图过于模糊、缺少任务方向时，返回 clarify。",
+    "6. confidence 使用 0 到 1 的小数；reason 用一句简洁的话说明依据。",
   ].join("\n");
 }
 
@@ -107,12 +147,9 @@ function inferLessonIntentHeuristically(input: {
   query: string;
 }): LessonIntent {
   const normalized = input.query.trim().toLowerCase();
-  const hasLessonPlan = Boolean(input.lessonPlan?.trim());
+  const hasLessonPlan = hasConfirmedLessonPlan(input.lessonPlan);
 
-  if (
-    input.mode === "html" ||
-    /互动大屏|大屏|投屏|html|页面|课件|幻灯|屏幕|展示页/.test(input.query)
-  ) {
+  if (input.mode === "html" || isHtmlIntentQuery(input.query)) {
     return {
       intent: "generate_html",
       confidence: 0.86,
@@ -120,10 +157,7 @@ function inferLessonIntentHeuristically(input: {
     };
   }
 
-  if (
-    hasLessonPlan &&
-    /修改|调整|补充|优化|完善|删改|删除|替换|改成|修正|更新|局部|润色|重写其中/.test(input.query)
-  ) {
+  if (hasLessonPlan && patchLessonPattern.test(input.query)) {
     return {
       intent: "patch_lesson",
       confidence: 0.82,
@@ -131,10 +165,7 @@ function inferLessonIntentHeuristically(input: {
     };
   }
 
-  if (
-    /课标|标准|依据|要求|核心素养|合规|安全吗|安全吗|是否符合|适不适合|评价依据|政策/.test(input.query) &&
-    !/生成|写|设计|输出|产出|大屏|html/.test(input.query)
-  ) {
+  if (isStandardsConsultQuery(input.query)) {
     return {
       intent: "consult_standards",
       confidence: 0.8,
@@ -142,14 +173,11 @@ function inferLessonIntentHeuristically(input: {
     };
   }
 
-  if (
-    (!normalized || /这个|那个|看一下|看看|先帮我/.test(input.query)) &&
-    !/(课时计划|教案|大屏|课标|标准)/.test(input.query)
-  ) {
+  if ((!normalized || vagueClarifyPattern.test(input.query)) && !explicitLessonTermsPattern.test(input.query)) {
     return {
       intent: "clarify",
       confidence: 0.62,
-      reason: "用户请求方向不够明确，需先澄清是生成、修改还是咨询。",
+      reason: "用户请求方向还不够明确，需要先澄清是生成、修改还是咨询。",
     };
   }
 
@@ -172,6 +200,16 @@ export async function runLessonIntentSkill(input: {
   query: string;
   requestId: string;
 }): Promise<LessonIntent> {
+  const deterministicIntent = resolveDeterministicIntent({
+    lessonPlan: input.lessonPlan,
+    mode: input.mode,
+    query: input.query,
+  });
+
+  if (deterministicIntent) {
+    return deterministicIntent;
+  }
+
   const modelMessages = await buildIntentModelMessages(input.messages);
 
   try {

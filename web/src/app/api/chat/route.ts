@@ -13,6 +13,7 @@ import {
   takeAiRateLimitToken,
 } from "@/lib/api/ai-guard";
 import { CHAT_REQUEST_MAX_BYTES, jsonRequestErrorResponse, readJsonRequest } from "@/lib/api/request";
+import { resolveRequestedLessonPlan } from "@/lib/persistence/current-lesson-plan";
 import { createLessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import { createLessonMemoryPersistence } from "@/lib/persistence/lesson-memory-store";
 import { createProjectChatPersistence } from "@/lib/persistence/project-chat-store";
@@ -159,6 +160,11 @@ export async function POST(request: Request) {
         ? await memoryPersistence.loadMemory({ projectId: parsedBody.data.projectId })
         : undefined;
     const profileContext = await loadUserProfileContext(supabase, user?.id);
+    const lessonPlan = await resolveRequestedLessonPlan({
+      explicitLessonPlan: parsedBody.data.lessonPlan,
+      projectId: parsedBody.data.projectId,
+      supabase,
+    });
     const mergedContext = {
       ...profileContext,
       ...parsedBody.data.context,
@@ -188,7 +194,7 @@ export async function POST(request: Request) {
       projectId: parsedBody.data.projectId,
       mode: parsedBody.data.mode,
       context: mergedContext,
-      lessonPlan: parsedBody.data.lessonPlan,
+      lessonPlan,
       screenPlan: parsedBody.data.screenPlan,
       market: parsedBody.data.market,
     });

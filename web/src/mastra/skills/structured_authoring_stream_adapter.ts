@@ -24,6 +24,12 @@ import {
 } from "@/lib/lesson-authoring-contract";
 import { buildLessonSlideshowHtml, isPptStyleLessonHtml } from "@/lib/lesson-slideshow-html";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
+import {
+  SUBMIT_HTML_SCREEN_TOOL_NAME,
+  SUBMIT_LESSON_PLAN_TOOL_NAME,
+  parseSubmitHtmlScreenToolInput,
+  parseSubmitLessonPlanToolInput,
+} from "@/mastra/tools/output_tools";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import {
@@ -125,6 +131,25 @@ function readStructuredOutputPart(part: UIMessageChunk) {
   return candidate.data?.object;
 }
 
+function readToolInputPart(part: UIMessageChunk) {
+  const candidate = part as {
+    input?: unknown;
+    toolCallId?: string;
+    toolName?: string;
+    type?: string;
+  };
+
+  if (candidate.type !== "tool-input-available" || typeof candidate.toolName !== "string") {
+    return undefined;
+  }
+
+  return {
+    input: candidate.input,
+    toolCallId: typeof candidate.toolCallId === "string" ? candidate.toolCallId : undefined,
+    toolName: candidate.toolName,
+  };
+}
+
 function buildLessonJsonArtifactContent(structuredOutput: unknown) {
   try {
     const parsed = unwrapAgentLessonGenerationResult(structuredOutput);
@@ -137,13 +162,12 @@ function buildLessonJsonArtifactContent(structuredOutput: unknown) {
     return {
       content: JSON.stringify(parsed),
       contentType: "lesson-json" as const,
-      detail: "模型输出已通过 CompetitionLessonPlan JSON schema 校验。",
       title: parsed.title,
       warningText: undefined,
     };
   } catch (error) {
     throw new Error(
-      `模型未返回合法结构化 CompetitionLessonPlan 对象。请查看字段错误后重新生成：${
+      `模型未返回合法的 CompetitionLessonPlan。请检查字段后重试：${
         error instanceof Error ? error.message : "unknown-error"
       }`,
     );
@@ -154,7 +178,7 @@ function buildHtmlExtractionWarning(leadingText: string, trailingText: string) {
   const warnings: string[] = [];
 
   if (leadingText) {
-    warnings.push("检测到 HTML 前存在解释性文本，系统已自动剥离。");
+    warnings.push("检测到 HTML 前存在说明性文本，系统已自动剥离。");
   }
 
   if (trailingText) {
@@ -168,10 +192,7 @@ function joinWarnings(...warnings: Array<string | undefined>) {
   return warnings.filter(Boolean).join(" ");
 }
 
-function shouldForwardAssistantText(
-  mode: GenerationMode,
-  workflow: LessonWorkflowOutput,
-) {
+function shouldForwardAssistantText(mode: GenerationMode, workflow: LessonWorkflowOutput) {
   return mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text";
 }
 
@@ -269,6 +290,12 @@ export function createStructuredAuthoringStreamAdapter({
       let rawText = "";
       let hasFinished = false;
       let structuredLessonOutput: unknown;
+      let submittedHtmlDocument:
+        | {
+            html: string;
+            summary: string;
+          }
+        | undefined;
       const forwardAssistantText = shouldForwardAssistantText(mode, workflow);
       const [inspectionStream, passthroughStream] = stream.tee();
       const reader = inspectionStream.getReader();
@@ -293,7 +320,6 @@ export function createStructuredAuthoringStreamAdapter({
 
       const writeLessonDraftArtifact = (partial?: DeepPartial<CompetitionLessonPlan>) => {
         latestLessonDraft = buildCompetitionLessonDraft(partial, latestLessonDraft);
-
         writeArtifact(
           buildArtifactData(workflow, {
             content: JSON.stringify(latestLessonDraft),
@@ -322,7 +348,7 @@ export function createStructuredAuthoringStreamAdapter({
             createTraceEntry(
               "persist-artifact-version",
               "blocked",
-              `Artifact 持久化失败，但主生成结果已保留：${
+              `Artifact 持久化失败，但主结果已保留：${
                 error instanceof Error ? error.message : "unknown-error"
               }`,
             ),
@@ -353,6 +379,70 @@ export function createStructuredAuthoringStreamAdapter({
         finishStream("error");
       };
 
+      const handleOutputToolInput = (part: UIMessageChunk) => {
+        const toolInput = readToolInputPart(part);
+
+        if (!toolInput) {
+          return true;
+        }
+
+        try {
+          if (toolInput.toolName === SUBMIT_LESSON_PLAN_TOOL_NAME) {
+            const submission = parseSubmitLessonPlanToolInput(toolInput.input);
+
+            structuredLessonOutput = submission.lessonPlan;
+            runtimeTrace.push(
+              createTraceEntry(
+                "submit-lesson-plan-tool",
+                "success",
+                `已收到 submit_lesson_plan 工具提交：${submission.summary}`,
+              ),
+            );
+            writeArtifact(
+              buildArtifactData(workflow, {
+                content: JSON.stringify(competitionLessonPlanSchema.parse(submission.lessonPlan)),
+                contentType: "lesson-json",
+                isComplete: false,
+                status: "streaming",
+                title: submission.lessonPlan.title,
+              }),
+            );
+            writeTrace("generation");
+            return true;
+          }
+
+          if (toolInput.toolName === SUBMIT_HTML_SCREEN_TOOL_NAME) {
+            const submission = parseSubmitHtmlScreenToolInput(toolInput.input);
+
+            submittedHtmlDocument = submission;
+            runtimeTrace.push(
+              createTraceEntry(
+                "submit-html-screen-tool",
+                "success",
+                `已收到 submit_html_screen 工具提交：${submission.summary}`,
+              ),
+            );
+            writeArtifact(
+              buildArtifactData(workflow, {
+                content: submission.html,
+                contentType: "html",
+                isComplete: true,
+                status: "ready",
+              }),
+            );
+            writeTrace("generation");
+          }
+
+          return true;
+        } catch (error) {
+          writeStreamError(
+            "validate-output-tool-input",
+            error instanceof Error ? error.message : "输出工具输入校验失败。",
+          );
+          return false;
+        }
+      };
+
       const finalizeLessonArtifact = async () => {
         let trustedLessonOutput = structuredLessonOutput;
 
@@ -362,7 +452,7 @@ export function createStructuredAuthoringStreamAdapter({
           } catch (error) {
             writeStreamError(
               "lesson-repair-failed",
-              error instanceof Error ? error.message : "结构化课时计划自动修复失败。",
+              error instanceof Error ? error.message : "结构化课时计划修复失败。",
             );
             return false;
           }
@@ -371,7 +461,7 @@ export function createStructuredAuthoringStreamAdapter({
         if (trustedLessonOutput === undefined) {
           writeStreamError(
             "validate-lesson-output",
-            "模型未返回可用的结构化课时计划对象；系统已禁止回退到原始文本 JSON 解析。",
+            "模型未通过 submit_lesson_plan 提交课时计划，且未返回兼容结构化输出。",
           );
           return false;
         }
@@ -392,23 +482,30 @@ export function createStructuredAuthoringStreamAdapter({
       };
 
       const finalizeHtmlArtifact = async () => {
-        const extraction = extractHtmlDocumentFromText(rawText);
+        let htmlDocument = submittedHtmlDocument?.html;
+        let extractedWarning: string | undefined;
 
-        if (!extraction.html.trim()) {
-          writeStreamError("extract-html-document", "模型响应中未提取到 HTML 文档，无法生成互动大屏。");
-          return false;
+        if (!htmlDocument) {
+          const extraction = extractHtmlDocumentFromText(rawText);
+
+          if (!extraction.html.trim()) {
+            writeStreamError("extract-html-document", "模型响应中未提取到 HTML 文档，无法生成互动大屏。");
+            return false;
+          }
+
+          if (!extraction.htmlComplete) {
+            writeStreamError("extract-html-document", "模型 HTML 文档未完整关闭，已拒绝使用截断的大屏内容。");
+            return false;
+          }
+
+          htmlDocument = extraction.html;
+          extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
         }
 
-        if (!extraction.htmlComplete) {
-          writeStreamError("extract-html-document", "模型 HTML 文档未完整关闭，已拒绝使用截断的大屏内容。");
-          return false;
-        }
-
-        const extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
-        const shouldUseFallback = !isPptStyleLessonHtml(extraction.html);
-        const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : extraction.html;
+        const shouldUseFallback = !isPptStyleLessonHtml(htmlDocument);
+        const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : htmlDocument;
         const fallbackWarning = shouldUseFallback
-          ? "模型 HTML 未满足课堂学习辅助大屏结构或学生理解支撑要求，系统已按已确认课时计划生成多页倒计时学习辅助大屏兜底版本。"
+          ? "模型 HTML 未满足课堂学习辅助大屏要求，系统已按课时计划生成兜底版本。"
           : undefined;
 
         if (shouldUseFallback) {
@@ -416,16 +513,15 @@ export function createStructuredAuthoringStreamAdapter({
             createTraceEntry(
               "html-slideshow-fallback",
               "success",
-              "已将不合格 HTML 替换为多页课堂倒计时学习辅助大屏。",
+              "已将不合格 HTML 替换为课堂学习辅助大屏兜底版本。",
             ),
           );
-          // 运行期原地注入兜底 Toast，与 Repair Toast 保持一致的注入模式
           effectiveUiHints.push({
             action: "show_toast",
             params: {
               level: "warning",
               title: "互动大屏已自动替换",
-              description: "模型 HTML 未满足课堂辅助要求，系统已按课时计划生成兜底版本。",
+              description: "模型 HTML 未满足课堂辅助要求，系统已生成兜底版本。",
             },
           });
         }
@@ -460,17 +556,18 @@ export function createStructuredAuthoringStreamAdapter({
         }
       };
 
-      const createLessonDraftTask = () => consumeLessonDraftStream().catch((error) => {
-        runtimeTrace.push(
-          createTraceEntry(
-            "lesson-draft-stream",
-            "blocked",
-            `课时计划草稿流已中断，最终 JSON 校验仍将继续：${
-              error instanceof Error ? error.message : "unknown-error"
-            }`,
-          ),
-        );
-      });
+      const createLessonDraftTask = () =>
+        consumeLessonDraftStream().catch((error) => {
+          runtimeTrace.push(
+            createTraceEntry(
+              "lesson-draft-stream",
+              "blocked",
+              `课时计划草稿流已中断，但最终 JSON 校验仍将继续：${
+                error instanceof Error ? error.message : "unknown-error"
+              }`,
+            ),
+          );
+        });
 
       writeTrace("workflow");
       writer.merge(
@@ -481,11 +578,11 @@ export function createStructuredAuthoringStreamAdapter({
 
       if (!runtimeTrace.some((entry) => entry.step === "agent-stream-started")) {
         runtimeTrace.push(
-        createTraceEntry(
-          "agent-stream-started",
-          "running",
-          mode === "html" ? "已开始生成互动大屏 HTML 文档流。" : "已开始流式生成 CompetitionLessonPlan JSON。",
-        ),
+          createTraceEntry(
+            "agent-stream-started",
+            "running",
+            mode === "html" ? "已开始生成互动大屏 HTML 流。" : "已开始生成课时计划流。",
+          ),
         );
       }
       writeTrace("generation");
@@ -500,19 +597,24 @@ export function createStructuredAuthoringStreamAdapter({
           }
 
           const part = value;
+
+          if (!handleOutputToolInput(part)) {
+            return;
+          }
+
           const structuredOutput = mode === "lesson" ? readStructuredOutputPart(part) : undefined;
 
           if (structuredOutput !== undefined) {
             structuredLessonOutput = structuredOutput;
-            const lessonPlan = unwrapAgentLessonGenerationResult(structuredOutput);
+            const parsedLessonPlan = unwrapAgentLessonGenerationResult(structuredOutput);
 
             writeArtifact(
               buildArtifactData(workflow, {
-                content: JSON.stringify(competitionLessonPlanSchema.parse(lessonPlan)),
+                content: JSON.stringify(competitionLessonPlanSchema.parse(parsedLessonPlan)),
                 contentType: "lesson-json",
                 isComplete: false,
                 status: "streaming",
-                title: lessonPlan.title,
+                title: parsedLessonPlan.title,
               }),
             );
           }
@@ -521,7 +623,7 @@ export function createStructuredAuthoringStreamAdapter({
             case "text-delta": {
               rawText += part.delta;
 
-              if (mode === "lesson") {
+              if (mode === "lesson" || submittedHtmlDocument) {
                 break;
               }
 
@@ -542,7 +644,7 @@ export function createStructuredAuthoringStreamAdapter({
 
             case "start-step": {
               runtimeTrace.push(
-                createTraceEntry("agent-step-start", "running", "模型进入新一步推理或工具执行阶段。"),
+                createTraceEntry("agent-step-start", "running", "模型进入新一轮推理或工具执行阶段。"),
               );
               writeTrace("generation");
               break;
@@ -557,11 +659,9 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "error": {
-              const errorText = part.errorText;
-
-              runtimeTrace.push(createTraceEntry("agent-stream-error", "failed", errorText));
+              runtimeTrace.push(createTraceEntry("agent-stream-error", "failed", part.errorText));
               writeTrace("failed");
-              writer.write({ type: "error", errorText });
+              writer.write({ type: "error", errorText: part.errorText });
               finishStream("error");
               return;
             }
@@ -614,14 +714,14 @@ export function createStructuredAuthoringStreamAdapter({
             createTraceEntry(
               "generation-stream-closed-without-finish",
               "blocked",
-              "底层模型流未发送 finish chunk；系统已完成最终校验后再关闭响应。",
+              "底层模型流未发送 finish chunk；系统已完成最终校验后关闭响应。",
             ),
           );
           writeTrace("completed");
           finishStream("stop");
         }
       } catch (error) {
-        const errorText = error instanceof Error ? error.message : "体育课时计划生成流异常。";
+        const errorText = error instanceof Error ? error.message : "课时计划生成流异常。";
 
         runtimeTrace.push(createTraceEntry("generation-stream-exception", "failed", errorText));
         writeTrace("failed");

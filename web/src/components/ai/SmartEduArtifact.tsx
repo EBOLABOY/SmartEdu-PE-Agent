@@ -34,7 +34,6 @@ import { useArtifactController } from "@/components/ai/useArtifactController";
 import ArtifactTextViewer from "@/components/ai/renderers/ArtifactTextViewer";
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
-import NativeLessonScreen from "@/components/ai/renderers/NativeLessonScreen";
 import CompetitionLessonPrintFrame from "@/components/lesson-print/CompetitionLessonPrintFrame";
 import type { ArtifactView } from "@/lib/lesson-authoring-contract";
 import { Badge } from "@/components/ui/badge";
@@ -204,8 +203,6 @@ export default function SmartEduArtifact({
     printLesson,
     restoreSelectedVersion,
     selectedVersion,
-    selectedVersionScreenKey,
-    selectedVersionSlideData,
     setSelectedVersionId,
     setView,
   } = useArtifactController({
@@ -221,12 +218,6 @@ export default function SmartEduArtifact({
   const hasHtml = htmlDisplay.hasHtml;
   const lessonDisplay = getLessonArtifactDisplayState(lifecycle);
   const competitionLessonPlan = lifecycle.lessonPlan;
-  const nativeSlideData = lifecycle.slideData ?? [];
-  const hasNativeScreen = nativeSlideData.length > 0;
-  const nativeScreenKey = nativeSlideData
-    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.supportModule}`)
-    .join("|");
-  const nativeScreenTitle = competitionLessonPlan?.title ?? "课堂学习辅助大屏";
 
   return (
     <Artifact className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none">
@@ -337,44 +328,19 @@ export default function SmartEduArtifact({
             </TabsContent>
 
             <TabsContent className="m-0 h-full p-3 lg:p-4" value="canvas">
-              <div className={`h-full overflow-hidden rounded-2xl border border-border/80 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)] ${hasHtml || hasNativeScreen || htmlDisplay.shouldShowGenerationPanel ? "min-h-[560px] bg-background" : "bg-card/90"}`}>
-                {htmlDisplay.shouldShowGenerationPanel && !hasNativeScreen ? (
+              <div className={`h-full overflow-hidden rounded-2xl border border-border/80 shadow-[0_18px_70px_-62px_rgba(0,217,146,0.45)] ${hasHtml || htmlDisplay.shouldShowGenerationPanel ? "min-h-[560px] bg-background" : "bg-card/90"}`}>
+                {htmlDisplay.shouldShowGenerationPanel ? (
                   <HtmlGenerationPanel
                     code={streamingHtml}
                     hasPreviousPreview={hasHtml}
                     trace={lifecycle.activeTrace}
                   />
-                ) : hasNativeScreen ? (
-                  <div className="flex h-full flex-col">
-                    <div className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card px-4 py-2 text-foreground">
-                      <div>
-                        <h2 className="text-sm font-semibold">原生互动大屏预览</h2>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          由结构化课时计划数据直接渲染；HTML 仅作为导出兼容文件。
-                        </p>
-                      </div>
-                      {hasHtml ? (
-                        <Button disabled={isExporting} onClick={downloadHtml} size="sm" type="button" variant="outline" className="h-8 gap-1.5">
-                          <Download className="size-3.5" />
-                          {isExporting ? "导出中" : "导出大屏"}
-                        </Button>
-                      ) : htmlDisplay.shouldShowGenerationPanel ? (
-                        <Button disabled size="sm" type="button" variant="outline" className="h-8 gap-1.5">
-                          <Loader2 className="size-3.5 animate-spin" />
-                          生成导出文件
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="min-h-0 flex-1">
-                      <NativeLessonScreen key={nativeScreenKey} slides={nativeSlideData} title={nativeScreenTitle} />
-                    </div>
-                  </div>
                 ) : hasHtml ? (
                   <div className="flex h-full flex-col">
                     <div className="flex shrink-0 items-center justify-between border-b border-border/70 bg-card px-4 py-2 text-foreground">
                       <div>
-                        <h2 className="text-sm font-semibold">旧版 HTML 大屏预览</h2>
-                        <p className="mt-0.5 text-xs text-muted-foreground">当前历史版本缺少结构化课时计划数据，继续使用兼容沙箱。</p>
+                        <h2 className="text-sm font-semibold">{"AI \u751f\u6210\u7684\u4e92\u52a8\u5927\u5c4f"}</h2>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{"\u7531\u6a21\u578b\u751f\u6210\u7684 HTML \u5b9e\u65f6\u6e32\u67d3\u3002"}</p>
                       </div>
                       <Button disabled={isExporting} onClick={downloadHtml} size="sm" type="button" variant="outline" className="h-8 gap-1.5">
                         <Download className="size-3.5" />
@@ -468,14 +434,15 @@ export default function SmartEduArtifact({
                             hasPreviousPreview={hasHtml}
                             trace={selectedVersion.trace}
                           />
-                        ) : selectedVersionSlideData.length ? (
-                          <NativeLessonScreen
-                            key={`${selectedVersion.id}:${selectedVersionScreenKey}`}
-                            slides={selectedVersionSlideData}
-                            title={selectedVersion.lessonPlan?.title ?? nativeScreenTitle}
-                          />
-                        ) : (
+                        ) : selectedVersion.content.trim() ? (
                           <IframeSandbox htmlContent={selectedVersion.content} />
+                        ) : (
+                          <StateNotice
+                            className="m-4 flex h-[calc(100%-2rem)] items-center justify-center"
+                            description={"\u5927\u5c4f\u5185\u5bb9\u4e3a\u7a7a\u3002"}
+                            layout="center"
+                            title={"\u6682\u65e0\u9884\u89c8"}
+                          />
                         )}
                       </div>
                     </div>

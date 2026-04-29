@@ -22,7 +22,7 @@ import { runModelOperationWithRetry } from "./lesson_generation_skill";
 const workflow = {
   system: "system prompt",
   generationPlan: {
-    maxSteps: 3,
+    maxSteps: 5,
   },
 } as LessonWorkflowOutput;
 
@@ -87,7 +87,7 @@ describe("generation skills", () => {
     expect(result.modelMessageCount).toBe(1);
     expect(structuredStream).toHaveBeenCalledWith(
       expect.objectContaining({
-        maxSteps: 3,
+        maxSteps: 5,
         messages: expect.arrayContaining([
           expect.objectContaining({
             role: "user",
@@ -229,13 +229,20 @@ describe("generation skills", () => {
       partials.push(partial);
     }
 
-    expect(result.stream).toBe(convertedStream);
+    const chunks = await readAll(result.stream);
+
     expect(partials).toEqual([]);
     await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text-start", id: "lesson-json" }),
+        expect.objectContaining({ type: "finish", finishReason: "stop" }),
+      ]),
+    );
     expect(agentStream).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ role: "user" })]),
       expect.objectContaining({
-        maxSteps: 3,
+        maxSteps: 5,
         modelSettings: {
           maxRetries: 3,
         },
@@ -246,6 +253,52 @@ describe("generation skills", () => {
         }),
       }),
     );
+  });
+
+  it("lesson generation prefers submit_lesson_plan tool input over legacy structured output", async () => {
+    const submittedLessonPlan = JSON.parse(JSON.stringify(concreteLessonPlan));
+    submittedLessonPlan.title = "tool-submitted-lesson";
+    const convertedStream = new ReadableStream<UIMessageChunk>({
+      start(controller) {
+        controller.enqueue({
+          type: "tool-input-available",
+          toolCallId: "tool-1",
+          toolName: "submit_lesson_plan",
+          input: {
+            lessonPlan: submittedLessonPlan,
+            summary: "使用工具提交最终课时计划",
+          },
+        } as UIMessageChunk);
+        controller.enqueue({ type: "finish", finishReason: "stop" });
+        controller.close();
+      },
+    });
+    const mastraOutput = {
+      object: Promise.resolve({
+        _thinking_process: "legacy fallback",
+        lessonPlan: concreteLessonPlan,
+      }),
+    } as unknown as MastraModelOutput<AgentLessonGenerationResult>;
+    const agentStream = vi.fn().mockResolvedValue(mastraOutput);
+    const toUIMessageStream = vi.fn().mockReturnValue(convertedStream);
+
+    const result = await runLessonGenerationSkill({
+      agentStream,
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          parts: [{ type: "text", text: "生成篮球课" }],
+        },
+      ] as SmartEduUIMessage[],
+      requestId: "request-tool-first",
+      toUIMessageStream,
+      workflow,
+    });
+
+    await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
+      title: "tool-submitted-lesson",
+    });
   });
 
   it("lesson generation maps wrapped partial object stream to lessonPlan drafts", async () => {
@@ -407,7 +460,7 @@ describe("generation skills", () => {
         }),
       ],
       expect.objectContaining({
-        maxSteps: 3,
+        maxSteps: 5,
         system: "system prompt",
       }),
     );

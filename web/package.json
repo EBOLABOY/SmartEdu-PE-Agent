@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "generate:supabase-types": "npx supabase gen types typescript --local --schema public > src/lib/supabase/database.types.ts",
+    "generate:supabase-types": "npx supabase gen types typescript --linked --schema public > src/lib/supabase/database.types.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

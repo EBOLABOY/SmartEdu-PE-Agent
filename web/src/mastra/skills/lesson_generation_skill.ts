@@ -14,6 +14,10 @@ import {
 } from "@/lib/competition-lesson-contract";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
+import {
+  SUBMIT_LESSON_PLAN_TOOL_NAME,
+  parseSubmitLessonPlanToolInput,
+} from "@/mastra/tools/output_tools";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
@@ -147,6 +151,72 @@ function normalizeLessonGenerationStreams(
   return output instanceof ReadableStream ? { stream: output } : output;
 }
 
+function readToolInputPart(part: UIMessageChunk) {
+  const candidate = part as {
+    input?: unknown;
+    toolCallId?: string;
+    toolName?: string;
+    type?: string;
+  };
+
+  if (candidate.type !== "tool-input-available" || typeof candidate.toolName !== "string") {
+    return undefined;
+  }
+
+  return {
+    input: candidate.input,
+    toolCallId: typeof candidate.toolCallId === "string" ? candidate.toolCallId : undefined,
+    toolName: candidate.toolName,
+  };
+}
+
+async function readSubmittedLessonPlanFromToolStream(stream: ReadableStream<UIMessageChunk>) {
+  const reader = stream.getReader();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        return undefined;
+      }
+
+      const toolInput = readToolInputPart(value);
+
+      if (!toolInput || toolInput.toolName !== SUBMIT_LESSON_PLAN_TOOL_NAME) {
+        continue;
+      }
+
+      return parseSubmitLessonPlanToolInput(toolInput.input).lessonPlan;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function createToolFirstLessonPlanPromise(input: {
+  legacyFinalLessonPlanPromise?: Promise<CompetitionLessonPlan>;
+  toolStream: ReadableStream<UIMessageChunk>;
+}) {
+  const promise = (async () => {
+    const submittedLessonPlan = await readSubmittedLessonPlanFromToolStream(input.toolStream);
+
+    if (submittedLessonPlan) {
+      return submittedLessonPlan;
+    }
+
+    if (input.legacyFinalLessonPlanPromise) {
+      return input.legacyFinalLessonPlanPromise;
+    }
+
+    throw new Error("模型未通过 submit_lesson_plan 提交课时计划，且未返回兼容结构化输出。");
+  })();
+
+  void promise.catch(() => undefined);
+
+  return promise;
+}
+
 async function streamCompetitionLessonPlanWithMastraAgent({
   agentStream,
   maxSteps,
@@ -179,15 +249,22 @@ async function streamCompetitionLessonPlanWithMastraAgent({
     },
   });
 
+  const uiMessageStream =
+    toUIMessageStream?.(result) ??
+    createMastraAgentUiMessageStream(result, {
+      sendStart: false,
+      sendFinish: true,
+    });
+  const [toolInspectionStream, passthroughStream] = uiMessageStream.tee();
+  const legacyFinalLessonPlanPromise = createFinalLessonPlanPromise(result);
+
   return {
-    finalLessonPlanPromise: createFinalLessonPlanPromise(result),
+    finalLessonPlanPromise: createToolFirstLessonPlanPromise({
+      legacyFinalLessonPlanPromise,
+      toolStream: toolInspectionStream,
+    }),
     partialOutputStream: createLessonPartialOutputStream(result),
-    stream:
-      toUIMessageStream?.(result) ??
-      createMastraAgentUiMessageStream(result, {
-        sendStart: false,
-        sendFinish: true,
-      }),
+    stream: passthroughStream,
   };
 }
 

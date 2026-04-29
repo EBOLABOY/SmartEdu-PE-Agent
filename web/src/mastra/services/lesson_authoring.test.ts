@@ -75,7 +75,7 @@ const workflow = {
     outputProtocol: "lesson-json",
     responseTransport: "structured-data-part",
     assistantTextPolicy: "suppress-json-text",
-    maxSteps: 3,
+    maxSteps: 5,
     protocolVersion: "structured-v1",
   },
   safety: {

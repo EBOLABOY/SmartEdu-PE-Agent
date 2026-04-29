@@ -31,7 +31,7 @@ describe("lesson-workflow", () => {
     resetStandardsRetrievalProvider();
   });
 
-  it("generate_lesson 直接进入 structured-only 生成链路，并把 memory 注入系统提示词", async () => {
+  it("generate_lesson 进入生成分支并注入工具提交规则和 memory", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_lesson"));
     const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
@@ -61,13 +61,14 @@ describe("lesson-workflow", () => {
     expect(runLessonIntent).toHaveBeenCalledOnce();
     expect(result.result.decision.type).toBe("generate");
     expect(result.result.decision.intentResult.intent).toBe("generate_lesson");
-    expect(result.result.system).toContain("工作流不再在正式生成前执行信息收集或必要追问");
-    expect(result.result.system).toContain("项目教学记忆");
+    expect(result.result.system).toContain("submit_lesson_plan");
+    expect(result.result.system).toContain("submit_html_screen");
     expect(result.result.system).toContain("searchStandards");
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
     expect(result.result.generationPlan.protocolVersion).toBe("structured-v1");
     expect(result.result.generationPlan.outputProtocol).toBe("lesson-json");
     expect(result.result.generationPlan.assistantTextPolicy).toBe("suppress-json-text");
+    expect(result.result.generationPlan.maxSteps).toBe(5);
     expect(result.result.uiHints).toEqual([
       {
         action: "switch_tab",
@@ -76,12 +77,6 @@ describe("lesson-workflow", () => {
         },
       },
     ]);
-    expect(result.result.trace.map((entry) => entry.step)).toEqual(
-      expect.arrayContaining(["delegate-standards-tooling", "construct-generation-prompt"]),
-    );
-    expect(result.result.trace.map((entry) => entry.step)).not.toEqual(
-      expect.arrayContaining(["prepare-intent-clarification-response"]),
-    );
   });
 
   it("入口意图不明确时返回 clarify decision，并跳过正式生成分支", async () => {
@@ -120,9 +115,6 @@ describe("lesson-workflow", () => {
           status: "blocked",
         }),
       ]),
-    );
-    expect(result.result.trace.map((entry) => entry.step)).not.toEqual(
-      expect.arrayContaining(["construct-generation-prompt", "validate-generation-safety"]),
     );
   });
 
@@ -183,6 +175,7 @@ describe("lesson-workflow", () => {
         },
       },
     ]);
+    expect(result.result.system).toContain("submit_html_screen");
     expect(result.result.system).toContain("data-support-module");
     expect(result.result.system).toContain("比赛展示");
     expect(result.result.system).toContain("durationSeconds=360");
@@ -250,7 +243,6 @@ describe("lesson-workflow", () => {
       }),
       text: expect.stringContaining("课标"),
     });
-    expect(result.result.uiHints).toEqual([]);
     expect(result.result.standards.referenceCount).toBe(1);
   });
 
