@@ -115,8 +115,8 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
   it("does nothing when the input message list is empty", async () => {
     const mockSupabase = {
       from: vi.fn(),
-    } as never;
-    const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
+    };
+    const adapter = new SupabaseMastraStorageAdapter(mockSupabase as never);
 
     await expect(
       adapter.saveMessages({

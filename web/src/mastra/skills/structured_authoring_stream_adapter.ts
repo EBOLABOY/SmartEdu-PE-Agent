@@ -255,6 +255,7 @@ function createForwardedUiChunkStream(
 }
 
 export function createStructuredAuthoringStreamAdapter({
+  allowTextOnlyResponse = false,
   finalLessonPlanPromise,
   mode,
   originalMessages,
@@ -268,6 +269,7 @@ export function createStructuredAuthoringStreamAdapter({
   workflow,
   stream,
 }: {
+  allowTextOnlyResponse?: boolean;
   finalLessonPlanPromise?: Promise<CompetitionLessonPlan>;
   mode: GenerationMode;
   originalMessages: SmartEduUIMessage[];
@@ -296,11 +298,39 @@ export function createStructuredAuthoringStreamAdapter({
             summary: string;
           }
         | undefined;
-      const forwardAssistantText = shouldForwardAssistantText(mode, workflow);
+      let hasStructuredActivity = false;
+      const forwardAssistantText = allowTextOnlyResponse || shouldForwardAssistantText(mode, workflow);
       const [inspectionStream, passthroughStream] = stream.tee();
       const reader = inspectionStream.getReader();
 
+      const ensureAgentStreamStarted = () => {
+        if (runtimeTrace.some((entry) => entry.step === "agent-stream-started")) {
+          return;
+        }
+
+        runtimeTrace.push(
+          createTraceEntry(
+            "agent-stream-started",
+            "running",
+            mode === "html" ? "已开始生成互动大屏 HTML 流。" : "已开始生成课时计划流。",
+          ),
+        );
+      };
+
+      const markStructuredActivity = () => {
+        if (hasStructuredActivity) {
+          return;
+        }
+
+        hasStructuredActivity = true;
+        ensureAgentStreamStarted();
+      };
+
       const writeTrace = (phase: WorkflowTraceData["phase"]) => {
+        if (!hasStructuredActivity) {
+          return;
+        }
+
         writer.write({
           type: "data-trace",
           id: "lesson-authoring-trace",
@@ -309,6 +339,7 @@ export function createStructuredAuthoringStreamAdapter({
       };
 
       const writeArtifact = (artifact: StructuredArtifactData) => {
+        markStructuredActivity();
         writer.write({
           type: "data-artifact",
           id: `lesson-authoring-artifact-${artifact.contentType}`,
@@ -373,6 +404,7 @@ export function createStructuredAuthoringStreamAdapter({
       };
 
       const writeStreamError = (step: string, errorText: string) => {
+        markStructuredActivity();
         runtimeTrace.push(createTraceEntry(step, "failed", errorText));
         writeTrace("failed");
         writer.write({ type: "error", errorText });
@@ -390,7 +422,12 @@ export function createStructuredAuthoringStreamAdapter({
           if (toolInput.toolName === SUBMIT_LESSON_PLAN_TOOL_NAME) {
             const submission = parseSubmitLessonPlanToolInput(toolInput.input);
 
+            markStructuredActivity();
             structuredLessonOutput = submission.lessonPlan;
+            effectiveUiHints.push({
+              action: "switch_tab",
+              params: { tab: "lesson" },
+            });
             runtimeTrace.push(
               createTraceEntry(
                 "submit-lesson-plan-tool",
@@ -414,7 +451,12 @@ export function createStructuredAuthoringStreamAdapter({
           if (toolInput.toolName === SUBMIT_HTML_SCREEN_TOOL_NAME) {
             const submission = parseSubmitHtmlScreenToolInput(toolInput.input);
 
+            markStructuredActivity();
             submittedHtmlDocument = submission;
+            effectiveUiHints.push({
+              action: "switch_tab",
+              params: { tab: "canvas" },
+            });
             runtimeTrace.push(
               createTraceEntry(
                 "submit-html-screen-tool",
@@ -459,6 +501,10 @@ export function createStructuredAuthoringStreamAdapter({
         }
 
         if (trustedLessonOutput === undefined) {
+          if (allowTextOnlyResponse && rawText.trim()) {
+            return true;
+          }
+
           writeStreamError(
             "validate-lesson-output",
             "模型未通过 submit_lesson_plan 提交课时计划，且未返回兼容结构化输出。",
@@ -486,6 +532,10 @@ export function createStructuredAuthoringStreamAdapter({
         let extractedWarning: string | undefined;
 
         if (!htmlDocument) {
+          if (allowTextOnlyResponse && rawText.trim() && !rawText.includes("<html")) {
+            return true;
+          }
+
           const extraction = extractHtmlDocumentFromText(rawText);
 
           if (!extraction.html.trim()) {
@@ -569,23 +619,11 @@ export function createStructuredAuthoringStreamAdapter({
           );
         });
 
-      writeTrace("workflow");
       writer.merge(
         createForwardedUiChunkStream(passthroughStream, {
           forwardAssistantText,
         }),
       );
-
-      if (!runtimeTrace.some((entry) => entry.step === "agent-stream-started")) {
-        runtimeTrace.push(
-          createTraceEntry(
-            "agent-stream-started",
-            "running",
-            mode === "html" ? "已开始生成互动大屏 HTML 流。" : "已开始生成课时计划流。",
-          ),
-        );
-      }
-      writeTrace("generation");
       const lessonDraftTask = createLessonDraftTask();
 
       try {
@@ -659,6 +697,7 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "error": {
+              markStructuredActivity();
               runtimeTrace.push(createTraceEntry("agent-stream-error", "failed", part.errorText));
               writeTrace("failed");
               writer.write({ type: "error", errorText: part.errorText });
@@ -667,6 +706,7 @@ export function createStructuredAuthoringStreamAdapter({
             }
 
             case "abort": {
+              markStructuredActivity();
               runtimeTrace.push(
                 createTraceEntry("agent-stream-abort", "failed", part.reason ?? "用户或系统中断了当前生成。"),
               );
@@ -684,14 +724,16 @@ export function createStructuredAuthoringStreamAdapter({
                 return;
               }
 
-              runtimeTrace.push(
-                createTraceEntry(
-                  "generation-finished",
-                  "success",
-                  mode === "html" ? "HTML Artifact 已完成结构化封装。" : "课时计划 Artifact 已完成结构化封装。",
-                ),
-              );
-              writeTrace("completed");
+              if (hasStructuredActivity) {
+                runtimeTrace.push(
+                  createTraceEntry(
+                    "generation-finished",
+                    "success",
+                    mode === "html" ? "HTML Artifact 已完成结构化封装。" : "课时计划 Artifact 已完成结构化封装。",
+                  ),
+                );
+                writeTrace("completed");
+              }
               finishStream(part.finishReason);
               return;
             }
@@ -710,19 +752,22 @@ export function createStructuredAuthoringStreamAdapter({
             return;
           }
 
-          runtimeTrace.push(
-            createTraceEntry(
-              "generation-stream-closed-without-finish",
-              "blocked",
-              "底层模型流未发送 finish chunk；系统已完成最终校验后关闭响应。",
-            ),
-          );
-          writeTrace("completed");
+          if (hasStructuredActivity) {
+            runtimeTrace.push(
+              createTraceEntry(
+                "generation-stream-closed-without-finish",
+                "blocked",
+                "底层模型流未发送 finish chunk；系统已完成最终校验后关闭响应。",
+              ),
+            );
+            writeTrace("completed");
+          }
           finishStream("stop");
         }
       } catch (error) {
         const errorText = error instanceof Error ? error.message : "课时计划生成流异常。";
 
+        markStructuredActivity();
         runtimeTrace.push(createTraceEntry("generation-stream-exception", "failed", errorText));
         writeTrace("failed");
         writer.write({ type: "error", errorText });

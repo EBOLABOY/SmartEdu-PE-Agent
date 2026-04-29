@@ -7,6 +7,10 @@ import {
 
 describe("artifact-ui-hints", () => {
   it("会基于 requestId 与 uiHints 生成稳定签名", () => {
+    const traceWithoutUiHints: Parameters<typeof createUiHintSignature>[0] = {
+      requestId: "request-1",
+    };
+
     expect(createUiHintSignature(undefined)).toBeUndefined();
     expect(
       createUiHintSignature({
@@ -14,11 +18,7 @@ describe("artifact-ui-hints", () => {
         uiHints: [],
       }),
     ).toBeUndefined();
-    expect(
-      createUiHintSignature({
-        requestId: "request-1",
-      } as any),
-    ).toBeUndefined();
+    expect(createUiHintSignature(traceWithoutUiHints)).toBeUndefined();
     expect(
       createUiHintSignature({
         requestId: "request-1",

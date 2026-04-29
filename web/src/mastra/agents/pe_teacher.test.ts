@@ -14,6 +14,7 @@ describe("pe_teacher", () => {
 
   it("暴露可枚举的 prompt skills，便于后续 runtime skill 组合", () => {
     expect(Object.keys(peTeacherPromptSkills).sort()).toEqual([
+      "agenticToolUseSkill",
       "baseTeacherPersonaSkill",
       "competitionLessonFormatSkill",
       "htmlScreenSkill",
@@ -27,20 +28,45 @@ describe("pe_teacher", () => {
     const globalTools = mastra.listTools();
 
     expect(Object.keys(agentTools ?? {})).toEqual(
-      expect.arrayContaining(["searchStandards", "submit_lesson_plan", "submit_html_screen"]),
+      expect.arrayContaining([
+        "analyze_requirements",
+        "apply_lesson_patch",
+        "design_html_screen",
+        "generate_structured_lesson",
+        "searchStandards",
+        "submit_html_screen",
+        "submit_lesson_plan",
+        "write_lesson_plan",
+      ]),
     );
+    expect(globalTools).toHaveProperty("analyze_requirements");
+    expect(globalTools).toHaveProperty("apply_lesson_patch");
+    expect(globalTools).toHaveProperty("design_html_screen");
+    expect(globalTools).toHaveProperty("generate_structured_lesson");
     expect(globalTools).toHaveProperty("searchStandards");
     expect(globalTools).toHaveProperty("submit_lesson_plan");
     expect(globalTools).toHaveProperty("submit_html_screen");
+    expect(globalTools).toHaveProperty("write_lesson_plan");
   });
 
-  it("lesson 阶段要求最终通过 submit_lesson_plan 提交课时计划", () => {
+  it("lesson 阶段按需使用工具，正式课时计划通过 submit_lesson_plan 提交", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, { mode: "lesson" });
 
+    expect(prompt).toContain("普通聊天");
+    expect(prompt).toContain("直接回复，不调用工具");
+    expect(prompt).toContain("按需");
     expect(prompt).toContain("submit_lesson_plan");
     expect(prompt).toContain("CompetitionLessonPlan");
     expect(prompt).toContain("summary");
     expect(prompt).toContain("AgentLessonGeneration JSON");
+    expect(prompt).toContain("优先自然追问");
+    expect(prompt).toContain("request");
+    expect(prompt).toContain("保留教师本轮原始需求");
+    expect(prompt).toContain("用户资料只能放入");
+    expect(prompt).toContain("对象");
+    expect(prompt).toContain("durationMinutes");
+    expect(prompt).toContain("studentCount");
+    expect(prompt).not.toContain("信息模糊时先调用 `analyze_requirements`");
     expect(prompt).not.toContain("<artifact>");
   });
 
@@ -61,6 +87,8 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("水平：水平二");
     expect(prompt).toContain("teacher.school");
     expect(prompt).toContain("teacher.name");
+    expect(prompt).toContain("这不是教师本轮原话");
+    expect(prompt).toContain("不要拼接到 request 字段里");
   });
 
   it("html 阶段要求生成课堂学习辅助大屏并通过 submit_html_screen 提交", () => {

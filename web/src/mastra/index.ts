@@ -5,6 +5,11 @@ import { createHtmlScreenPlannerAgent } from "./agents/html_screen_planner";
 import { createLessonPatchAgent } from "./agents/lesson_patch";
 import { createPeTeacherAgent } from "./agents/pe_teacher";
 import { createChatModel } from "./models";
+import { lessonAuthoringTools } from "./tools/lesson_authoring_tools";
+import {
+  submitHtmlScreenTool,
+  submitLessonPlanTool,
+} from "./tools/output_tools";
 import { searchStandardsTool } from "./tools/search_standards";
 import { lessonAuthoringWorkflow } from "./workflows/lesson_workflow";
 
@@ -23,7 +28,10 @@ export const mastra = new Mastra({
     peTeacherAgent,
   },
   tools: {
+    ...lessonAuthoringTools,
     searchStandards: searchStandardsTool,
+    submit_html_screen: submitHtmlScreenTool,
+    submit_lesson_plan: submitLessonPlanTool,
   },
   workflows: {
     lessonAuthoringWorkflow,

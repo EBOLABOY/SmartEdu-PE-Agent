@@ -72,6 +72,52 @@ describe("assistant-workflow-status", () => {
     expect(state.reasoningText).toContain("先分析年级");
   });
 
+  it("纯聊天兼容 trace 不显示为课时计划工作流", () => {
+    const message = {
+      id: "assistant-text-only",
+      role: "assistant",
+      parts: [
+        {
+          type: "text",
+          text: "老师您好，我可以帮您生成课时计划、修改教案或设计互动大屏。",
+        },
+        {
+          type: "data-trace",
+          id: "trace-text-only",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-text-only",
+            mode: "lesson",
+            phase: "completed",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: [],
+            uiHints: [],
+            updatedAt: "2026-04-26T00:00:00.000Z",
+            trace: [
+              {
+                step: "agentic-entry",
+                status: "success",
+                detail: "已进入 Agentic 自主工具编排模式。",
+              },
+              {
+                step: "agent-text-response",
+                status: "success",
+                detail: "Agent 已返回自然语言答复，本轮未提交结构化课时计划。",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+
+    expect(state.hasWorkflow).toBe(false);
+    expect(state.details).toEqual([]);
+  });
+
   it("会把 blocked 作为需要注意的业务状态，而不是失败", () => {
     const message = {
       id: "assistant-3",

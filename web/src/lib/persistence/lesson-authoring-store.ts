@@ -59,7 +59,7 @@ export async function saveArtifactVersionWithSupabase(
     });
   }
 
-  const { error } = await supabase.rpc("create_artifact_version", {
+  const artifactVersionArgs = {
     target_project_id: projectId,
     artifact_stage: artifact.stage,
     artifact_title:
@@ -72,15 +72,21 @@ export async function saveArtifactVersionWithSupabase(
     artifact_status: artifact.status,
     artifact_protocol_version: artifact.protocolVersion,
     artifact_workflow_trace: trace ? toJson(trace) : {},
-    artifact_warning_text: artifact.warningText ?? null,
     artifact_request_id: requestId,
     artifact_version_id: versionId,
     artifact_content_storage_provider: offloadedContent?.provider ?? "inline",
-    artifact_content_storage_bucket: offloadedContent?.bucket ?? null,
-    artifact_content_storage_object_key: offloadedContent?.objectKey ?? null,
-    artifact_content_byte_size: offloadedContent?.byteSize ?? null,
-    artifact_content_checksum: offloadedContent?.checksum ?? null,
-  });
+    ...(artifact.warningText ? { artifact_warning_text: artifact.warningText } : {}),
+    ...(offloadedContent
+      ? {
+          artifact_content_storage_bucket: offloadedContent.bucket,
+          artifact_content_storage_object_key: offloadedContent.objectKey,
+          artifact_content_byte_size: offloadedContent.byteSize,
+          artifact_content_checksum: offloadedContent.checksum,
+        }
+      : {}),
+  };
+
+  const { error } = await supabase.rpc("create_artifact_version", artifactVersionArgs);
 
   if (error) {
     if (offloadedContent) {

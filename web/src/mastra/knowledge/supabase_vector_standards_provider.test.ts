@@ -3,21 +3,11 @@
 import { createSupabaseVectorStandardsProvider } from "@/mastra/knowledge/supabase_vector_standards_provider";
 
 const mocks = vi.hoisted(() => ({
-  createModelProvider: vi.fn(),
   createSupabaseServerClient: vi.fn(),
-  embed: vi.fn(),
-}));
-
-vi.mock("@/mastra/models", () => ({
-  createModelProvider: mocks.createModelProvider,
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: mocks.createSupabaseServerClient,
-}));
-
-vi.mock("ai", () => ({
-  embed: mocks.embed,
 }));
 
 function createAuthenticatedSupabaseClient(overrides: {
@@ -68,29 +58,48 @@ function createAuthenticatedSupabaseClient(overrides: {
 describe("supabase-vector-standards-provider", () => {
   const originalAiBaseUrl = process.env.AI_BASE_URL;
   const originalAiApiKey = process.env.AI_API_KEY;
+  const originalAiEmbeddingBaseUrl = process.env.AI_EMBEDDING_BASE_URL;
+  const originalAiEmbeddingApiKey = process.env.AI_EMBEDDING_API_KEY;
+  const originalAiEmbeddingDimensions = process.env.AI_EMBEDDING_DIMENSIONS;
+  const originalAiEmbeddingModel = process.env.AI_EMBEDDING_MODEL;
   const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.OPENAI_API_KEY = "test-openai-key";
+    process.env.AI_EMBEDDING_BASE_URL = "https://embedding.example/v1";
     delete process.env.AI_BASE_URL;
     delete process.env.AI_API_KEY;
+    delete process.env.AI_EMBEDDING_API_KEY;
+    delete process.env.AI_EMBEDDING_DIMENSIONS;
+    delete process.env.AI_EMBEDDING_MODEL;
 
-    mocks.createModelProvider.mockReturnValue({
-      embeddingModel: vi.fn().mockReturnValue("embedding-model"),
-    });
-    mocks.embed.mockResolvedValue({
-      embedding: [0.11, 0.22, 0.33],
-    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (_url, init) => {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        const dimensions = body.dimensions ?? 1536;
+
+        return new Response(JSON.stringify({ data: [{ embedding: Array(dimensions).fill(0.11) }] }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }),
+    );
   });
 
   afterEach(() => {
     process.env.AI_BASE_URL = originalAiBaseUrl;
     process.env.AI_API_KEY = originalAiApiKey;
+    process.env.AI_EMBEDDING_BASE_URL = originalAiEmbeddingBaseUrl;
+    process.env.AI_EMBEDDING_API_KEY = originalAiEmbeddingApiKey;
+    process.env.AI_EMBEDDING_DIMENSIONS = originalAiEmbeddingDimensions;
+    process.env.AI_EMBEDDING_MODEL = originalAiEmbeddingModel;
     process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    vi.unstubAllGlobals();
   });
 
-  it("maps hybrid rpc results into standard references and preserves market fallback warnings", async () => {
+  it("maps hybrid rpc results into standard references and preserves the requested market", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [
         {
@@ -119,7 +128,7 @@ describe("supabase-vector-standards-provider", () => {
     });
 
     expect(result.requestedMarket).toBe("us-shape-k12");
-    expect(result.resolvedMarket).toBe("cn-compulsory-2022");
+    expect(result.resolvedMarket).toBe("us-shape-k12");
     expect(result.warning).toContain("尚未接入 SHAPE");
     expect(result.corpus).toMatchObject({
       corpusId: "corpus-1",
@@ -139,12 +148,53 @@ describe("supabase-vector-standards-provider", () => {
     });
     expect(result.references[0]?.score).toBeCloseTo(81.23);
     expect(result.context).toContain("课标要求");
+    expect(fetch).toHaveBeenCalledWith(
+      "https://embedding.example/v1/embeddings",
+      expect.objectContaining({
+        body: JSON.stringify({
+          dimensions: 1536,
+          input: ["五年级 篮球 运球"],
+          input_type: "query",
+          model: "nvidia/llama-3.2-nv-embedqa-1b-v2",
+        }),
+        method: "POST",
+      }),
+    );
     expect(rpc).toHaveBeenCalledWith("match_standard_entries_hybrid", {
       query_text: "五年级 篮球 运球",
-      query_embedding: [0.11, 0.22, 0.33],
+      query_embedding: `[${Array(1536).fill(0.11).join(",")}]`,
       match_limit: 4,
-      target_market: "cn-compulsory-2022",
+      target_market: "us-shape-k12",
     });
+  });
+
+  it("uses the configured embedding model and dimensions for query embeddings", async () => {
+    process.env.AI_EMBEDDING_MODEL = "test-embedding-model";
+    process.env.AI_EMBEDDING_DIMENSIONS = "1024";
+    const rpc = vi.fn().mockResolvedValue({
+      data: [],
+      error: null,
+    });
+    const supabase = createAuthenticatedSupabaseClient({ rpc });
+    mocks.createSupabaseServerClient.mockResolvedValue(supabase);
+
+    const provider = createSupabaseVectorStandardsProvider();
+    await provider.search("水平三 体能", {
+      limit: 2,
+      market: "cn-compulsory-2022",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://embedding.example/v1/embeddings",
+      expect.objectContaining({
+        body: JSON.stringify({
+          dimensions: 1024,
+          input: ["水平三 体能"],
+          input_type: "query",
+          model: "test-embedding-model",
+        }),
+      }),
+    );
   });
 
   it("passes lexical query text through hybrid retrieval for entity-heavy queries", async () => {

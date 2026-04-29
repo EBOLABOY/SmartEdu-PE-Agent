@@ -6,6 +6,7 @@ import {
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import {
+  artifactContentTypeSchema,
   persistedConversationSchema,
   persistedProjectMessageSchema,
   persistedProjectSummarySchema,
@@ -86,6 +87,12 @@ function deriveLessonTitleOverride(input: {
 
   return normalizeDisplayTitle(lessonTitle) ??
     normalizeDisplayTitle(input.artifactTitle);
+}
+
+function toArtifactContentType(value: string | null | undefined) {
+  const parsed = artifactContentTypeSchema.safeParse(value);
+
+  return parsed.success ? parsed.data : null;
 }
 
 function toPersistedProjectSummary(
@@ -191,7 +198,7 @@ async function getLessonTitleOverridesByProjectId(
     const title = deriveLessonTitleOverride({
       artifactTitle: artifact.title,
       lessonContent: currentVersion?.content,
-      lessonContentType: currentVersion?.content_type,
+      lessonContentType: toArtifactContentType(currentVersion?.content_type),
     });
 
     if (title) {

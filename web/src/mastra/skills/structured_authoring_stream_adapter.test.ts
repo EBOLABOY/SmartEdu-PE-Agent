@@ -153,48 +153,32 @@ async function readAll(stream: ReadableStream<UIMessageChunk>) {
   }
 }
 
-async function readFirstChunks(stream: ReadableStream<UIMessageChunk>, count: number) {
-  const reader = stream.getReader();
-  const chunks: UIMessageChunk[] = [];
-
-  try {
-    while (chunks.length < count) {
-      const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      chunks.push(value);
-    }
-
-    return chunks;
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-}
-
 describe("structured authoring stream adapter", () => {
-  it("在任何文本之前先输出稳定 trace", async () => {
+  it("allowTextOnlyResponse 为 true 时纯文本回复不输出 trace 或 artifact", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
+      allowTextOnlyResponse: true,
       mode: "lesson",
       originalMessages: [],
-      requestId: "request-trace-before-text",
+      requestId: "request-text-only",
       workflow: baseWorkflow,
-      stream: new ReadableStream<UIMessageChunk>({
-        start(controller) {
-          controller.close();
-        },
-      }),
+      stream: createChunkStream([
+        { type: "text-start", id: "text-only" },
+        { type: "text-delta", id: "text-only", delta: "老师您好，请告诉我今天要准备什么课。" },
+        { type: "text-end", id: "text-only" },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
     });
 
-    const chunks = await readFirstChunks(stream, 2);
-    const tracePhases = chunks
-      .map(getTraceData)
-      .filter((trace): trace is WorkflowTraceData => Boolean(trace))
-      .map((trace) => trace.phase);
+    const chunks = await readAll(stream);
 
-    expect(tracePhases).toEqual(expect.arrayContaining(["generation"]));
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text-delta", delta: "老师您好，请告诉我今天要准备什么课。" }),
+        expect.objectContaining({ type: "finish", finishReason: "stop" }),
+      ]),
+    );
+    expect(chunks.some((chunk) => chunk.type === "data-trace")).toBe(false);
+    expect(chunks.some((chunk) => chunk.type === "data-artifact")).toBe(false);
   });
 
   it("lesson 结构化输出流会直接输出可信的 lesson-json artifact", async () => {

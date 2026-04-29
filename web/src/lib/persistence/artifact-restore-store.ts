@@ -43,7 +43,7 @@ export async function restoreArtifactVersionByProject(
   const { error } = await supabase.rpc("restore_artifact_version", {
     target_project_id: input.projectId,
     target_version_id: input.versionId,
-    restore_request_id: input.requestId ?? null,
+    restore_request_id: input.requestId,
   });
 
   if (error) {

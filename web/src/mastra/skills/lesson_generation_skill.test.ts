@@ -6,7 +6,6 @@ import {
   DEFAULT_COMPETITION_LESSON_PLAN,
   agentLessonGenerationSchema,
   type AgentLessonGenerationResult,
-  type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import type { LessonScreenPlan, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";

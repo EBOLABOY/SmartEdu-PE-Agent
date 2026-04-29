@@ -16,8 +16,12 @@ export type ArtifactUiHintHandlers = {
   triggerPrint?: (target: "lesson") => void;
 };
 
+type UiHintSignatureTrace =
+  Pick<WorkflowTraceData, "requestId"> &
+  Partial<Pick<WorkflowTraceData, "uiHints">>;
+
 export function createUiHintSignature(
-  trace: Pick<WorkflowTraceData, "requestId" | "uiHints"> | undefined,
+  trace: UiHintSignatureTrace | undefined,
 ) {
   if (!trace || !trace.uiHints || trace.uiHints.length === 0) {
     return undefined;

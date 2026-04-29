@@ -73,7 +73,6 @@ describe("lesson-authoring-store", () => {
       artifact_status: "ready",
       artifact_protocol_version: "structured-v1",
       artifact_workflow_trace: {},
-      artifact_warning_text: null,
       artifact_request_id: "request-id",
       artifact_version_id: expect.any(String),
       artifact_content_storage_provider: "cloudflare-r2",
@@ -108,14 +107,9 @@ describe("lesson-authoring-store", () => {
       artifact_status: "ready",
       artifact_protocol_version: "structured-v1",
       artifact_workflow_trace: {},
-      artifact_warning_text: null,
       artifact_request_id: "request-id",
       artifact_version_id: expect.any(String),
       artifact_content_storage_provider: "inline",
-      artifact_content_storage_bucket: null,
-      artifact_content_storage_object_key: null,
-      artifact_content_byte_size: null,
-      artifact_content_checksum: null,
     });
   });
 

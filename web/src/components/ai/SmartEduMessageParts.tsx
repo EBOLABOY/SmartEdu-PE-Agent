@@ -10,7 +10,7 @@ import {
 } from "ai";
 
 import { AssistantInlineCitation, AssistantSources } from "@/components/ai/AssistantReferences";
-import { AssistantReasoning } from "@/components/ai/AssistantReasoning";
+import { AssistantReasoningPart } from "@/components/ai/AssistantReasoning";
 import { AssistantSourceList } from "@/components/ai/AssistantSourceList";
 import {
   AssistantStepBoundary,
@@ -34,6 +34,13 @@ import {
 import type { SmartEduUIMessage, StructuredArtifactData } from "@/lib/lesson-authoring-contract";
 
 type SmartEduMessagePart = SmartEduUIMessage["parts"][number];
+type AssistantRenderItem =
+  | { index: number; kind: "artifact" }
+  | { index: number; kind: "reasoning" }
+  | { index: number; kind: "step" }
+  | { index: number; kind: "text" }
+  | { index: number; kind: "tool" }
+  | { index: number; kind: "trace" };
 
 function isSmartEduToolPart(part: SmartEduMessagePart): part is ToolPart {
   return isToolUIPart(part as UIMessagePart<UIDataTypes, UITools>);
@@ -61,6 +68,12 @@ function isTracePart(
   part: SmartEduMessagePart,
 ): part is Extract<SmartEduMessagePart, { type: "data-trace" }> {
   return part.type === "data-trace";
+}
+
+function isReasoningPart(
+  part: SmartEduMessagePart,
+): part is Extract<SmartEduMessagePart, { type: "reasoning" }> {
+  return part.type === "reasoning";
 }
 
 function getArtifactSummary(artifact: StructuredArtifactData) {
@@ -181,11 +194,13 @@ function AssistantArtifactPart({ artifact }: { artifact: StructuredArtifactData 
 function AssistantTextParts({
   message,
   sources,
+  text,
 }: {
   message: SmartEduUIMessage;
   sources: AssistantSourceItem[];
+  text?: string;
 }) {
-  const rawText = getFallbackText(message);
+  const rawText = (text ?? getFallbackText(message)).trim();
 
   if (!rawText || shouldHideAssistantText(message, rawText)) {
     return null;
@@ -204,6 +219,45 @@ function AssistantTextParts({
   );
 }
 
+export function getAssistantChronologicalRenderItems(message: SmartEduUIMessage): AssistantRenderItem[] {
+  const latestArtifactIndex = message.parts.findLastIndex(isArtifactPart);
+  const latestTraceIndex = message.parts.findLastIndex(isTracePart);
+
+  return message.parts.flatMap((part, index): AssistantRenderItem[] => {
+    if (isTextUIPart(part)) {
+      const text = part.text.trim();
+
+      if (!text || shouldHideAssistantText(message, text)) {
+        return [];
+      }
+
+      return [{ index, kind: "text" }];
+    }
+
+    if (isReasoningPart(part)) {
+      return part.text.trim() ? [{ index, kind: "reasoning" }] : [];
+    }
+
+    if (isSmartEduToolPart(part)) {
+      return [{ index, kind: "tool" }];
+    }
+
+    if (part.type === "step-start") {
+      return [{ index, kind: "step" }];
+    }
+
+    if (isArtifactPart(part)) {
+      return index === latestArtifactIndex ? [{ index, kind: "artifact" }] : [];
+    }
+
+    if (isTracePart(part)) {
+      return index === latestTraceIndex ? [{ index, kind: "trace" }] : [];
+    }
+
+    return [];
+  });
+}
+
 function UserMessageParts({ message }: { message: SmartEduUIMessage }) {
   const text = getFallbackText(message);
 
@@ -215,38 +269,51 @@ function UserMessageParts({ message }: { message: SmartEduUIMessage }) {
   );
 }
 
-function AssistantPartTimeline({ message }: { message: SmartEduUIMessage }) {
-  const latestArtifactIndex = message.parts.findLastIndex(isArtifactPart);
-  const latestTraceIndex = message.parts.findLastIndex(isTracePart);
-
+function AssistantChronologicalParts({
+  message,
+  sources,
+}: {
+  message: SmartEduUIMessage;
+  sources: AssistantSourceItem[];
+}) {
   return (
     <div className="min-w-0 space-y-3">
-      {message.parts.map((part, index) => {
-        if (isTextUIPart(part) || part.type === "reasoning") {
+      {getAssistantChronologicalRenderItems(message).map((item) => {
+        const { index } = item;
+        const part = message.parts[index];
+
+        if (!part) {
           return null;
         }
 
-        if (isSmartEduToolPart(part)) {
+        if (item.kind === "text" && isTextUIPart(part)) {
+          return (
+            <AssistantTextParts
+              key={`text-${index}`}
+              message={message}
+              sources={sources}
+              text={part.text}
+            />
+          );
+        }
+
+        if (item.kind === "reasoning" && isReasoningPart(part)) {
+          return <AssistantReasoningPart key={`reasoning-${index}`} part={part} />;
+        }
+
+        if (item.kind === "tool" && isSmartEduToolPart(part)) {
           return <AssistantToolPart key={`${part.toolCallId}-${index}`} part={part} />;
         }
 
-        if (part.type === "step-start") {
+        if (item.kind === "step" && part.type === "step-start") {
           return <AssistantStepBoundary index={index} key={`step-${index}`} />;
         }
 
-        if (isArtifactPart(part)) {
-          if (index !== latestArtifactIndex) {
-            return null;
-          }
-
+        if (item.kind === "artifact" && isArtifactPart(part)) {
           return <AssistantArtifactPart artifact={part.data} key={`${part.id ?? "artifact"}-${index}`} />;
         }
 
-        if (isTracePart(part)) {
-          if (index !== latestTraceIndex) {
-            return null;
-          }
-
+        if (item.kind === "trace" && isTracePart(part)) {
           return <AssistantWorkflowStatus key={`${part.id ?? "trace"}-${index}`} message={message} />;
         }
 
@@ -265,9 +332,7 @@ export function SmartEduMessageParts({ message }: { message: SmartEduUIMessage }
 
   return (
     <>
-      <AssistantTextParts message={message} sources={sources} />
-      <AssistantReasoning message={message} />
-      <AssistantPartTimeline message={message} />
+      <AssistantChronologicalParts message={message} sources={sources} />
       <NativeSourceList message={message} />
       <AssistantSources sources={sources} />
     </>

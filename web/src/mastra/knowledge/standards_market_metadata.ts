@@ -12,9 +12,9 @@ export function resolveStandardsMarketMetadata(
   if (market === "us-shape-k12") {
     return {
       requestedMarket: market,
-      resolvedMarket: DEFAULT_STANDARDS_MARKET,
+      resolvedMarket: market,
       warning:
-        "当前仓库尚未接入 SHAPE 体育标准知识库，已自动回退到中国《义务教育体育与健康课程标准（2022年版）》结构化语料。",
+        "当前仓库尚未接入 SHAPE 体育标准知识库，课标检索将保持目标市场并返回空结果，避免伪造回退语料。",
     };
   }
 

@@ -66,6 +66,15 @@ const TRACE_STEPS_OWNED_BY_AI_SDK_PARTS = new Set([
   "agent-tool-error",
 ]);
 
+const PASSIVE_TEXT_ONLY_TRACE_STEPS = new Set([
+  "agentic-entry",
+  "agent-stream-started",
+  "agent-step-start",
+  "agent-step-finish",
+  "agent-text-response",
+  "generation-finished",
+]);
+
 function isStreamingPart(part: SmartEduUIMessage["parts"][number]) {
   return (
     (part.type === "text" || part.type === "reasoning") &&
@@ -114,6 +123,30 @@ function buildDetails(trace: WorkflowTraceData | undefined): AssistantWorkflowDe
         debugStep: entry.step,
       })) ?? []
   );
+}
+
+function isSubmitToolPart(part: SmartEduUIMessage["parts"][number]) {
+  return part.type === "tool-submit_lesson_plan" || part.type === "tool-submit_html_screen";
+}
+
+function hasActionableWorkflowTrace(
+  message: SmartEduUIMessage,
+  trace: WorkflowTraceData | undefined,
+  hasArtifact: boolean,
+) {
+  if (!trace) {
+    return false;
+  }
+
+  if (hasArtifact || trace.phase === "failed" || message.parts.some(isSubmitToolPart)) {
+    return true;
+  }
+
+  if (trace.trace.some((entry) => entry.status === "failed" || entry.status === "blocked")) {
+    return true;
+  }
+
+  return trace.trace.some((entry) => !PASSIVE_TEXT_ONLY_TRACE_STEPS.has(entry.step));
 }
 
 function getWorkflowStatus(
@@ -213,11 +246,11 @@ export function buildAssistantWorkflowState(message: SmartEduUIMessage): Assista
   const extracted = extractArtifactFromMessage(message);
   const reasoningText = getMessageReasoningText(message);
   const trace = extracted.trace;
-  const details = buildDetails(trace);
+  const hasWorkflow = hasActionableWorkflowTrace(message, trace, Boolean(extracted.artifact));
+  const details = hasWorkflow ? buildDetails(trace) : [];
   const isStreaming =
     extracted.status === "streaming" ||
-    trace?.phase === "workflow" ||
-    trace?.phase === "generation" ||
+    (hasWorkflow && (trace?.phase === "workflow" || trace?.phase === "generation")) ||
     message.parts.some(isStreamingPart);
   const status = getWorkflowStatus(trace, details, isStreaming);
   const standardsCount = trace?.standards?.references.length ?? 0;
@@ -233,7 +266,7 @@ export function buildAssistantWorkflowState(message: SmartEduUIMessage): Assista
     }),
     details,
     hasReasoning: Boolean(reasoningText.trim()),
-    hasWorkflow: Boolean(trace),
+    hasWorkflow,
     isStreaming,
     mode,
     reasoningText,

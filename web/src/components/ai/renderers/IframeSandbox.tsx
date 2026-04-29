@@ -173,15 +173,25 @@ function useSandboxSecurity(htmlContent: string) {
       return;
     }
 
+    let cancelled = false;
     const securityReport = analyzeBrowserSandboxHtml(htmlContent);
-
-    setReport({
+    const nextReport = {
       ...securityReport,
       sandboxedHtml:
         securityReport.blockedReasons.length === 0
           ? injectBrowserSandboxCsp(htmlContent)
           : "",
+    };
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setReport(nextReport);
+      }
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [htmlContent]);
 
   return report;

@@ -10,7 +10,7 @@ import {
 import type { Database } from "@/lib/supabase/database.types";
 
 const ARTIFACT_CONTENT_R2_PROVIDER = "cloudflare-r2" as const;
-const INLINE_CONTENT_PROVIDER = "inline" as const;
+export const INLINE_CONTENT_PROVIDER = "inline" as const;
 
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 

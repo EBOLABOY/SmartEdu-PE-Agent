@@ -4,21 +4,12 @@ import { z } from "zod";
 import {
   DEFAULT_STANDARDS_MARKET,
   standardsMarketSchema,
-  type StandardsMarket,
 } from "@/lib/lesson-authoring-contract";
 
-import {
-  buildStandardsContextFromReferences,
-} from "../knowledge/standards_context";
-import {
-  resolveStandardsMarketMetadata,
-} from "../knowledge/standards_market_metadata";
 import {
   getStandardsRetrievalProvider,
 } from "../knowledge/provider-registry";
 import type {
-  StandardReference,
-  StandardsCorpusMetadata,
   StandardsRetrievalOptions,
   StandardsSearchResult,
 } from "../knowledge/provider-types";
