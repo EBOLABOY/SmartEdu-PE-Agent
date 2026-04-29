@@ -2,7 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { MessageSquareText, PanelLeftClose, PanelLeftOpen, Plus, UserCircle } from "lucide-react";
+import { MessageSquareText, PanelLeftClose, PanelLeftOpen, Plus, SendHorizontal, UserCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
@@ -875,7 +875,7 @@ function AppContent({
                     size="icon"
                     type="submit"
                   >
-                    <MessageSquareText className="size-[22px]" />
+                    <SendHorizontal className="size-5" />
                   </Button>
                 </motion.form>
               </motion.div>
