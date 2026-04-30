@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 
 import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from "@aws-sdk/client-s3";
-
+  deleteR2Object,
+  getR2ObjectText,
+  putR2Object,
+  type R2S3RestConfig,
+} from "@/lib/r2/s3-rest-client";
 import type { Database } from "@/lib/supabase/database.types";
 
 const ARTIFACT_CONTENT_R2_PROVIDER = "cloudflare-r2" as const;
@@ -14,12 +13,7 @@ export const INLINE_CONTENT_PROVIDER = "inline" as const;
 
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 
-type ArtifactContentStorageConfig = {
-  accessKeyId: string;
-  bucket: string;
-  endpoint: string;
-  secretAccessKey: string;
-};
+type ArtifactContentStorageConfig = R2S3RestConfig;
 
 export type ArtifactContentStorageProvider =
   | typeof ARTIFACT_CONTENT_R2_PROVIDER
@@ -58,18 +52,6 @@ function getArtifactContentStorageConfig():
   };
 }
 
-function createR2Client(config: ArtifactContentStorageConfig) {
-  return new S3Client({
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
-    endpoint: config.endpoint,
-    forcePathStyle: true,
-    region: "auto",
-  });
-}
-
 function getArtifactPayloadContentType(
   contentType: ArtifactVersionRow["content_type"],
 ) {
@@ -95,36 +77,6 @@ function buildArtifactContentObjectKey(input: {
   return `projects/${input.projectId}/versions/${input.versionId}/${input.stage}.${extension}`;
 }
 
-async function streamBodyToString(
-  body:
-    | AsyncIterable<Uint8Array | string>
-    | {
-        transformToString?: (encoding?: string) => Promise<string>;
-      }
-    | undefined,
-) {
-  if (!body) {
-    return "";
-  }
-
-  if ("transformToString" in body && typeof body.transformToString === "function") {
-    return body.transformToString("utf8");
-  }
-
-  const chunks: Uint8Array[] = [];
-
-  for await (const chunk of body as AsyncIterable<Uint8Array | string>) {
-    if (typeof chunk === "string") {
-      chunks.push(Buffer.from(chunk));
-      continue;
-    }
-
-    chunks.push(chunk);
-  }
-
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 export function canOffloadArtifactContent() {
   return getArtifactContentStorageConfig() !== null;
 }
@@ -145,16 +97,12 @@ export async function uploadArtifactContent(input: {
   const buffer = Buffer.from(input.content, "utf8");
   const checksum = createHash("sha256").update(buffer).digest("hex");
   const objectKey = buildArtifactContentObjectKey(input);
-  const client = createR2Client(config);
-
-  await client.send(
-    new PutObjectCommand({
-      Body: buffer,
-      Bucket: config.bucket,
-      ContentType: getArtifactPayloadContentType(input.contentType),
-      Key: objectKey,
-    }),
-  );
+  await putR2Object({
+    body: buffer,
+    config,
+    contentType: getArtifactPayloadContentType(input.contentType),
+    key: objectKey,
+  });
 
   return {
     provider: ARTIFACT_CONTENT_R2_PROVIDER,
@@ -174,14 +122,13 @@ export async function deleteOffloadedArtifactContent(
     return;
   }
 
-  const client = createR2Client(config);
-
-  await client.send(
-    new DeleteObjectCommand({
-      Bucket: content.bucket,
-      Key: content.objectKey,
-    }),
-  );
+  await deleteR2Object({
+    config: {
+      ...config,
+      bucket: content.bucket,
+    },
+    key: content.objectKey,
+  });
 }
 
 export async function resolveArtifactVersionContent(
@@ -211,13 +158,11 @@ export async function resolveArtifactVersionContent(
     throw new Error("artifact payload storage is not configured");
   }
 
-  const client = createR2Client(config);
-  const response = await client.send(
-    new GetObjectCommand({
-      Bucket: row.content_storage_bucket,
-      Key: row.content_storage_object_key,
-    }),
-  );
-
-  return streamBodyToString(response.Body);
+  return getR2ObjectText({
+    config: {
+      ...config,
+      bucket: row.content_storage_bucket,
+    },
+    key: row.content_storage_object_key,
+  });
 }

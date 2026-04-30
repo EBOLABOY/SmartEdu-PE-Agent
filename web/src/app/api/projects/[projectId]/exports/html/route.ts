@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-
+import { deleteR2Object, putR2Object, type R2S3RestConfig } from "@/lib/r2/s3-rest-client";
 import {
   exportHtmlRequestBodySchema,
   exportHtmlResponseSchema,
@@ -47,7 +46,7 @@ class ExportHtmlRouteError extends Error {
   }
 }
 
-function getR2Config() {
+function getR2Config(): R2S3RestConfig | null {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const bucket = process.env.CLOUDFLARE_R2_EXPORT_BUCKET;
   const endpoint =
@@ -117,20 +116,21 @@ async function assertArtifactVersionBelongsToProject({
 
 async function removeUploadedObject({
   bucket,
+  config,
   objectKey,
-  s3,
 }: {
   bucket: string;
   objectKey: string;
-  s3: S3Client;
+  config: R2S3RestConfig;
 }) {
   try {
-    await s3.send(
-      new DeleteObjectCommand({
-        Bucket: bucket,
-        Key: objectKey,
-      }),
-    );
+    await deleteR2Object({
+      config: {
+        ...config,
+        bucket,
+      },
+      key: objectKey,
+    });
   } catch (error) {
     console.warn("[export-html] cleanup-uploaded-object-failed", {
       message: error instanceof Error ? error.message : "unknown-error",
@@ -207,15 +207,6 @@ export async function POST(
     );
   }
 
-  const s3 = new S3Client({
-    credentials: {
-      accessKeyId: r2Config.accessKeyId,
-      secretAccessKey: r2Config.secretAccessKey,
-    },
-    endpoint: r2Config.endpoint,
-    forcePathStyle: true,
-    region: "auto",
-  });
   let uploadedObjectKey: string | null = null;
 
   try {
@@ -232,14 +223,12 @@ export async function POST(
     const filename = sanitizeFilename(parsedBody.data.filename);
     const objectKey = buildObjectKey(parsedProjectId.data, filename);
 
-    await s3.send(
-      new PutObjectCommand({
-        Body: htmlBuffer,
-        Bucket: r2Config.bucket,
-        ContentType: HTML_CONTENT_TYPE,
-        Key: objectKey,
-      }),
-    );
+    await putR2Object({
+      body: htmlBuffer,
+      config: r2Config,
+      contentType: HTML_CONTENT_TYPE,
+      key: objectKey,
+    });
     uploadedObjectKey = objectKey;
 
     const { data: exportFile, error: exportFileError } = await supabase
@@ -290,8 +279,8 @@ export async function POST(
     if (uploadedObjectKey) {
       await removeUploadedObject({
         bucket: r2Config.bucket,
+        config: r2Config,
         objectKey: uploadedObjectKey,
-        s3,
       });
     }
 
