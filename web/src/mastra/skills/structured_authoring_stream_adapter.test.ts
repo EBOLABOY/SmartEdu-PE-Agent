@@ -130,6 +130,14 @@ async function* createLessonDraftStream() {
   };
 }
 
+async function* createManyLessonDraftStream(count: number) {
+  for (let index = 1; index <= count; index += 1) {
+    yield {
+      title: `羽毛球草稿 ${index}`,
+    };
+  }
+}
+
 function getArtifactData(chunk: UIMessageChunk | undefined): StructuredArtifactData | undefined {
   return chunk?.type === "data-artifact" ? (chunk.data as StructuredArtifactData) : undefined;
 }
@@ -302,7 +310,6 @@ describe("structured authoring stream adapter", () => {
       originalMessages: [],
       requestId: "request-tool-html",
       workflow,
-      lessonPlan: "## 十、课时计划\n| 课堂常规 | 1分钟 |",
       stream: createChunkStream([createHtmlToolChunk(html), { type: "finish", finishReason: "stop" }]),
     });
 
@@ -319,7 +326,7 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("无工具提交时，html 原始文本提取路径仍可工作", async () => {
+  it("无工具提交时，html 原始文本提取路径会原样输出模型 HTML", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -331,9 +338,8 @@ describe("structured authoring stream adapter", () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "html",
       originalMessages: [],
-      requestId: "request-html-fallback",
+      requestId: "request-html-raw-extraction",
       workflow,
-      lessonPlan: "## 十、课时计划\n| 课堂常规 | 1分钟 |",
       stream: createChunkStream([
         {
           type: "text-delta",
@@ -351,6 +357,55 @@ describe("structured authoring stream adapter", () => {
       .at(-1);
 
     expect(finalArtifact).toMatchObject({
+      contentType: "html",
+      content: expect.stringContaining("<section class=\"slide\">普通页面</section>"),
+      status: "ready",
+      isComplete: true,
+    });
+  });
+
+  it("html 文本流在完整文档出现前也会输出 streaming artifact", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      generationPlan: {
+        ...baseWorkflow.generationPlan,
+        mode: "html",
+        assistantTextPolicy: "suppress-html-text",
+      },
+    } as LessonWorkflowOutput;
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "html",
+      originalMessages: [],
+      requestId: "request-html-progress-before-document",
+      workflow,
+      stream: createChunkStream([
+        {
+          type: "text-delta",
+          id: "html-1",
+          delta: "正在设计课堂大屏结构...\n",
+        },
+        {
+          type: "text-delta",
+          id: "html-1",
+          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">课堂</section></body></html>",
+        },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const artifacts = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .filter(Boolean);
+
+    expect(artifacts[0]).toMatchObject({
+      contentType: "html",
+      content: expect.stringContaining("正在设计课堂大屏结构"),
+      status: "streaming",
+      isComplete: false,
+    });
+    expect(artifacts.at(-1)).toMatchObject({
       contentType: "html",
       status: "ready",
       isComplete: true,
@@ -474,6 +529,109 @@ describe("structured authoring stream adapter", () => {
         sportAbility: ["能稳定完成正手发高远球"],
       },
       title: "羽毛球草稿",
+    });
+  });
+
+  it("服务端管线会在草稿和最终校验阶段实时输出 workflow trace", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      trace: [
+        {
+          step: "server-deterministic-entry",
+          status: "success",
+          detail: "已进入服务端课时计划结构化生成管线。",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+        {
+          step: "server-standards-retrieval",
+          status: "success",
+          detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+      ],
+    } satisfies LessonWorkflowOutput;
+    const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(createConcreteLessonPlan()),
+      lessonDraftStream: createLessonDraftStream(),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-server-pipeline-trace",
+      workflow,
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+
+    const chunks = await readAll(stream);
+    const traceChunks = chunks
+      .map(getTraceData)
+      .filter((trace): trace is WorkflowTraceData => Boolean(trace));
+    const traceSteps = traceChunks.flatMap((trace) => trace.trace.map((entry) => entry.step));
+
+    expect(traceChunks.length).toBeGreaterThanOrEqual(3);
+    expect(traceChunks[0]).toMatchObject({
+      phase: "generation",
+      trace: expect.arrayContaining([
+        expect.objectContaining({ step: "server-deterministic-entry" }),
+        expect.objectContaining({ step: "server-standards-retrieval" }),
+        expect.objectContaining({ step: "agent-stream-started" }),
+      ]),
+    });
+    expect(traceSteps).toEqual(
+      expect.arrayContaining([
+        "stream-lesson-draft",
+        "validate-lesson-output",
+        "generation-finished",
+      ]),
+    );
+    expect(traceChunks.at(-1)).toMatchObject({
+      phase: "completed",
+      trace: expect.arrayContaining([
+        expect.objectContaining({
+          step: "agent-stream-started",
+          status: "success",
+        }),
+        expect.objectContaining({
+          step: "stream-lesson-draft",
+          status: "success",
+        }),
+        expect.objectContaining({
+          step: "validate-lesson-output",
+          status: "success",
+        }),
+      ]),
+    });
+    expect(traceChunks.at(-1)?.trace.filter((entry) => entry.status === "running")).toEqual([]);
+  });
+
+  it("草稿流 trace 会节流，最终仍收敛为成功状态", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(createConcreteLessonPlan()),
+      lessonDraftStream: createManyLessonDraftStream(45),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-throttled-draft-trace",
+      workflow: baseWorkflow,
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+
+    const chunks = await readAll(stream);
+    const traceChunks = chunks
+      .map(getTraceData)
+      .filter((trace): trace is WorkflowTraceData => Boolean(trace));
+    const draftTraceWrites = traceChunks.filter((trace) =>
+      trace.trace.some((entry) => entry.step === "stream-lesson-draft"),
+    );
+    const completedTrace = traceChunks.at(-1);
+
+    expect(draftTraceWrites.length).toBeLessThan(45);
+    expect(completedTrace).toMatchObject({
+      phase: "completed",
+      trace: expect.arrayContaining([
+        expect.objectContaining({
+          step: "stream-lesson-draft",
+          status: "success",
+          detail: expect.stringContaining("共同步 46 次草稿更新"),
+        }),
+      ]),
     });
   });
 

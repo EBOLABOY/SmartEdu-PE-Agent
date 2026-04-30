@@ -32,9 +32,17 @@ export {
   type LessonRepairGenerateRunner,
 } from "./lesson_generation_repair";
 export { runStandardsRetrievalSkill } from "./standards_retrieval_skill";
+export { runServerHtmlGenerationSkill } from "./server_html_generation_skill";
+export {
+  enrichWorkflowWithServerStandards,
+  type ServerStandardsEnrichmentInput,
+} from "./server_standards_enrichment";
 export {
   createLessonClarificationStreamAdapter,
+  createStructuredArtifactData,
   createStructuredAuthoringStreamAdapter,
+  createWorkflowTraceData,
+  createWorkflowTraceStep,
 } from "./structured_authoring_stream_adapter";
 export type { AgentStreamRunner } from "./lesson_generation_skill";
 export type { PromptSkill, PromptSkillWithInput } from "./types";

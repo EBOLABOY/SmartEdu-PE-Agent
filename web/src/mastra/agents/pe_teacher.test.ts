@@ -23,17 +23,21 @@ describe("pe_teacher", () => {
     ]);
   });
 
-  it("课时计划生成 Agent 直接暴露课标检索和输出工具", async () => {
+  it("课时计划 Agent 只暴露检索和需求诊断工具，不暴露产物搬运工具", async () => {
     const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
     const globalTools = mastra.listTools();
 
     expect(Object.keys(agentTools ?? {})).toEqual(
       expect.arrayContaining([
         "analyze_requirements",
+        "searchStandards",
+      ]),
+    );
+    expect(Object.keys(agentTools ?? {})).not.toEqual(
+      expect.arrayContaining([
         "apply_lesson_patch",
         "design_html_screen",
         "generate_structured_lesson",
-        "searchStandards",
         "submit_html_screen",
         "submit_lesson_plan",
         "write_lesson_plan",
@@ -49,16 +53,15 @@ describe("pe_teacher", () => {
     expect(globalTools).toHaveProperty("write_lesson_plan");
   });
 
-  it("lesson 阶段按需使用工具，正式课时计划通过 submit_lesson_plan 提交", () => {
+  it("lesson 阶段按需检索或诊断，正式课时计划由服务端管线提交", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, { mode: "lesson" });
 
     expect(prompt).toContain("普通聊天");
     expect(prompt).toContain("直接回复，不调用工具");
     expect(prompt).toContain("按需");
-    expect(prompt).toContain("submit_lesson_plan");
     expect(prompt).toContain("CompetitionLessonPlan");
-    expect(prompt).toContain("summary");
-    expect(prompt).toContain("AgentLessonGeneration JSON");
+    expect(prompt).toContain("服务端");
+    expect(prompt).toContain("不要输出 lessonPlan JSON");
     expect(prompt).toContain("优先自然追问");
     expect(prompt).toContain("request");
     expect(prompt).toContain("保留教师本轮原始需求");
@@ -66,6 +69,8 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("对象");
     expect(prompt).toContain("durationMinutes");
     expect(prompt).toContain("studentCount");
+    expect(prompt).not.toContain("submit_lesson_plan");
+    expect(prompt).not.toContain("AgentLessonGeneration JSON");
     expect(prompt).not.toContain("信息模糊时先调用 `analyze_requirements`");
     expect(prompt).not.toContain("<artifact>");
   });
@@ -91,13 +96,15 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("不要拼接到 request 字段里");
   });
 
-  it("html 阶段要求生成课堂学习辅助大屏并通过 submit_html_screen 提交", () => {
+  it("html 阶段要求服务端生成课堂学习辅助大屏，不暴露提交工具", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, {
       mode: "html",
       lessonPlan: "## 十、课时计划\n| 课堂常规 | 1 分钟 |\n| 战术学习 | 8 分钟 |",
     });
 
-    expect(prompt).toContain("submit_html_screen");
+    expect(prompt).toContain("服务端");
+    expect(prompt).toContain("不要调用提交工具");
+    expect(prompt).not.toContain("submit_html_screen");
     expect(prompt).toContain("课堂运行总览");
     expect(prompt).toContain("开始上课");
     expect(prompt).toContain("data-support-module");

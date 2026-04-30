@@ -36,7 +36,7 @@ export function parseSubmitHtmlScreenToolInput(input: unknown) {
 export const submitLessonPlanTool = createTool({
   id: SUBMIT_LESSON_PLAN_TOOL_NAME,
   description:
-    "当课时计划设计完成，或按用户要求修改完成后，必须调用此工具提交最终 CompetitionLessonPlan 和简短摘要。",
+    "[Deprecated legacy compatibility only] 旧版 Agent 工具链提交最终 CompetitionLessonPlan 的工具。正式新链路由服务端代码直接校验、封装和持久化，不应让 Agent 调用本工具搬运 JSON。",
   inputSchema: submitLessonPlanToolInputSchema,
   execute: async ({ lessonPlan, summary }) => {
     return {
@@ -51,7 +51,7 @@ export const submitLessonPlanTool = createTool({
 export const submitHtmlScreenTool = createTool({
   id: SUBMIT_HTML_SCREEN_TOOL_NAME,
   description:
-    "当互动大屏 HTML 完成后，必须调用此工具提交最终单文件 HTML 和简短摘要。",
+    "[Deprecated legacy compatibility only] 旧版 Agent 工具链提交最终单文件 HTML 的工具。正式新链路由服务端代码直接校验、封装和持久化，不应让 Agent 调用本工具搬运 HTML。",
   inputSchema: submitHtmlScreenToolInputSchema,
   execute: async ({ html, summary }) => {
     return {

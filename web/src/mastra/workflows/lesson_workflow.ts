@@ -279,11 +279,11 @@ function buildDeferredStandardsWorkflowFields(
   inputData: Pick<z.infer<typeof lessonWorkflowInputSchema>, "market">,
 ): Pick<LessonWorkflowOutput, "standardsContext" | "standards" | "trace"> {
   const resolved = resolveStandardsMarketMetadata(inputData.market);
-  const deferredWarning = "课程标准检索已交给 peTeacherAgent 的 searchStandards 按需执行；工作流不再预取课标片段。";
+  const deferredWarning = "课程标准检索由服务端生成管线在正式生成前执行；工作流准备阶段不预取课标片段。";
   const warning = deferredWarning;
 
   return {
-    standardsContext: "未预取课标片段。生成 Agent 可在需要课标依据时调用 searchStandards。",
+    standardsContext: "未预取课标片段。服务端生成管线将在正式生成前检索并注入课标依据。",
     standards: {
       requestedMarket: resolved.requestedMarket,
       resolvedMarket: resolved.resolvedMarket,
@@ -294,9 +294,9 @@ function buildDeferredStandardsWorkflowFields(
     },
     trace: [
       createTraceEntry(
-        "delegate-standards-tooling",
+        "defer-standards-retrieval",
         "success",
-        `目标市场 ${resolved.requestedMarket} 已解析为 ${resolved.resolvedMarket}，课标检索将由 searchStandards 按需执行。`,
+        `目标市场 ${resolved.requestedMarket} 已解析为 ${resolved.resolvedMarket}，课标检索将在服务端生成前执行。`,
       ),
     ],
   };
@@ -379,12 +379,11 @@ function buildMemoryPromptParts(memory?: LessonAuthoringMemory) {
 
 function buildWorkflowWarnings(inputData: {
   standards: LessonWorkflowOutput["standards"];
+  standardsRetrievalDeferred?: boolean;
 }) {
-  const standardsRetrievalDeferred = inputData.standards.warning?.includes("searchStandards") === true;
-
   return [
     ...(inputData.standards.warning ? [inputData.standards.warning] : []),
-    ...(inputData.standards.referenceCount === 0 && !standardsRetrievalDeferred
+    ...(inputData.standards.referenceCount === 0 && inputData.standardsRetrievalDeferred !== true
       ? ["未命中目标市场课标结构化条目，生成内容需以正式现行课标文本为准。"]
       : []),
   ];
@@ -430,6 +429,7 @@ const prepareIntentClarificationResponseStep = createStep({
     const resolvedMode = resolveGenerationMode(inputData);
     const warnings = buildWorkflowWarnings({
       standards: standards.standards,
+      standardsRetrievalDeferred: true,
     });
 
     return {
@@ -502,6 +502,7 @@ const preparePatchResponseStep = createStep({
     const standards = buildDeferredStandardsWorkflowFields(inputData);
     const warnings = buildWorkflowWarnings({
       standards: standards.standards,
+      standardsRetrievalDeferred: true,
     });
 
     if (!inputData.lessonPlan?.trim()) {
@@ -571,7 +572,7 @@ const constructPromptStep = createStep({
         screenPlan: inputData.screenPlan,
       }),
       ...buildMemoryPromptParts(inputData.memory),
-      "课程标准检索策略：searchStandards 已挂载给当前 Agent。生成新课时计划或需要核对课标依据时调用该工具；只做局部改写且用户未要求课标核对时，可以跳过工具。",
+      "课程标准检索策略：正式 lesson 生成由服务端在生成前检索并注入课标依据；Agent 只在普通咨询或显式课标问答时使用 searchStandards。",
       `目标市场：${standards.standards.resolvedMarket}`,
       ...(standards.standards.corpus
         ? [
@@ -591,7 +592,7 @@ const constructPromptStep = createStep({
         createTraceEntry(
           "construct-generation-prompt",
           "success",
-          `已构造 ${resolvedMode} 阶段系统提示词，并把教学记忆与课标检索决策交给 Agent。`,
+          `已构造 ${resolvedMode} 阶段系统提示词，并把教学记忆交给服务端生成管线。`,
         ),
       ],
     };
@@ -643,6 +644,7 @@ const validateSafetyStep = createStep({
         resolvedMode,
         buildWorkflowWarnings({
           standards: inputData.standards,
+          standardsRetrievalDeferred: inputData.trace.some((entry) => entry.step === "defer-standards-retrieval"),
         }),
       ),
       uiHints: mergeUiHints(

@@ -30,10 +30,63 @@ const mocks = vi.hoisted(() => {
     createStructuredAuthoringStreamAdapter: vi.fn(() =>
       createChunkStream([{ type: "finish", finishReason: "stop" }]),
     ),
+    enrichWorkflowWithServerStandards: vi.fn(async ({ workflow }) => ({
+      ...workflow,
+      standardsContext: "课标上下文：长拳基本动作与套路要求。",
+      standards: {
+        ...workflow.standards,
+        corpus: {
+          availability: "ready",
+          corpusId: "cn-compulsory-2022",
+          displayName: "义务教育体育与健康课程标准",
+          issuer: "教育部",
+          url: "https://example.com/standards.pdf",
+          version: "2022",
+        },
+        referenceCount: 1,
+        references: [
+          {
+            citation: "课程标准 第1页",
+            gradeBands: ["5-6年级"],
+            id: "std-1",
+            module: "武术",
+            score: 0.9,
+            sectionPath: ["运动技能", "中华传统体育"],
+            summary: "学练长拳基本动作与套路。",
+            title: "长拳内容要求",
+          },
+        ],
+      },
+      system: `${workflow.system}\n\n课标上下文：长拳基本动作与套路要求。`,
+      trace: [
+        ...workflow.trace,
+        {
+          detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
+          status: "success",
+          step: "server-standards-retrieval",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+      ],
+    })),
     getAgent: vi.fn(() => ({
       stream: agentStream,
     })),
     getWorkflow: vi.fn(),
+    runLessonGenerationWithRepair: vi.fn(async () => ({
+      finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
+      partialOutputStream: undefined,
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    })),
+    runServerHtmlGenerationSkill: vi.fn(async () =>
+      createChunkStream([
+        {
+          type: "text-delta",
+          id: "html",
+          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body>大屏</body></html>",
+        },
+        { type: "finish", finishReason: "stop" },
+      ]),
+    ),
   };
 });
 
@@ -50,6 +103,9 @@ vi.mock("@/mastra/ai_sdk_stream", () => ({
 
 vi.mock("@/mastra/skills", () => ({
   createStructuredAuthoringStreamAdapter: mocks.createStructuredAuthoringStreamAdapter,
+  enrichWorkflowWithServerStandards: mocks.enrichWorkflowWithServerStandards,
+  runLessonGenerationWithRepair: mocks.runLessonGenerationWithRepair,
+  runServerHtmlGenerationSkill: mocks.runServerHtmlGenerationSkill,
 }));
 
 async function readChunks(stream: ReadableStream<UIMessageChunk>) {
@@ -67,17 +123,6 @@ async function readChunks(stream: ReadableStream<UIMessageChunk>) {
   }
 }
 
-function getAgentStreamCall(index = 0) {
-  const call = mocks.agentStream.mock.calls[index] as unknown as [
-    unknown,
-    {
-      system: string;
-    },
-  ];
-
-  return call;
-}
-
 describe("lesson authoring service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -88,9 +133,62 @@ describe("lesson authoring service", () => {
     mocks.createStructuredAuthoringStreamAdapter.mockReturnValue(
       mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
     );
+    mocks.enrichWorkflowWithServerStandards.mockImplementation(async ({ workflow }) => ({
+      ...workflow,
+      standardsContext: "课标上下文：长拳基本动作与套路要求。",
+      standards: {
+        ...workflow.standards,
+        corpus: {
+          availability: "ready",
+          corpusId: "cn-compulsory-2022",
+          displayName: "义务教育体育与健康课程标准",
+          issuer: "教育部",
+          url: "https://example.com/standards.pdf",
+          version: "2022",
+        },
+        referenceCount: 1,
+        references: [
+          {
+            citation: "课程标准 第1页",
+            gradeBands: ["5-6年级"],
+            id: "std-1",
+            module: "武术",
+            score: 0.9,
+            sectionPath: ["运动技能", "中华传统体育"],
+            summary: "学练长拳基本动作与套路。",
+            title: "长拳内容要求",
+          },
+        ],
+      },
+      system: `${workflow.system}\n\n课标上下文：长拳基本动作与套路要求。`,
+      trace: [
+        ...workflow.trace,
+        {
+          detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
+          status: "success",
+          step: "server-standards-retrieval",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+      ],
+    }));
+    mocks.runLessonGenerationWithRepair.mockResolvedValue({
+      finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
+      partialOutputStream: undefined,
+      stream: mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+    mocks.runServerHtmlGenerationSkill.mockResolvedValue(
+      mocks.createChunkStream([
+        {
+          type: "text-delta",
+          id: "html",
+          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body>大屏</body></html>",
+        },
+        { type: "finish", finishReason: "stop" },
+      ]),
+    );
   });
 
-  it("入口直接调用 peTeacherAgent.stream，并把 Agentic 工具提示注入 system", async () => {
+  it("课时计划生成请求进入服务端确定性生成管线", async () => {
     const { streamLessonAuthoring } = await import("./lesson_authoring");
 
     const result = await streamLessonAuthoring({
@@ -110,19 +208,30 @@ describe("lesson authoring service", () => {
     await readChunks(result.stream);
 
     expect(mocks.getWorkflow).not.toHaveBeenCalled();
-    expect(mocks.getAgent).toHaveBeenCalledWith("peTeacherAgent");
-    expect(mocks.agentStream).toHaveBeenCalledWith(
-      expect.any(Array),
+    expect(mocks.getAgent).not.toHaveBeenCalled();
+    expect(mocks.enrichWorkflowWithServerStandards).toHaveBeenCalledWith(
       expect.objectContaining({
-        maxSteps: 7,
-        system: expect.stringContaining("analyze_requirements"),
+        query: "帮我做一节篮球运球接力课",
+        workflow: expect.objectContaining({
+          generationPlan: expect.objectContaining({ mode: "lesson" }),
+        }),
       }),
     );
-    expect(getAgentStreamCall()[1].system).toContain("年级：三年级");
-    expect(getAgentStreamCall()[1].system).toContain("主题：篮球运球接力");
+    expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serverSide: true,
+        workflow: expect.objectContaining({
+          generationPlan: expect.objectContaining({ mode: "lesson" }),
+          system: expect.stringContaining("年级：三年级"),
+          standards: expect.objectContaining({
+            referenceCount: 1,
+          }),
+        }),
+      }),
+    );
   }, 15000);
 
-  it("会构造 Agentic 兼容 workflow，并交给结构化 Artifact adapter", async () => {
+  it("会构造服务端创作 workflow，并交给结构化 Artifact adapter", async () => {
     const { streamLessonAuthoring } = await import("./lesson_authoring");
 
     const result = await streamLessonAuthoring({
@@ -140,7 +249,6 @@ describe("lesson authoring service", () => {
 
     expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
-        allowTextOnlyResponse: true,
         mode: "lesson",
         projectId: "00000000-0000-4000-8000-000000000001",
         workflow: expect.objectContaining({
@@ -154,7 +262,15 @@ describe("lesson authoring service", () => {
           }),
           trace: expect.arrayContaining([
             expect.objectContaining({
-              step: "agentic-entry",
+              step: "authoring-entry",
+              status: "success",
+            }),
+            expect.objectContaining({
+              step: "server-deterministic-entry",
+              status: "success",
+            }),
+            expect.objectContaining({
+              step: "server-standards-retrieval",
               status: "success",
             }),
           ]),
@@ -238,12 +354,18 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    expect(getAgentStreamCall()[1].system).toContain("当前已确认课时计划 JSON");
-    expect(getAgentStreamCall()[1].system).toContain("submit_html_screen");
+    expect(mocks.getAgent).not.toHaveBeenCalled();
+    expect(mocks.runServerHtmlGenerationSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+        workflow: expect.objectContaining({
+          system: expect.stringContaining("当前已确认课时计划 JSON"),
+        }),
+      }),
+    );
     expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "html",
-        lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
         workflow: expect.objectContaining({
           generationPlan: expect.objectContaining({
             mode: "html",
@@ -328,7 +450,8 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    const serializedMessages = JSON.stringify(getAgentStreamCall()[0]);
+    const generationCall = mocks.runLessonGenerationWithRepair.mock.calls.at(-1)?.[0];
+    const serializedMessages = JSON.stringify(generationCall?.messages);
 
     expect(serializedMessages).toContain("先看课标");
     expect(serializedMessages).toContain("历史回复");
@@ -378,7 +501,8 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    const serializedMessages = JSON.stringify(getAgentStreamCall()[0]);
+    const generationCall = mocks.runLessonGenerationWithRepair.mock.calls.at(-1)?.[0];
+    const serializedMessages = JSON.stringify(generationCall?.messages);
 
     expect(serializedMessages).toContain("非法 JSON 回退");
     expect(serializedMessages).toContain("只剩 data 回退");

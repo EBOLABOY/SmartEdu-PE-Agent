@@ -171,7 +171,7 @@ describe("lesson authoring memory", () => {
     expect(result.intake.known?.venue).toBeUndefined();
   });
 
-  it("lets the lesson generation agent choose a venue when only venue is missing", () => {
+  it("lets the server lesson generation pipeline choose a venue when only venue is missing", () => {
     const intake: LessonIntakeResult = {
       readyToGenerate: false,
       known: {
@@ -193,7 +193,7 @@ describe("lesson authoring memory", () => {
     expect(result.intake.readyToGenerate).toBe(true);
     expect(result.intake.missing).toEqual([]);
     expect(result.intake.clarifications).toEqual([]);
-    expect(result.intake.summary).toContain("场地由课时计划生成 Agent 根据课程内容自动匹配");
+    expect(result.intake.summary).toContain("场地由服务端课时计划生成管线根据课程内容自动匹配");
     expect(result.intake.known?.venue).toBeUndefined();
   });
 });

@@ -112,12 +112,41 @@ function normalizeCompetitionLessonPlanRow(value: unknown) {
 }
 
 export const competitionLessonLoadChartPointSchema = z
-  .object({
-    timeMinute: z.number().min(0).max(240),
-    heartRate: z.number().int().min(60).max(220),
-    label: nonEmptyString.optional(),
-  })
-  .strict();
+  .preprocess((value) => {
+    if (!isRecord(value)) {
+      return value;
+    }
+
+    const candidate = { ...value };
+
+    if (candidate.timeMinute === undefined && candidate.time !== undefined) {
+      const rawTime = candidate.time;
+      const match =
+        typeof rawTime === "number"
+          ? [String(rawTime), String(rawTime)]
+          : typeof rawTime === "string"
+            ? /(\d+(?:\.\d+)?)/.exec(rawTime)
+            : undefined;
+
+      if (match) {
+        candidate.timeMinute = Number.parseFloat(match[1]);
+      }
+
+      if (candidate.label === undefined && typeof rawTime === "string") {
+        candidate.label = rawTime;
+      }
+
+      delete candidate.time;
+    }
+
+    return candidate;
+  }, z
+    .object({
+      timeMinute: z.number().min(0).max(240),
+      heartRate: z.number().int().min(60).max(220),
+      label: nonEmptyString.optional(),
+    })
+    .strict());
 
 const defaultLoadChartPoints = [
   { timeMinute: 0, heartRate: 90, label: "0'" },

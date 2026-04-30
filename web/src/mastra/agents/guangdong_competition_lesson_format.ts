@@ -40,45 +40,42 @@ export const GUANGDONG_COMPETITION_LESSON_FORMAT = `
    正确示例："guidingThought": ["本课以核心素养为导向，通过游戏化任务促进学生在真实情境中掌握动作方法。"]
 
 输出协议：
-1. 你必须直接返回满足 AgentLessonGeneration schema 的结构化数据。
-2. 顶层字段只包含 _thinking_process 与 lessonPlan。
-3. _thinking_process 写课时计划设计草稿：目标、重难点、三段时间分配和环节思路。
-4. lessonPlan 写最终 CompetitionLessonPlan 数据，最终由系统校验并渲染为正式打印版。
+1. 正式业务产物是 CompetitionLessonPlan。
+2. 服务端生成管线可能在外层添加内部 envelope 字段，但业务层、渲染层和数据库只保存 CompetitionLessonPlan。
+3. 不要输出 Markdown 表格、HTML、XML、代码围栏或 artifact 标签。
+4. 课时计划最终由系统校验并渲染为正式打印版。
 
 结构化数据示例参考：
 {
-  "_thinking_process": "本课面向三年级学生，核心目标是让学生在游戏化情境中掌握篮球运球变向的基本方法。准备部分用5分钟完成热身与球性激活，基本部分用28分钟分三关推进动作学习与小组挑战，结束部分用5分钟放松总结。",
-  "lessonPlan": {
-    "title": "篮球运球变向练习",
-    "subtitle": "——水平二·三年级",
-    "teacher": {
-      "school": "未提供学校",
-      "name": "未提供教师"
-    },
-    "meta": {
-      "topic": "篮球运球变向",
-      "lessonNo": "第1课时",
-      "studentCount": "40人",
-      "grade": "三年级",
-      "level": "水平二"
-    },
-    "periodPlan": {
-      "mainContent": ["篮球运球变向练习"],
-      "safety": ["绕桶间距不少于2米"],
-      "rows": [{
-        "structure": "准备部分",
-        "content": ["课堂常规与球性热身"],
-        "methods": {
-          "teacher": ["提示运球姿态和安全距离"],
-          "students": ["按队形完成慢跑、球性和原地运球"]
-        },
-        "organization": ["四列横队散开，篮球场半场活动"],
-        "time": "5分钟",
-        "intensity": "中"
-      }],
-      "homework": ["课后练习原地左右手运球各30次"],
-      "reflection": ["根据学生控球稳定性调整下次分层任务"]
-    }
+  "title": "篮球运球变向练习",
+  "subtitle": "——水平二·三年级",
+  "teacher": {
+    "school": "未提供学校",
+    "name": "未提供教师"
+  },
+  "meta": {
+    "topic": "篮球运球变向",
+    "lessonNo": "第1课时",
+    "studentCount": "40人",
+    "grade": "三年级",
+    "level": "水平二"
+  },
+  "periodPlan": {
+    "mainContent": ["篮球运球变向练习"],
+    "safety": ["绕桶间距不少于2米"],
+    "rows": [{
+      "structure": "准备部分",
+      "content": ["课堂常规与球性热身"],
+      "methods": {
+        "teacher": ["提示运球姿态和安全距离"],
+        "students": ["按队形完成慢跑、球性和原地运球"]
+      },
+      "organization": ["四列横队散开，篮球场半场活动"],
+      "time": "5分钟",
+      "intensity": "中"
+    }],
+    "homework": ["课后练习原地左右手运球各30次"],
+    "reflection": ["根据学生控球稳定性调整下次分层任务"]
   }
 }
 `;

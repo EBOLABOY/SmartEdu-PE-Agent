@@ -1,9 +1,15 @@
 import type { MastraModelOutput } from "@mastra/core/stream";
 import {
   convertToModelMessages,
+  extractJsonMiddleware,
+  Output,
+  stepCountIs,
+  streamText,
   type DeepPartial,
   type UIMessageChunk,
+  wrapLanguageModel,
 } from "ai";
+import { z } from "zod";
 
 import {
   agentLessonGenerationSchema,
@@ -14,6 +20,7 @@ import {
 } from "@/lib/competition-lesson-contract";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
+import { createChatModel } from "@/mastra/models";
 import {
   SUBMIT_LESSON_PLAN_TOOL_NAME,
   parseSubmitLessonPlanToolInput,
@@ -47,6 +54,8 @@ type ReadableObjectStream<T> = {
   };
 };
 
+type LessonGenerationEnvelope = z.infer<typeof lessonGenerationEnvelopeSchema>;
+
 export type AgentStreamRunner<OUTPUT = unknown> = (
   messages: AgentModelMessages,
   options: AgentStreamOptions,
@@ -72,9 +81,20 @@ export type LessonGenerationStreams = {
   stream: ReadableStream<UIMessageChunk>;
 };
 
-const DEFAULT_LESSON_MODEL_ID = "gpt-4.1-mini";
+const DEFAULT_LESSON_MODEL_ID = process.env.AI_LESSON_MODEL ?? process.env.AI_MODEL ?? "gpt-4.1-mini";
 const MAX_MODEL_OPERATION_ATTEMPTS = 5;
 const STRUCTURED_OUTPUT_MAX_RETRIES = 3;
+
+export const lessonGenerationEnvelopeSchema = z
+  .object({
+    _thinking_process: z
+      .string()
+      .trim()
+      .min(1)
+      .describe("面向 trace 的课时计划设计草稿。业务层必须丢弃该字段，只保存 lessonPlan。"),
+    lessonPlan: competitionLessonPlanSchema.describe("最终可渲染和持久化的纯净课时计划。"),
+  })
+  .strict();
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -149,6 +169,82 @@ function normalizeLessonGenerationStreams(
   output: LessonGenerationStreams | ReadableStream<UIMessageChunk>,
 ): LessonGenerationStreams {
   return output instanceof ReadableStream ? { stream: output } : output;
+}
+
+function createStructuredModel(modelId: string) {
+  return wrapLanguageModel({
+    model: createChatModel(modelId),
+    middleware: extractJsonMiddleware(),
+  });
+}
+
+function createServerLessonSystemPrompt(system: string) {
+  return [
+    system,
+    "你正在执行服务端确定性课时计划生成任务，不是工具调用或聊天回复。",
+    "输出必须符合内部 envelope schema：顶层只能包含 _thinking_process 和 lessonPlan。",
+    "_thinking_process 写简短设计草稿；lessonPlan 写完整 CompetitionLessonPlan。",
+    "不要调用 submit_lesson_plan，不要输出 Markdown、HTML、XML、代码围栏或解释文字。",
+    "业务系统只会保存 lessonPlan；_thinking_process 仅用于生成 trace。",
+  ].join("\n\n");
+}
+
+function createEmptyUiStream(): ReadableStream<UIMessageChunk> {
+  return new ReadableStream<UIMessageChunk>({
+    start(controller) {
+      controller.enqueue({ type: "finish", finishReason: "stop" });
+      controller.close();
+    },
+  });
+}
+
+async function* mapEnvelopePartialOutputStream(
+  partialOutputStream: AsyncIterable<DeepPartial<LessonGenerationEnvelope>>,
+): AsyncIterable<DeepPartial<CompetitionLessonPlan>> {
+  for await (const partial of partialOutputStream) {
+    if (partial.lessonPlan) {
+      yield partial.lessonPlan as DeepPartial<CompetitionLessonPlan>;
+    }
+  }
+}
+
+async function streamCompetitionLessonPlanServerSide({
+  maxSteps,
+  messages,
+  modelId,
+  system,
+}: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}): Promise<LessonGenerationStreams> {
+  const result = streamText({
+    model: createStructuredModel(modelId),
+    system: createServerLessonSystemPrompt(system),
+    messages,
+    stopWhen: stepCountIs(Math.max(1, maxSteps)),
+    temperature: 0,
+    output: Output.object({
+      schema: lessonGenerationEnvelopeSchema,
+      name: "LessonGenerationEnvelope",
+      description: "服务端课时计划生成 envelope；业务层只使用 lessonPlan。",
+    }),
+  });
+
+  const finalLessonPlanPromise = Promise.resolve(result.output).then((envelope) =>
+    competitionLessonPlanSchema.parse(envelope.lessonPlan),
+  );
+
+  void finalLessonPlanPromise.catch(() => undefined);
+
+  return {
+    finalLessonPlanPromise,
+    partialOutputStream: mapEnvelopePartialOutputStream(
+      result.partialOutputStream as AsyncIterable<DeepPartial<LessonGenerationEnvelope>>,
+    ),
+    stream: createEmptyUiStream(),
+  };
 }
 
 function readToolInputPart(part: UIMessageChunk) {
@@ -317,6 +413,7 @@ export async function runLessonGenerationSkill(input: {
   messages: SmartEduUIMessage[];
   modelId?: string;
   requestId: string;
+  serverSide?: boolean;
   structuredStream?: LessonStructuredStreamer;
   structuredGenerate?: LessonStructuredGenerator;
   toUIMessageStream?: (result: MastraModelOutput<AgentLessonGenerationResult>) => ReadableStream<UIMessageChunk>;
@@ -345,7 +442,15 @@ export async function runLessonGenerationSkill(input: {
             }),
           };
         }
-      : input.agentStream
+      : input.serverSide === true || !input.agentStream
+        ? (options: Parameters<LessonStructuredStreamer>[0]) =>
+            streamCompetitionLessonPlanServerSide({
+              maxSteps: options.maxSteps,
+              messages: options.messages,
+              modelId: options.modelId,
+              system: options.system,
+            })
+        : input.agentStream
         ? (options: Parameters<LessonStructuredStreamer>[0]) =>
             streamCompetitionLessonPlanWithMastraAgent({
               agentStream: input.agentStream!,
@@ -357,7 +462,7 @@ export async function runLessonGenerationSkill(input: {
         : undefined);
 
   if (!streamer) {
-    throw new Error("Lesson generation requires a Mastra Agent stream runner.");
+    throw new Error("Lesson generation requires a server-side structured streamer or legacy Mastra Agent stream runner.");
   }
 
   const generationStreams = normalizeLessonGenerationStreams(

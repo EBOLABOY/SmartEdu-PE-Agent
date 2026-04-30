@@ -75,6 +75,7 @@ describe("artifact-source-policy", () => {
     expect(
       shouldUsePersistedArtifactState({
         hasLiveArtifactAuthority: true,
+        hasUnacknowledgedLiveArtifact: true,
         isArtifactHistoryLoading: false,
         isArtifactSyncPending: false,
         isLoading: false,
@@ -89,6 +90,21 @@ describe("artifact-source-policy", () => {
         createSnapshot(),
         [PERSISTED_LESSON_VERSION],
       ),
+    ).toBe(false);
+  });
+
+  it("does not let stale persisted lesson hide a completed live html artifact", () => {
+    expect(
+      shouldUsePersistedArtifactState({
+        hasLiveArtifactAuthority: false,
+        hasUnacknowledgedLiveArtifact: true,
+        isArtifactHistoryLoading: false,
+        isArtifactSyncPending: false,
+        isLoading: false,
+        isWorkspaceLoading: false,
+        persistedVersionsLength: 1,
+        projectId: PROJECT_ID,
+      }),
     ).toBe(false);
   });
 

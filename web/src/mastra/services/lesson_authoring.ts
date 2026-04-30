@@ -27,9 +27,7 @@ import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-stor
 import { mastra } from "@/mastra";
 import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
 import { buildPeTeacherSystemPrompt } from "@/mastra/agents/pe_teacher";
-import {
-  createStructuredAuthoringStreamAdapter,
-} from "@/mastra/skills";
+import * as authoringSkills from "@/mastra/skills";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 import {
   buildWorkflowTraceData,
@@ -158,14 +156,14 @@ function createAgenticWorkflowContext(input: {
 
   return {
     system: input.system,
-    standardsContext: "课标检索由 peTeacherAgent 按需调用 searchStandards 工具完成。",
+    standardsContext: "课标检索由服务端生成管线在正式生成前执行。",
     standards: {
       requestedMarket: market,
       resolvedMarket: market,
       corpus: null,
       referenceCount: 0,
       references: [],
-      warning: "Agentic 模式不再由入口工作流预取课标；生成前应由 Agent 调用 searchStandards。",
+      warning: "正式生成前将由服务端主动检索课标并注入结构化生成提示。",
     },
     generationPlan: {
       mode: input.mode,
@@ -193,17 +191,27 @@ function createAgenticWorkflowContext(input: {
       intentResult: {
         intent: input.mode === "html" ? "generate_html" : "generate_lesson",
         confidence: 1,
-        reason: "Agentic 模式由 peTeacherAgent 根据对话上下文自主选择工具和交付路径。",
+        reason: "服务端入口已根据对话上下文选择结构化生成目标；正式产物由服务端确定性管线交付。",
       },
     },
     trace: [
       createWorkflowTraceEntry(
-        "agentic-entry",
+        "authoring-entry",
         "success",
-        `已进入 Agentic 自主工具编排模式，初始输出目标为 ${input.mode}。`,
+        `已进入体育课时创作入口，初始输出目标为 ${input.mode}。`,
       ),
     ],
   };
+}
+
+function createServerGenerationTraceEntry(mode: GenerationMode) {
+  return createWorkflowTraceEntry(
+    "server-deterministic-entry",
+    "success",
+    mode === "html"
+      ? "已进入服务端 HTML 流式生成管线，不再通过 Agent 工具提交 HTML。"
+      : "已进入服务端课时计划结构化生成管线，不再通过 Agent 工具提交课时计划。",
+  );
 }
 
 function writeAuthoringFailure(input: {
@@ -339,13 +347,67 @@ async function executeLessonAuthoringStream(input: {
     mode: agenticMode,
     screenPlan: request.screenPlan,
   });
-  const workflow = createAgenticWorkflowContext({
+  let workflow = createAgenticWorkflowContext({
     mode: agenticMode,
     query,
     request,
     requestId,
     system,
   });
+
+  if (agenticMode === "lesson" && shouldUseStructuredAdapter) {
+    workflow.trace.push(createServerGenerationTraceEntry("lesson"));
+    workflow = await authoringSkills.enrichWorkflowWithServerStandards({
+      market: request.market,
+      query,
+      workflow,
+    });
+    const generation = await authoringSkills.runLessonGenerationWithRepair({
+      messages: executionMessages,
+      requestId,
+      serverSide: true,
+      workflow,
+    });
+
+    writer.merge(
+      authoringSkills.createStructuredAuthoringStreamAdapter({
+        finalLessonPlanPromise: generation.finalLessonPlanPromise,
+        lessonDraftStream: generation.partialOutputStream,
+        mode: "lesson",
+        originalMessages: executionMessages,
+        persistence: request.persistence,
+        projectId: request.projectId,
+        requestId,
+        workflow,
+        stream: generation.stream,
+      }),
+    );
+    return;
+  }
+
+  if (agenticMode === "html" && shouldUseStructuredAdapter) {
+    workflow.trace.push(createServerGenerationTraceEntry("html"));
+    const htmlStream = await authoringSkills.runServerHtmlGenerationSkill({
+      lessonPlan: request.lessonPlan ?? "",
+      messages: executionMessages,
+      requestId,
+      workflow,
+    });
+
+    writer.merge(
+      authoringSkills.createStructuredAuthoringStreamAdapter({
+        mode: "html",
+        originalMessages: executionMessages,
+        persistence: request.persistence,
+        projectId: request.projectId,
+        requestId,
+        workflow,
+        stream: htmlStream,
+      }),
+    );
+    return;
+  }
+
   const agent = mastra.getAgent("peTeacherAgent");
   const modelMessages = await convertToModelMessages(executionMessages);
   const agentResult = (await agent.stream(modelMessages, {
@@ -368,10 +430,9 @@ async function executeLessonAuthoringStream(input: {
   }
 
   writer.merge(
-    createStructuredAuthoringStreamAdapter({
+    authoringSkills.createStructuredAuthoringStreamAdapter({
       allowTextOnlyResponse: true,
       originalMessages: executionMessages,
-      lessonPlan: request.lessonPlan,
       mode: workflow.generationPlan.mode,
       persistence: request.persistence,
       projectId: request.projectId,

@@ -143,10 +143,10 @@ function buildLessonSummary(known: LessonIntakeKnownInfo) {
     known.grade,
     known.teachingLevel,
     known.topic,
-    known.durationMinutes ? `${known.durationMinutes}分钟` : "课时由课时计划生成 Agent 自动匹配",
+    known.durationMinutes ? `${known.durationMinutes}分钟` : "课时由服务端课时计划生成管线自动匹配",
     `${known.studentCount ?? DEFAULT_STUDENT_COUNT}人`,
-    known.venue ?? "场地由课时计划生成 Agent 根据课程内容自动匹配",
-    known.equipment?.length ? `器材限制/指定：${known.equipment.join("、")}` : "器材由课时计划生成 Agent 自动配置",
+    known.venue ?? "场地由服务端课时计划生成管线根据课程内容自动匹配",
+    known.equipment?.length ? `器材限制/指定：${known.equipment.join("、")}` : "器材由服务端课时计划生成管线自动配置",
     known.objectives?.length ? `目标：${known.objectives.join("、")}` : undefined,
     known.constraints?.length ? `限制：${known.constraints.join("、")}` : undefined,
   ].filter(Boolean);
@@ -205,9 +205,9 @@ export function formatLessonAuthoringMemoryForPrompt(memory?: LessonAuthoringMem
     defaults.objectives?.length ? `- 常用目标倾向：${defaults.objectives.join("、")}` : null,
     defaults.constraints?.length ? `- 已知限制：${defaults.constraints.join("、")}` : null,
     "- 学生人数未明确时默认 40 人。",
-    "- 课时由课时计划生成 Agent 根据内容和环节自动匹配。",
-    "- 场地未明确时由课时计划生成 Agent 根据课程内容自动匹配。",
-    "- 器材由课时计划生成 Agent 根据课程内容、场地和人数自动配置。",
+    "- 课时由服务端课时计划生成管线根据内容和环节自动匹配。",
+    "- 场地未明确时由服务端课时计划生成管线根据课程内容自动匹配。",
+    "- 器材由服务端课时计划生成管线根据课程内容、场地和人数自动配置。",
   ].filter(Boolean);
 
   return lines.join("\n");

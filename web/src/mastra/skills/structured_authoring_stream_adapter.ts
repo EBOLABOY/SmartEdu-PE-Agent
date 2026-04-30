@@ -22,7 +22,6 @@ import {
   type WorkflowTraceData,
   type WorkflowTraceEntry,
 } from "@/lib/lesson-authoring-contract";
-import { buildLessonSlideshowHtml, isPptStyleLessonHtml } from "@/lib/lesson-slideshow-html";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import {
   SUBMIT_HTML_SCREEN_TOOL_NAME,
@@ -36,6 +35,13 @@ import {
   formatLessonValidationIssues,
   performLessonBusinessValidation,
 } from "./lesson_generation_validation";
+
+const DRAFT_TRACE_UPDATE_INTERVAL = 20;
+const TERMINAL_RUNNING_TRACE_STEPS = new Set([
+  "agent-stream-started",
+  "stream-lesson-draft",
+  "validate-lesson-output",
+]);
 
 function nowIsoString() {
   return new Date().toISOString();
@@ -116,6 +122,38 @@ function buildArtifactData(
   };
 }
 
+export function createStructuredArtifactData(
+  workflow: LessonWorkflowOutput,
+  options: {
+    content: string;
+    contentType?: StructuredArtifactData["contentType"];
+    isComplete: boolean;
+    status: StructuredArtifactData["status"];
+    title?: string;
+    warningText?: string;
+  },
+) {
+  return buildArtifactData(workflow, options);
+}
+
+export function createWorkflowTraceData(
+  workflow: LessonWorkflowOutput,
+  requestId: string,
+  trace: WorkflowTraceEntry[],
+  phase: WorkflowTraceData["phase"],
+  uiHints?: UiHint[],
+) {
+  return buildTraceData(workflow, requestId, trace, phase, uiHints);
+}
+
+export function createWorkflowTraceStep(
+  step: string,
+  status: WorkflowTraceEntry["status"],
+  detail: string,
+) {
+  return createTraceEntry(step, status, detail);
+}
+
 function readStructuredOutputPart(part: UIMessageChunk) {
   const candidate = part as {
     data?: {
@@ -188,10 +226,6 @@ function buildHtmlExtractionWarning(leadingText: string, trailingText: string) {
   return warnings.join(" ");
 }
 
-function joinWarnings(...warnings: Array<string | undefined>) {
-  return warnings.filter(Boolean).join(" ");
-}
-
 function shouldForwardAssistantText(mode: GenerationMode, workflow: LessonWorkflowOutput) {
   return mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text";
 }
@@ -260,7 +294,6 @@ export function createStructuredAuthoringStreamAdapter({
   mode,
   originalMessages,
   lessonDraftStream,
-  lessonPlan,
   persistence,
   projectId,
   requestId,
@@ -274,7 +307,6 @@ export function createStructuredAuthoringStreamAdapter({
   mode: GenerationMode;
   originalMessages: SmartEduUIMessage[];
   lessonDraftStream?: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
-  lessonPlan?: string;
   persistence?: LessonAuthoringPersistence | null;
   projectId?: string;
   requestId: string;
@@ -299,6 +331,7 @@ export function createStructuredAuthoringStreamAdapter({
           }
         | undefined;
       let hasStructuredActivity = false;
+      let lessonDraftChunkCount = 0;
       const forwardAssistantText = allowTextOnlyResponse || shouldForwardAssistantText(mode, workflow);
       const [inspectionStream, passthroughStream] = stream.tee();
       const reader = inspectionStream.getReader();
@@ -315,6 +348,66 @@ export function createStructuredAuthoringStreamAdapter({
             mode === "html" ? "已开始生成互动大屏 HTML 流。" : "已开始生成课时计划流。",
           ),
         );
+      };
+
+      const pushOrReplaceTraceEntry = (
+        step: string,
+        status: WorkflowTraceEntry["status"],
+        detail: string,
+      ) => {
+        const nextEntry = createTraceEntry(step, status, detail);
+        const existingIndex = runtimeTrace.findIndex((entry) => entry.step === step);
+
+        if (existingIndex >= 0) {
+          runtimeTrace.splice(existingIndex, 1, nextEntry);
+          return;
+        }
+
+        runtimeTrace.push(nextEntry);
+      };
+
+      const completeRunningTraceStep = (step: string, detail: string) => {
+        const existing = runtimeTrace.find((entry) => entry.step === step);
+
+        if (existing?.status !== "running") {
+          return;
+        }
+
+        pushOrReplaceTraceEntry(step, "success", detail);
+      };
+
+      const completeServerPipelineTrace = () => {
+        for (const entry of [...runtimeTrace]) {
+          if (entry.status !== "running" || !TERMINAL_RUNNING_TRACE_STEPS.has(entry.step)) {
+            continue;
+          }
+
+          if (entry.step === "agent-stream-started") {
+            pushOrReplaceTraceEntry(
+              "agent-stream-started",
+              "success",
+              mode === "html" ? "互动大屏 HTML 模型生成流已结束。" : "课时计划模型生成流已结束。",
+            );
+            continue;
+          }
+
+          if (entry.step === "stream-lesson-draft") {
+            pushOrReplaceTraceEntry(
+              "stream-lesson-draft",
+              "success",
+              `课时计划草稿流已完成，共同步 ${lessonDraftChunkCount} 次草稿更新。`,
+            );
+            continue;
+          }
+
+          if (entry.step === "validate-lesson-output") {
+            pushOrReplaceTraceEntry(
+              "validate-lesson-output",
+              "success",
+              "结构化课时计划已通过最终 schema 与业务校验。",
+            );
+          }
+        }
       };
 
       const markStructuredActivity = () => {
@@ -338,6 +431,15 @@ export function createStructuredAuthoringStreamAdapter({
         });
       };
 
+      const startServerPipelineTrace = () => {
+        if (allowTextOnlyResponse) {
+          return;
+        }
+
+        markStructuredActivity();
+        writeTrace("generation");
+      };
+
       const writeArtifact = (artifact: StructuredArtifactData) => {
         markStructuredActivity();
         writer.write({
@@ -349,8 +451,19 @@ export function createStructuredAuthoringStreamAdapter({
 
       let latestLessonDraft = buildCompetitionLessonDraft();
 
+      const shouldWriteDraftTrace = () =>
+        lessonDraftChunkCount <= 2 || lessonDraftChunkCount % DRAFT_TRACE_UPDATE_INTERVAL === 0;
+
       const writeLessonDraftArtifact = (partial?: DeepPartial<CompetitionLessonPlan>) => {
         latestLessonDraft = buildCompetitionLessonDraft(partial, latestLessonDraft);
+        lessonDraftChunkCount += 1;
+        if (shouldWriteDraftTrace()) {
+          pushOrReplaceTraceEntry(
+            "stream-lesson-draft",
+            "running",
+            `正在流式生成课时计划草稿，已同步 ${lessonDraftChunkCount} 次草稿更新。`,
+          );
+        }
         writeArtifact(
           buildArtifactData(workflow, {
             content: JSON.stringify(latestLessonDraft),
@@ -360,6 +473,9 @@ export function createStructuredAuthoringStreamAdapter({
             title: latestLessonDraft.title,
           }),
         );
+        if (shouldWriteDraftTrace()) {
+          writeTrace("generation");
+        }
       };
 
       const persistArtifact = async (artifact: StructuredArtifactData) => {
@@ -490,6 +606,12 @@ export function createStructuredAuthoringStreamAdapter({
 
         if (finalLessonPlanPromise) {
           try {
+            pushOrReplaceTraceEntry(
+              "validate-lesson-output",
+              "running",
+              "正在等待模型最终结构化输出，并执行课时计划 schema 与业务校验。",
+            );
+            writeTrace("generation");
             trustedLessonOutput = await finalLessonPlanPromise;
           } catch (error) {
             writeStreamError(
@@ -513,6 +635,20 @@ export function createStructuredAuthoringStreamAdapter({
         }
 
         const lessonJson = buildLessonJsonArtifactContent(trustedLessonOutput);
+        completeRunningTraceStep(
+          "agent-stream-started",
+          mode === "html" ? "互动大屏 HTML 模型生成流已结束。" : "课时计划模型生成流已结束。",
+        );
+        completeRunningTraceStep(
+          "stream-lesson-draft",
+          `课时计划草稿流已完成，共同步 ${lessonDraftChunkCount} 次草稿更新。`,
+        );
+        pushOrReplaceTraceEntry(
+          "validate-lesson-output",
+          "success",
+          "结构化课时计划已通过最终 schema 与业务校验。",
+        );
+        writeTrace("generation");
         const artifact = buildArtifactData(workflow, {
           content: lessonJson.content,
           contentType: lessonJson.contentType,
@@ -552,37 +688,17 @@ export function createStructuredAuthoringStreamAdapter({
           extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
         }
 
-        const shouldUseFallback = !isPptStyleLessonHtml(htmlDocument);
-        const finalHtml = shouldUseFallback ? buildLessonSlideshowHtml(lessonPlan ?? "") : htmlDocument;
-        const fallbackWarning = shouldUseFallback
-          ? "模型 HTML 未满足课堂学习辅助大屏要求，系统已按课时计划生成兜底版本。"
-          : undefined;
-
-        if (shouldUseFallback) {
-          runtimeTrace.push(
-            createTraceEntry(
-              "html-slideshow-fallback",
-              "success",
-              "已将不合格 HTML 替换为课堂学习辅助大屏兜底版本。",
-            ),
-          );
-          effectiveUiHints.push({
-            action: "show_toast",
-            params: {
-              level: "warning",
-              title: "互动大屏已自动替换",
-              description: "模型 HTML 未满足课堂辅助要求，系统已生成兜底版本。",
-            },
-          });
-        }
-
         const artifact = buildArtifactData(workflow, {
-          content: finalHtml,
+          content: htmlDocument,
           isComplete: true,
           status: "ready",
-          warningText: joinWarnings(extractedWarning, fallbackWarning) || undefined,
+          warningText: extractedWarning,
         });
 
+        completeRunningTraceStep(
+          "agent-stream-started",
+          "互动大屏 HTML 模型生成流已结束。",
+        );
         writeArtifact(artifact);
         await persistArtifact(artifact);
         return true;
@@ -595,6 +711,12 @@ export function createStructuredAuthoringStreamAdapter({
           return;
         }
 
+        pushOrReplaceTraceEntry(
+          "stream-lesson-draft",
+          "running",
+          "正在建立课时计划草稿流，右侧预览将同步更新。",
+        );
+        writeTrace("generation");
         writeLessonDraftArtifact();
 
         for await (const partial of lessonDraftStream) {
@@ -624,6 +746,7 @@ export function createStructuredAuthoringStreamAdapter({
           forwardAssistantText,
         }),
       );
+      startServerPipelineTrace();
       const lessonDraftTask = createLessonDraftTask();
 
       try {
@@ -667,16 +790,16 @@ export function createStructuredAuthoringStreamAdapter({
 
               const extraction = extractHtmlDocumentFromText(rawText);
 
-              if (extraction.html) {
-                writeArtifact(
-                  buildArtifactData(workflow, {
-                    content: extraction.html,
-                    isComplete: extraction.htmlComplete,
-                    status: extraction.htmlComplete ? "ready" : "streaming",
-                    warningText: buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText) || undefined,
-                  }),
-                );
-              }
+              writeArtifact(
+                buildArtifactData(workflow, {
+                  content: extraction.html || rawText,
+                  isComplete: Boolean(extraction.html && extraction.htmlComplete),
+                  status: extraction.html && extraction.htmlComplete ? "ready" : "streaming",
+                  warningText: extraction.html
+                    ? buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText) || undefined
+                    : undefined,
+                }),
+              );
               break;
             }
 
@@ -725,6 +848,7 @@ export function createStructuredAuthoringStreamAdapter({
               }
 
               if (hasStructuredActivity) {
+                completeServerPipelineTrace();
                 runtimeTrace.push(
                   createTraceEntry(
                     "generation-finished",
@@ -753,6 +877,7 @@ export function createStructuredAuthoringStreamAdapter({
           }
 
           if (hasStructuredActivity) {
+            completeServerPipelineTrace();
             runtimeTrace.push(
               createTraceEntry(
                 "generation-stream-closed-without-finish",

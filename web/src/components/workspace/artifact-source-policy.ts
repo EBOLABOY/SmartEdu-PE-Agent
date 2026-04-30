@@ -3,6 +3,7 @@ import type { PersistedArtifactVersion } from "@/lib/lesson-authoring-contract";
 
 export type ArtifactSourcePolicyInput = {
   hasLiveArtifactAuthority: boolean;
+  hasUnacknowledgedLiveArtifact?: boolean;
   isArtifactHistoryLoading: boolean;
   isArtifactSyncPending: boolean;
   isLoading: boolean;
@@ -13,6 +14,7 @@ export type ArtifactSourcePolicyInput = {
 
 export function shouldUsePersistedArtifactState({
   hasLiveArtifactAuthority,
+  hasUnacknowledgedLiveArtifact = false,
   isArtifactHistoryLoading,
   isArtifactSyncPending,
   isLoading,
@@ -23,6 +25,7 @@ export function shouldUsePersistedArtifactState({
   return Boolean(projectId) &&
     persistedVersionsLength > 0 &&
     !hasLiveArtifactAuthority &&
+    !hasUnacknowledgedLiveArtifact &&
     !isLoading &&
     !isArtifactHistoryLoading &&
     !isWorkspaceLoading &&

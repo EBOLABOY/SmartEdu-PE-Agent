@@ -17,7 +17,7 @@ export default function AuthPageShell({ children, description, title }: AuthPage
       <div className="min-h-full bg-[radial-gradient(circle_at_16%_12%,rgba(16,185,129,0.12),transparent_30%),radial-gradient(circle_at_86%_0%,rgba(245,158,11,0.12),transparent_28%)] px-5 py-6 md:px-8">
         <nav className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4">
           <Link aria-label="返回首页" href="/">
-            <BrandLogo className="h-11 w-auto" priority variant="horizontal" />
+            <BrandLogo aboveTheFold className="h-11 w-auto" variant="horizontal" />
           </Link>
           <AuthNavActions accountLabel="后台" registerVariant="outline" />
         </nav>

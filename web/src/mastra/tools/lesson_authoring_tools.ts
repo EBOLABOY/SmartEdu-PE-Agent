@@ -197,8 +197,8 @@ async function generateCompetitionLessonPlan(input: LessonGenerationToolInput) {
   const normalizedInput = lessonGenerationToolInputSchema.parse(input);
   const system = [
     buildPeTeacherSystemPrompt(normalizedInput.context, { mode: "lesson" }),
-    "你正在作为 generate_structured_lesson / write_lesson_plan 工具执行结构化生成。",
-    "只输出 CompetitionLessonPlan 对象本身，不要输出 submit_lesson_plan 参数、Markdown、解释文字或代码围栏。",
+    "你正在作为 deprecated legacy generate_structured_lesson / write_lesson_plan 工具执行结构化生成。",
+    "只输出 CompetitionLessonPlan 对象本身，不要输出提交工具参数、Markdown、解释文字或代码围栏。",
     "如果 standardsContext 已提供，必须把课标依据落实到目标、重难点、评价和安全设计中。",
   ].join("\n\n");
   const userPrompt = [
@@ -278,7 +278,7 @@ export const analyzeRequirementsTool = createTool({
 export const generateStructuredLessonTool = createTool({
   id: "generate_structured_lesson",
   description:
-    "当你已经决定生成一份完整正式课时计划时调用。该工具返回 CompetitionLessonPlan；拿到结果后必须再调用 submit_lesson_plan。",
+    "[Deprecated legacy compatibility only] 旧版 Agent 工具链使用的课时计划生成工具。正式新链路由服务端确定性生成管线直接生成、校验和持久化，不应让 Agent 调用本工具搬运 CompetitionLessonPlan。",
   inputSchema: lessonGenerationToolInputSchema,
   outputSchema: lessonGenerationToolOutputSchema,
   execute: generateCompetitionLessonPlan,
@@ -287,7 +287,7 @@ export const generateStructuredLessonTool = createTool({
 export const writeLessonPlanTool = createTool({
   id: "write_lesson_plan",
   description:
-    "面向教师自然语言需求编写课时计划。内部执行结构化生成，返回 CompetitionLessonPlan；拿到结果后必须再调用 submit_lesson_plan。",
+    "[Deprecated legacy compatibility only] 旧版 Agent 工具链使用的自然语言课时计划生成工具。正式新链路由服务端确定性生成管线直接生成、校验和持久化，不应让 Agent 调用本工具搬运 CompetitionLessonPlan。",
   inputSchema: lessonGenerationToolInputSchema,
   outputSchema: lessonGenerationToolOutputSchema,
   execute: generateCompetitionLessonPlan,
@@ -296,7 +296,7 @@ export const writeLessonPlanTool = createTool({
 export const applyLessonPatchTool = createTool({
   id: "apply_lesson_patch",
   description:
-    "当教师要求修改现有课时计划时调用。只做局部语义修改，返回修改后的 CompetitionLessonPlan；完成后必须调用 submit_lesson_plan。",
+    "[Legacy compatibility] 当教师要求修改现有课时计划时调用。只做局部语义修改，返回修改后的 CompetitionLessonPlan；新链路应由服务端接收返回值并完成校验、封装和持久化。",
   inputSchema: z
     .object({
       lessonPlan: competitionLessonPlanSchema,
@@ -347,7 +347,7 @@ const designHtmlScreenOutputSchema = z
 export const designHtmlScreenTool = createTool({
   id: "design_html_screen",
   description:
-    "基于已确认课时计划设计并生成课堂学习辅助大屏 HTML。完成后必须调用 submit_html_screen，不要把 HTML 粘贴到聊天框。",
+    "[Deprecated legacy compatibility only] 旧版 Agent 工具链使用的大屏 HTML 生成工具。正式新链路由服务端确定性 HTML 管线生成、校验和封装，不应让 Agent 调用本工具搬运 HTML。",
   inputSchema: designHtmlScreenInputSchema,
   outputSchema: designHtmlScreenOutputSchema,
   execute: async ({ lessonPlan, screenPlan, preference }) => {

@@ -24,7 +24,7 @@ describe("lesson intake skill", () => {
         },
         missing: [],
         clarifications: [],
-        summary: "五年级篮球行进间运球，学生人数默认40人，篮球场，课时和器材由课时计划生成 Agent 自动匹配。",
+        summary: "五年级篮球行进间运球，学生人数默认40人，篮球场，课时和器材由服务端课时计划生成管线自动匹配。",
         reason: "年级、课程内容和场地已明确。",
     });
 
@@ -167,7 +167,7 @@ describe("lesson intake skill", () => {
     expect(result.intake.readyToGenerate).toBe(true);
     expect(result.intake.missing).toEqual([]);
     expect(result.intake.clarifications).toEqual([]);
-    expect(result.intake.summary).toContain("场地由课时计划生成 Agent 根据课程内容自动匹配");
+    expect(result.intake.summary).toContain("场地由服务端课时计划生成管线根据课程内容自动匹配");
     expect(result.intake.known?.venue).toBeUndefined();
   });
 

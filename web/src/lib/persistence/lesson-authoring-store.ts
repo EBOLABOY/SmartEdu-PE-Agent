@@ -115,21 +115,12 @@ export function createLessonAuthoringPersistence(
 
   return {
     async saveArtifactVersion({ artifact, projectId, requestId, trace }) {
-      try {
-        await saveArtifactVersionWithSupabase(supabase, {
-          artifact,
-          projectId,
-          requestId,
-          trace,
-        });
-      } catch (error) {
-        console.warn("[lesson-authoring:persistence]", {
-          message: error instanceof Error ? error.message : "unknown-error",
-          projectId,
-          requestId,
-          stage: artifact.stage,
-        });
-      }
+      await saveArtifactVersionWithSupabase(supabase, {
+        artifact,
+        projectId,
+        requestId,
+        trace,
+      });
     },
   };
 }

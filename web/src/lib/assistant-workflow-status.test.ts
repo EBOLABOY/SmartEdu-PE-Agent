@@ -99,7 +99,7 @@ describe("assistant-workflow-status", () => {
               {
                 step: "agentic-entry",
                 status: "success",
-                detail: "已进入 Agentic 自主工具编排模式。",
+                detail: "已进入旧版 Agentic 自主工具编排模式。",
               },
               {
                 step: "agent-text-response",
@@ -193,6 +193,67 @@ describe("assistant-workflow-status", () => {
       expect.objectContaining({
         status: "active",
         title: "自动修复课时计划",
+      }),
+    ]);
+  });
+
+  it("会把服务端确定性管线 trace 显示为左侧工作流步骤", () => {
+    const message = {
+      id: "assistant-server-pipeline",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-server-pipeline",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-server-pipeline",
+            mode: "lesson",
+            phase: "generation",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: [],
+            uiHints: [],
+            updatedAt: "2026-04-30T00:00:00.000Z",
+            trace: [
+              {
+                step: "server-deterministic-entry",
+                status: "success",
+                detail: "已进入服务端课时计划结构化生成管线。",
+              },
+              {
+                step: "server-standards-retrieval",
+                status: "success",
+                detail: "服务端已检索 2 条课标条目并注入结构化生成提示。",
+              },
+              {
+                step: "stream-lesson-draft",
+                status: "running",
+                detail: "正在流式生成课时计划草稿。",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+
+    expect(state.hasWorkflow).toBe(true);
+    expect(state.status).toBe("active");
+    expect(state.details).toEqual([
+      expect.objectContaining({
+        title: "进入服务端管线",
+        status: "complete",
+      }),
+      expect.objectContaining({
+        title: "服务端检索课标",
+        status: "complete",
+      }),
+      expect.objectContaining({
+        title: "流式生成草稿",
+        status: "active",
       }),
     ]);
   });

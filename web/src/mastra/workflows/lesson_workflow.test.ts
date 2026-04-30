@@ -31,7 +31,7 @@ describe("lesson-workflow", () => {
     resetStandardsRetrievalProvider();
   });
 
-  it("generate_lesson 进入生成分支并注入工具提交规则和 memory", async () => {
+  it("generate_lesson 进入生成分支并注入服务端生成规则和 memory", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_lesson"));
     const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
@@ -61,9 +61,11 @@ describe("lesson-workflow", () => {
     expect(runLessonIntent).toHaveBeenCalledOnce();
     expect(result.result.decision.type).toBe("generate");
     expect(result.result.decision.intentResult.intent).toBe("generate_lesson");
-    expect(result.result.system).toContain("submit_lesson_plan");
-    expect(result.result.system).toContain("submit_html_screen");
-    expect(result.result.system).toContain("searchStandards");
+    expect(result.result.system).toContain("服务端");
+    expect(result.result.system).toContain("不要调用课时计划生成或提交工具");
+    expect(result.result.system).not.toContain("submit_lesson_plan");
+    expect(result.result.system).not.toContain("submit_html_screen");
+    expect(result.result.system).toContain("正式 lesson 生成由服务端在生成前检索并注入课标依据");
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
     expect(result.result.generationPlan.protocolVersion).toBe("structured-v1");
     expect(result.result.generationPlan.outputProtocol).toBe("lesson-json");
@@ -77,6 +79,14 @@ describe("lesson-workflow", () => {
         },
       },
     ]);
+    expect(result.result.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "defer-standards-retrieval",
+          status: "success",
+        }),
+      ]),
+    );
   });
 
   it("入口意图不明确时返回 clarify decision，并跳过正式生成分支", async () => {
@@ -175,7 +185,9 @@ describe("lesson-workflow", () => {
         },
       },
     ]);
-    expect(result.result.system).toContain("submit_html_screen");
+    expect(result.result.system).toContain("服务端");
+    expect(result.result.system).toContain("不要调用提交工具");
+    expect(result.result.system).not.toContain("submit_html_screen");
     expect(result.result.system).toContain("data-support-module");
     expect(result.result.system).toContain("比赛展示");
     expect(result.result.system).toContain("durationSeconds=360");

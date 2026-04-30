@@ -21,6 +21,14 @@ export const htmlScreenPlannerAgent = createHtmlScreenPlannerAgent(withMastra(cr
 export const lessonPatchAgent = createLessonPatchAgent(withMastra(createChatModel(lessonPatchModelName)));
 export const peTeacherAgent = createPeTeacherAgent(withMastra(createChatModel(modelName)));
 
+// Deprecated legacy compatibility surface. Active lesson/html generation is owned by
+// the server deterministic pipelines, not by Agent tool submission.
+const legacyLessonAuthoringTools = {
+  ...lessonAuthoringTools,
+  submit_html_screen: submitHtmlScreenTool,
+  submit_lesson_plan: submitLessonPlanTool,
+};
+
 export const mastra = new Mastra({
   agents: {
     htmlScreenPlannerAgent,
@@ -28,10 +36,8 @@ export const mastra = new Mastra({
     peTeacherAgent,
   },
   tools: {
-    ...lessonAuthoringTools,
+    ...legacyLessonAuthoringTools,
     searchStandards: searchStandardsTool,
-    submit_html_screen: submitHtmlScreenTool,
-    submit_lesson_plan: submitLessonPlanTool,
   },
   workflows: {
     lessonAuthoringWorkflow,

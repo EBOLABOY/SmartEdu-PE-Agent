@@ -5,7 +5,7 @@ import { DefaultChatTransport } from "ai";
 import { MessageSquareText, PanelLeftClose, PanelLeftOpen, Plus, SendHorizontal, UserCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -199,6 +199,7 @@ function AppContent({
   const [hasLiveArtifactAuthority, setHasLiveArtifactAuthority] = useState(false);
   const [isProjectSheetOpen, setIsProjectSheetOpen] = useState(false);
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
+  const previousProjectIdRef = useRef(projectId);
 
   const chatTransport = useMemo(
     () =>
@@ -258,8 +259,16 @@ function AppContent({
     lessonConfirmed,
     persistedVersions,
   );
+  const hasUnacknowledgedLiveArtifact = Boolean(
+    liveArtifactLifecycle.activeArtifact &&
+      !isSnapshotAcknowledgedByPersistedVersions(
+        liveArtifactLifecycle.activeArtifact,
+        persistedVersions,
+      ),
+  );
   const shouldUsePersistedArtifactSource = shouldUsePersistedArtifactState({
     hasLiveArtifactAuthority,
+    hasUnacknowledgedLiveArtifact,
     isArtifactHistoryLoading,
     isArtifactSyncPending: isArtifactSyncPendingState,
     isLoading,
@@ -318,13 +327,18 @@ function AppContent({
   }, [accountMode, inviteToken]);
 
   useEffect(() => {
+    const projectChanged = previousProjectIdRef.current !== projectId;
+    previousProjectIdRef.current = projectId;
+
     if (projectId) {
-      queueMicrotask(() => {
-        setHasStarted(true);
-        setLessonConfirmed(false);
-        setHasLiveArtifactAuthority(false);
-        setIsArtifactSyncPendingState(false);
-      });
+      if (projectChanged) {
+        queueMicrotask(() => {
+          setHasStarted(true);
+          setLessonConfirmed(false);
+          setHasLiveArtifactAuthority(false);
+          setIsArtifactSyncPendingState(false);
+        });
+      }
       return;
     }
 
@@ -711,7 +725,7 @@ function AppContent({
               }`}
               onClick={handleResetWorkspace}
             >
-              <BrandLogo className={isProjectSheetOpen ? "size-7" : "size-8"} />
+              <BrandLogo aboveTheFold className={isProjectSheetOpen ? "size-7" : "size-8"} />
               {isProjectSheetOpen && (
                 <span className="whitespace-nowrap text-[15px] font-bold text-foreground">
                   工作区
@@ -843,7 +857,7 @@ function AppContent({
               >
                 <div className="space-y-5">
                   <div className="mx-auto flex size-14 items-center justify-center rounded-2xl border border-brand/20 bg-brand/5">
-                    <BrandLogo className="size-8" priority />
+                    <BrandLogo aboveTheFold className="size-8" />
                   </div>
                   <h1 className="text-4xl font-black leading-[1.1] tracking-tight text-foreground md:text-5xl lg:text-[56px]">
                     今天准备哪节<span className="text-brand">体育课</span>？

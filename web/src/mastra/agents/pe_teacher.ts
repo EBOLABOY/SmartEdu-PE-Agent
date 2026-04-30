@@ -5,11 +5,7 @@ import {
   buildPeTeacherSystemPrompt,
   PE_TEACHER_SYSTEM_PROMPT,
 } from "../skills/pe_teacher_prompt";
-import {
-  submitHtmlScreenTool,
-  submitLessonPlanTool,
-} from "../tools/output_tools";
-import { lessonAuthoringTools } from "../tools/lesson_authoring_tools";
+import { analyzeRequirementsTool } from "../tools/lesson_authoring_tools";
 import { searchStandardsTool } from "../tools/search_standards";
 
 export type { GenerationMode, PeTeacherContext } from "@/lib/lesson-authoring-contract";
@@ -23,10 +19,8 @@ export function createPeTeacherAgent(model: AgentConfig["model"]) {
     instructions: PE_TEACHER_SYSTEM_PROMPT,
     model,
     tools: {
-      ...lessonAuthoringTools,
+      analyze_requirements: analyzeRequirementsTool,
       searchStandards: searchStandardsTool,
-      submit_html_screen: submitHtmlScreenTool,
-      submit_lesson_plan: submitLessonPlanTool,
     },
   });
 }
