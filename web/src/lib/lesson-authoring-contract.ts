@@ -443,7 +443,7 @@ export const exportHtmlResponseSchema = z.object({
     id: z.string().uuid(),
     projectId: projectIdSchema,
     artifactVersionId: z.string().uuid().nullable(),
-    provider: z.literal("cloudflare-r2"),
+    provider: z.enum(["s3-compatible", "cloudflare-r2"]),
     bucket: z.string().trim().min(1),
     objectKey: z.string().trim().min(1),
     contentType: z.literal("text/html;charset=utf-8"),

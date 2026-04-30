@@ -151,7 +151,9 @@ export async function POST(request: Request) {
       await requireProjectWriteAccess(supabase, parsedBody.data.projectId);
     }
 
-    const lessonPersistence = user ? createLessonAuthoringPersistence(supabase) : null;
+    const lessonPersistence = user
+      ? createLessonAuthoringPersistence(supabase, user.id)
+      : null;
     const chatPersistence = user ? createProjectChatPersistence(supabase, user.id) : null;
     const mastraStorageAdapter = user ? createMastraStorageAdapter(supabase) : null;
     const memoryPersistence = user ? createLessonMemoryPersistence(supabase) : null;

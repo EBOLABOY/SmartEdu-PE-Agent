@@ -1,16 +1,46 @@
 import { createHash, createHmac } from "node:crypto";
 
-export type R2S3RestConfig = {
+export type S3RestConfig = {
   accessKeyId: string;
   bucket: string;
   endpoint: string;
+  region: string;
   secretAccessKey: string;
+  userAgent?: string;
 };
 
-type R2RequestInput = {
+export class S3ObjectError extends Error {
+  constructor(
+    message: string,
+    public readonly details: {
+      bucket: string;
+      code?: string;
+      key: string;
+      method: string;
+      responseText: string;
+      status: number;
+      statusText: string;
+    },
+  ) {
+    super(message);
+    this.name = "S3ObjectError";
+  }
+}
+
+export class S3ObjectNotFoundError extends S3ObjectError {
+  constructor(
+    message: string,
+    details: ConstructorParameters<typeof S3ObjectError>[1],
+  ) {
+    super(message, details);
+    this.name = "S3ObjectNotFoundError";
+  }
+}
+
+type S3RequestInput = {
   body?: Buffer | string;
   contentType?: string;
-  config: R2S3RestConfig;
+  config: S3RestConfig;
   key: string;
   method: "DELETE" | "GET" | "PUT";
 };
@@ -33,7 +63,11 @@ function encodePathSegment(value: string) {
   );
 }
 
-function buildObjectUrl(config: R2S3RestConfig, key: string) {
+function extractS3ErrorCode(responseText: string) {
+  return responseText.match(/<Code>([^<]+)<\/Code>/)?.[1];
+}
+
+function buildObjectUrl(config: S3RestConfig, key: string) {
   const endpoint = config.endpoint.replace(/\/+$/, "");
   const objectPath = key.split("/").map(encodePathSegment).join("/");
 
@@ -49,15 +83,19 @@ function getAmzDates(date = new Date()) {
   };
 }
 
-function getSigningKey(secretAccessKey: string, dateStamp: string) {
-  const dateKey = hmac(`AWS4${secretAccessKey}`, dateStamp);
-  const regionKey = hmac(dateKey, "auto");
+function getSigningKey(input: {
+  dateStamp: string;
+  region: string;
+  secretAccessKey: string;
+}) {
+  const dateKey = hmac(`AWS4${input.secretAccessKey}`, input.dateStamp);
+  const regionKey = hmac(dateKey, input.region);
   const serviceKey = hmac(regionKey, "s3");
 
   return hmac(serviceKey, "aws4_request");
 }
 
-function buildSignedHeaders(input: R2RequestInput) {
+function buildSignedHeaders(input: S3RequestInput) {
   const url = buildObjectUrl(input.config, input.key);
   const body = input.body ?? "";
   const payloadHash = hashHex(body);
@@ -84,7 +122,7 @@ function buildSignedHeaders(input: R2RequestInput) {
     signedHeaders,
     payloadHash,
   ].join("\n");
-  const credentialScope = `${dateStamp}/auto/s3/aws4_request`;
+  const credentialScope = `${dateStamp}/${input.config.region}/s3/aws4_request`;
   const stringToSign = [
     "AWS4-HMAC-SHA256",
     amzDate,
@@ -92,15 +130,18 @@ function buildSignedHeaders(input: R2RequestInput) {
     hashHex(canonicalRequest),
   ].join("\n");
   const signature = hmacHex(
-    getSigningKey(input.config.secretAccessKey, dateStamp),
+    getSigningKey({
+      dateStamp,
+      region: input.config.region,
+      secretAccessKey: input.config.secretAccessKey,
+    }),
     stringToSign,
   );
 
   headers.set(
     "authorization",
     [
-      "AWS4-HMAC-SHA256",
-      `Credential=${input.config.accessKeyId}/${credentialScope}`,
+      `AWS4-HMAC-SHA256 Credential=${input.config.accessKeyId}/${credentialScope}`,
       `SignedHeaders=${signedHeaders}`,
       `Signature=${signature}`,
     ].join(", "),
@@ -114,7 +155,7 @@ function buildSignedHeaders(input: R2RequestInput) {
   };
 }
 
-async function requestR2Object(input: R2RequestInput) {
+async function requestS3Object(input: S3RequestInput) {
   const { body, headers, url } = buildSignedHeaders(input);
   const requestBody =
     input.method !== "PUT"
@@ -122,6 +163,12 @@ async function requestR2Object(input: R2RequestInput) {
       : Buffer.isBuffer(body)
         ? new Uint8Array(body)
         : body;
+
+  if (input.config.userAgent) {
+    // Keep User-Agent out of SignedHeaders so runtime-level UA normalization cannot invalidate SigV4.
+    headers.set("user-agent", input.config.userAgent);
+  }
+
   const response = await fetch(url, {
     body: requestBody,
     headers,
@@ -130,24 +177,37 @@ async function requestR2Object(input: R2RequestInput) {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
+    const code = extractS3ErrorCode(errorText);
+    const message = `S3 ${input.method} ${input.key} failed: ${response.status} ${response.statusText}${
+      errorText ? ` ${errorText.slice(0, 500)}` : ""
+    }`;
+    const details = {
+      bucket: input.config.bucket,
+      ...(code ? { code } : {}),
+      key: input.key,
+      method: input.method,
+      responseText: errorText,
+      status: response.status,
+      statusText: response.statusText,
+    };
 
-    throw new Error(
-      `R2 ${input.method} ${input.key} failed: ${response.status} ${response.statusText}${
-        errorText ? ` ${errorText.slice(0, 500)}` : ""
-      }`,
-    );
+    if (response.status === 404 || code === "NoSuchKey") {
+      throw new S3ObjectNotFoundError(message, details);
+    }
+
+    throw new S3ObjectError(message, details);
   }
 
   return response;
 }
 
-export async function putR2Object(input: {
+export async function putS3Object(input: {
   body: Buffer | string;
-  config: R2S3RestConfig;
+  config: S3RestConfig;
   contentType: string;
   key: string;
 }) {
-  await requestR2Object({
+  await requestS3Object({
     body: input.body,
     config: input.config,
     contentType: input.contentType,
@@ -156,22 +216,22 @@ export async function putR2Object(input: {
   });
 }
 
-export async function deleteR2Object(input: {
-  config: R2S3RestConfig;
+export async function deleteS3Object(input: {
+  config: S3RestConfig;
   key: string;
 }) {
-  await requestR2Object({
+  await requestS3Object({
     config: input.config,
     key: input.key,
     method: "DELETE",
   });
 }
 
-export async function getR2ObjectText(input: {
-  config: R2S3RestConfig;
+export async function getS3ObjectText(input: {
+  config: S3RestConfig;
   key: string;
 }) {
-  const response = await requestR2Object({
+  const response = await requestS3Object({
     config: input.config,
     key: input.key,
     method: "GET",

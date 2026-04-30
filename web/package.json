@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:fresh": "npm run clean:next && next dev",
     "build": "next build",
     "start": "next start",
+    "clean:next": "powershell -NoProfile -Command \"Remove-Item -LiteralPath .next -Recurse -Force -ErrorAction SilentlyContinue\"",
     "lint": "eslint",
     "generate:supabase-types": "npx supabase gen types typescript --linked --schema public > src/lib/supabase/database.types.ts",
+    "audit:artifact-storage": "node scripts/audit_artifact_object_storage.mjs",
+    "clear:workspace-data": "node scripts/clear_workspace_data.mjs",
     "ingest:moe-standards": "node scripts/ingest_moe_pe_standards.mjs",
     "test": "vitest run",
     "test:watch": "vitest"

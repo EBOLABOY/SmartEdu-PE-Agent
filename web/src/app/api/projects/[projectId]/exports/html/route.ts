@@ -1,12 +1,21 @@
 import { createHash } from "node:crypto";
 
-import { deleteR2Object, putR2Object, type R2S3RestConfig } from "@/lib/r2/s3-rest-client";
+import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
+import {
+  deleteS3Object,
+  putS3Object,
+  type S3RestConfig,
+} from "@/lib/s3/s3-rest-client";
 import {
   exportHtmlRequestBodySchema,
   exportHtmlResponseSchema,
   projectIdSchema,
 } from "@/lib/lesson-authoring-contract";
-import { EXPORT_HTML_REQUEST_MAX_BYTES, jsonRequestErrorResponse, readJsonRequest } from "@/lib/api/request";
+import {
+  EXPORT_HTML_REQUEST_MAX_BYTES,
+  jsonRequestErrorResponse,
+  readJsonRequest,
+} from "@/lib/api/request";
 import { toIsoDateTime } from "@/lib/date-time";
 import {
   ProjectAuthorizationError,
@@ -21,7 +30,7 @@ import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 export const runtime = "nodejs";
 
 const HTML_CONTENT_TYPE = "text/html;charset=utf-8" as const;
-const R2_PROVIDER = "cloudflare-r2" as const;
+const S3_PROVIDER = "s3-compatible" as const;
 
 type ExportFileRow = {
   artifact_version_id: string | null;
@@ -33,7 +42,7 @@ type ExportFileRow = {
   id: string;
   object_key: string;
   project_id: string;
-  provider: typeof R2_PROVIDER;
+  provider: typeof S3_PROVIDER;
 };
 
 class ExportHtmlRouteError extends Error {
@@ -44,27 +53,6 @@ class ExportHtmlRouteError extends Error {
     super(message);
     this.name = "ExportHtmlRouteError";
   }
-}
-
-function getR2Config(): R2S3RestConfig | null {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const bucket = process.env.CLOUDFLARE_R2_EXPORT_BUCKET;
-  const endpoint =
-    process.env.CLOUDFLARE_R2_ENDPOINT ??
-    (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
-  const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
-
-  if (!accountId || !bucket || !endpoint || !accessKeyId || !secretAccessKey) {
-    return null;
-  }
-
-  return {
-    accessKeyId,
-    bucket,
-    endpoint,
-    secretAccessKey,
-  };
 }
 
 function sanitizeFilename(filename: string | undefined) {
@@ -121,10 +109,10 @@ async function removeUploadedObject({
 }: {
   bucket: string;
   objectKey: string;
-  config: R2S3RestConfig;
+  config: S3RestConfig;
 }) {
   try {
-    await deleteR2Object({
+    await deleteS3Object({
       config: {
         ...config,
         bucket,
@@ -195,13 +183,13 @@ export async function POST(
     );
   }
 
-  const r2Config = getR2Config();
+  const s3Config = getS3ObjectStorageConfig("export");
 
-  if (!r2Config) {
+  if (!s3Config) {
     return Response.json(
       {
         error:
-          "当前环境未配置 Cloudflare R2 写入凭证，已保留本地导出兜底。",
+          "当前环境未配置 S3 对象存储写入凭证，已保留本地导出兜底。",
       },
       { status: 503 },
     );
@@ -223,9 +211,9 @@ export async function POST(
     const filename = sanitizeFilename(parsedBody.data.filename);
     const objectKey = buildObjectKey(parsedProjectId.data, filename);
 
-    await putR2Object({
+    await putS3Object({
       body: htmlBuffer,
-      config: r2Config,
+      config: s3Config,
       contentType: HTML_CONTENT_TYPE,
       key: objectKey,
     });
@@ -235,14 +223,14 @@ export async function POST(
       .from("export_files")
       .insert({
         artifact_version_id: parsedBody.data.artifactVersionId ?? null,
-        bucket: r2Config.bucket,
+        bucket: s3Config.bucket,
         byte_size: htmlBuffer.byteLength,
         checksum,
         content_type: HTML_CONTENT_TYPE,
         created_by: user.id,
         object_key: objectKey,
         project_id: parsedProjectId.data,
-        provider: R2_PROVIDER,
+        provider: S3_PROVIDER,
       })
       .select("*")
       .single();
@@ -278,8 +266,8 @@ export async function POST(
   } catch (error) {
     if (uploadedObjectKey) {
       await removeUploadedObject({
-        bucket: r2Config.bucket,
-        config: r2Config,
+        bucket: s3Config.bucket,
+        config: s3Config,
         objectKey: uploadedObjectKey,
       });
     }

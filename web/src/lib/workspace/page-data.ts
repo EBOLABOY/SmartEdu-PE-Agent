@@ -106,7 +106,7 @@ export async function loadWorkspacePageData(
     };
   }
 
-  const projects = await listProjectsForUser(supabase);
+  const projects = await listProjectsForUser(supabase, { userId: user.id });
   const authenticatedPersistence: PersistenceState = {
     enabled: true,
     authenticated: true,

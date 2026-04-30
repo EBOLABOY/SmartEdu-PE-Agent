@@ -156,12 +156,12 @@ export function useArtifactController(input: UseArtifactControllerInput) {
 
         downloadHtmlLocally();
         toast.success("大屏文件已导出", {
-          description: `已写入 R2：${parsedPayload.data.exportFile.objectKey}`,
+          description: `已写入 S3：${parsedPayload.data.exportFile.objectKey}`,
         });
       } catch (exportError) {
         downloadHtmlLocally();
         toast.warning("云端导出未完成，已改为本地导出", {
-          description: exportError instanceof Error ? exportError.message : "请检查 R2 环境配置后重试。",
+          description: exportError instanceof Error ? exportError.message : "请检查 S3 环境配置后重试。",
         });
       } finally {
         setIsExporting(false);

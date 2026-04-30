@@ -76,7 +76,7 @@ describe("current-lesson-plan", () => {
       content: "",
       content_storage_bucket: "bucket",
       content_storage_object_key: "projects/project-1/versions/version-1/lesson.json",
-      content_storage_provider: "cloudflare-r2",
+      content_storage_provider: "s3-compatible",
     };
     const { artifactQuery, supabase, versionQuery } = createSupabaseMock({
       artifactResult: {

@@ -6,7 +6,6 @@ import {
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import {
-  artifactContentTypeSchema,
   persistedConversationSchema,
   persistedProjectMessageSchema,
   persistedProjectSummarySchema,
@@ -18,16 +17,17 @@ import {
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
 import { toIsoDateTime } from "@/lib/date-time";
+import {
+  readProjectDirectoryManifest,
+  writeProjectDirectoryManifest,
+} from "@/lib/persistence/project-directory-manifest";
 import type { Database } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
-
-import { resolveArtifactVersionContent } from "./artifact-content-store";
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
 type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
 type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
-type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 
 const MAX_PROJECT_DISPLAY_TITLE_LENGTH = 160;
 const GENERIC_ARTIFACT_TITLES = new Set([
@@ -87,12 +87,6 @@ function deriveLessonTitleOverride(input: {
 
   return normalizeDisplayTitle(lessonTitle) ??
     normalizeDisplayTitle(input.artifactTitle);
-}
-
-function toArtifactContentType(value: string | null | undefined) {
-  const parsed = artifactContentTypeSchema.safeParse(value);
-
-  return parsed.success ? parsed.data : null;
 }
 
 function toPersistedProjectSummary(
@@ -164,41 +158,10 @@ async function getLessonTitleOverridesByProjectId(
   }
 
   const lessonArtifacts = (artifactRows ?? []) as ArtifactRow[];
-  const currentVersionIds = lessonArtifacts
-    .map((artifact) => artifact.current_version_id)
-    .filter((id): id is string => Boolean(id));
-  const versionById = new Map<string, ArtifactVersionRow>();
-
-  if (currentVersionIds.length) {
-    const { data: versionRows, error: versionRowsError } = await supabase
-      .from("artifact_versions")
-      .select("*")
-      .in("id", currentVersionIds);
-
-    if (versionRowsError) {
-      throw versionRowsError;
-    }
-
-    (
-      await Promise.all(
-        ((versionRows ?? []) as ArtifactVersionRow[]).map(async (version) => ({
-          ...version,
-          content: await resolveArtifactVersionContent(version),
-        })),
-      )
-    ).forEach((version) => {
-      versionById.set(version.id, version);
-    });
-  }
 
   lessonArtifacts.forEach((artifact) => {
-    const currentVersion = artifact.current_version_id
-      ? versionById.get(artifact.current_version_id)
-      : undefined;
     const title = deriveLessonTitleOverride({
       artifactTitle: artifact.title,
-      lessonContent: currentVersion?.content,
-      lessonContentType: toArtifactContentType(currentVersion?.content_type),
     });
 
     if (title) {
@@ -209,7 +172,9 @@ async function getLessonTitleOverridesByProjectId(
   return titleOverrides;
 }
 
-export async function listProjectsForUser(supabase: SmartEduSupabaseClient) {
+export async function listProjectsForUserFromDatabase(
+  supabase: SmartEduSupabaseClient,
+) {
   const { data, error } = await supabase
     .from("projects")
     .select("*")
@@ -229,6 +194,56 @@ export async function listProjectsForUser(supabase: SmartEduSupabaseClient) {
   return projectRows.map((row) =>
     toPersistedProjectSummary(row, titleOverrides.get(row.id)),
   );
+}
+
+export async function refreshProjectDirectoryManifest(
+  supabase: SmartEduSupabaseClient,
+  userId: string,
+  projects?: PersistedProjectSummary[],
+) {
+  const resolvedProjects = projects ?? (await listProjectsForUserFromDatabase(supabase));
+
+  try {
+    await writeProjectDirectoryManifest({
+      projects: resolvedProjects,
+      userId,
+    });
+  } catch (error) {
+    console.warn("[project-directory-manifest] write-failed", {
+      message: error instanceof Error ? error.message : "unknown-error",
+      userId,
+    });
+  }
+
+  return resolvedProjects;
+}
+
+export async function listProjectsForUser(
+  supabase: SmartEduSupabaseClient,
+  options: { userId?: string } = {},
+) {
+  if (options.userId) {
+    try {
+      const manifest = await readProjectDirectoryManifest(options.userId);
+
+      if (manifest) {
+        return manifest.projects;
+      }
+    } catch (error) {
+      console.warn("[project-directory-manifest] read-failed", {
+        message: error instanceof Error ? error.message : "unknown-error",
+        userId: options.userId,
+      });
+    }
+  }
+
+  const projects = await listProjectsForUserFromDatabase(supabase);
+
+  if (options.userId) {
+    await refreshProjectDirectoryManifest(supabase, options.userId, projects);
+  }
+
+  return projects;
 }
 
 export async function getProjectWorkspaceHistory(

@@ -5,6 +5,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import {
   deriveProjectDisplayTitle,
   getProjectWorkspaceHistory,
+  listProjectsForUser,
   toPersistedConversation,
   toPersistedProjectMessage,
   toPersistedProjectSummary,
@@ -70,6 +71,66 @@ describe("project-workspace-history", () => {
 
     expect(project.createdAt).toBe("2026-04-25T12:00:00.000Z");
     expect(project.updatedAt).toBe("2026-04-25T12:05:00.000Z");
+  });
+
+  it("uses indexed artifact titles for project summaries without loading artifact blobs", async () => {
+    const projectsOrderFn = vi.fn().mockResolvedValue({
+      data: [
+        {
+          archived_at: null,
+          created_at: "2026-04-25T12:00:00.000Z",
+          description: null,
+          id: "33333333-3333-3333-3333-333333333333",
+          market: "cn-compulsory-2022",
+          metadata: {},
+          organization_id: "44444444-4444-4444-4444-444444444444",
+          owner_id: "11111111-1111-1111-1111-111111111111",
+          title: "项目原始标题",
+          updated_at: "2026-04-29T10:05:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    const projectsIsFn = vi.fn().mockReturnValue({ order: projectsOrderFn });
+    const artifactsEqFn = vi.fn().mockResolvedValue({
+      data: [
+        {
+          created_at: "2026-04-29T10:00:00.000Z",
+          current_version_id: "55555555-5555-5555-5555-555555555555",
+          id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          project_id: "33333333-3333-3333-3333-333333333333",
+          stage: "lesson",
+          title: "数据库索引课题标题",
+          updated_at: "2026-04-29T10:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    const artifactsInFn = vi.fn().mockReturnValue({ eq: artifactsEqFn });
+    const from = vi.fn((table: string) => {
+      if (table === "projects") {
+        return {
+          select: () => ({
+            is: projectsIsFn,
+          }),
+        };
+      }
+
+      if (table === "artifacts") {
+        return {
+          select: () => ({
+            in: artifactsInFn,
+          }),
+        };
+      }
+
+      throw new Error(`unexpected table: ${table}`);
+    });
+
+    const projects = await listProjectsForUser({ from } as never);
+
+    expect(projects[0]?.title).toBe("数据库索引课题标题");
+    expect(from).not.toHaveBeenCalledWith("artifact_versions");
   });
 
   it("skips invalid persisted ui messages", async () => {

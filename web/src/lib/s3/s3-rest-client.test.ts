@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  deleteR2Object,
-  getR2ObjectText,
-  putR2Object,
-  type R2S3RestConfig,
+  deleteS3Object,
+  getS3ObjectText,
+  putS3Object,
+  S3ObjectError,
+  S3ObjectNotFoundError,
+  type S3RestConfig,
 } from "./s3-rest-client";
 
-const CONFIG: R2S3RestConfig = {
+const CONFIG: S3RestConfig = {
   accessKeyId: "test-access-key",
   bucket: "artifact-bucket",
-  endpoint: "https://account-id.r2.cloudflarestorage.com",
+  endpoint: "https://s3.example.com",
+  region: "us-east-1",
   secretAccessKey: "test-secret-key",
 };
 
@@ -42,7 +45,7 @@ function createResponse(input: {
   } as unknown as Response;
 }
 
-describe("R2 S3 REST client", () => {
+describe("S3 REST client", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-30T09:00:00.000Z"));
@@ -55,7 +58,7 @@ describe("R2 S3 REST client", () => {
   });
 
   it("signs PUT requests with SigV4 headers and uploads the object body", async () => {
-    await putR2Object({
+    await putS3Object({
       body: Buffer.from("hello"),
       config: CONFIG,
       contentType: "text/html;charset=utf-8",
@@ -66,7 +69,7 @@ describe("R2 S3 REST client", () => {
     const headers = init.headers as Headers;
 
     expect(url.toString()).toBe(
-      "https://account-id.r2.cloudflarestorage.com/artifact-bucket/projects/p1/%E5%B1%8F%E5%B9%95.html",
+      "https://s3.example.com/artifact-bucket/projects/p1/%E5%B1%8F%E5%B9%95.html",
     );
     expect(init.method).toBe("PUT");
     expect(init.body).toEqual(new Uint8Array(Buffer.from("hello")));
@@ -76,7 +79,10 @@ describe("R2 S3 REST client", () => {
     );
     expect(headers.get("x-amz-date")).toBe("20260430T090000Z");
     expect(headers.get("authorization")).toContain(
-      "Credential=test-access-key/20260430/auto/s3/aws4_request",
+      "Credential=test-access-key/20260430/us-east-1/s3/aws4_request",
+    );
+    expect(headers.get("authorization")).toMatch(
+      /^AWS4-HMAC-SHA256 Credential=/,
     );
     expect(headers.get("authorization")).toContain(
       "SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date",
@@ -87,7 +93,7 @@ describe("R2 S3 REST client", () => {
   it("signs GET requests and returns object text", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(createResponse({ ok: true, text: "<html></html>" }));
 
-    const text = await getR2ObjectText({
+    const text = await getS3ObjectText({
       config: CONFIG,
       key: "projects/p1/screen.html",
     });
@@ -97,7 +103,7 @@ describe("R2 S3 REST client", () => {
 
     expect(text).toBe("<html></html>");
     expect(url.toString()).toBe(
-      "https://account-id.r2.cloudflarestorage.com/artifact-bucket/projects/p1/screen.html",
+      "https://s3.example.com/artifact-bucket/projects/p1/screen.html",
     );
     expect(init.method).toBe("GET");
     expect(init.body).toBeUndefined();
@@ -106,8 +112,26 @@ describe("R2 S3 REST client", () => {
     );
   });
 
+  it("sends the configured User-Agent without adding it to signed headers", async () => {
+    await putS3Object({
+      body: "hello",
+      config: {
+        ...CONFIG,
+        userAgent: "S3 Browser",
+      },
+      contentType: "text/plain;charset=utf-8",
+      key: "projects/p1/agent.txt",
+    });
+
+    const { init } = getFetchCall();
+    const headers = init.headers as Headers;
+
+    expect(headers.get("user-agent")).toBe("S3 Browser");
+    expect(headers.get("authorization")).not.toContain("user-agent");
+  });
+
   it("signs DELETE requests without sending a body", async () => {
-    await deleteR2Object({
+    await deleteS3Object({
       config: CONFIG,
       key: "projects/p1/screen.html",
     });
@@ -122,7 +146,7 @@ describe("R2 S3 REST client", () => {
     );
   });
 
-  it("throws a useful error when R2 rejects the request", async () => {
+  it("throws a useful error when S3 rejects the request", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       createResponse({
         ok: false,
@@ -132,13 +156,41 @@ describe("R2 S3 REST client", () => {
       }),
     );
 
-    await expect(
-      getR2ObjectText({
-        config: CONFIG,
-        key: "projects/p1/private.html",
-      }),
-    ).rejects.toThrow(
-      "R2 GET projects/p1/private.html failed: 403 Forbidden <Error>SignatureDoesNotMatch</Error>",
+    const promise = getS3ObjectText({
+      config: CONFIG,
+      key: "projects/p1/private.html",
+    });
+
+    await expect(promise).rejects.toThrow(
+      "S3 GET projects/p1/private.html failed: 403 Forbidden <Error>SignatureDoesNotMatch</Error>",
     );
+    await expect(promise).rejects.toBeInstanceOf(S3ObjectError);
+  });
+
+  it("throws a typed not found error for missing S3 objects", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      createResponse({
+        ok: false,
+        status: 404,
+        statusText: "Not Found",
+        text: '<?xml version="1.0"?><Error><Code>NoSuchKey</Code></Error>',
+      }),
+    );
+
+    const promise = getS3ObjectText({
+      config: CONFIG,
+      key: "projects/p1/missing.json",
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      details: {
+        bucket: "artifact-bucket",
+        code: "NoSuchKey",
+        key: "projects/p1/missing.json",
+        method: "GET",
+        status: 404,
+      },
+    });
+    await expect(promise).rejects.toBeInstanceOf(S3ObjectNotFoundError);
   });
 });

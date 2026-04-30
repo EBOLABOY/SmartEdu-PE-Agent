@@ -35,7 +35,8 @@ import {
   requireProjectWriteAccess,
 } from "@/lib/persistence/project-authorization";
 import {
-  listProjectsForUser,
+  listProjectsForUserFromDatabase,
+  refreshProjectDirectoryManifest,
   toPersistedProjectSummary,
 } from "@/lib/persistence/project-workspace-history";
 import type { Database } from "@/lib/supabase/database.types";
@@ -236,7 +237,11 @@ export async function createProjectAction(
       throw projectError;
     }
 
-    const projects = await listProjectsForUser(supabase);
+    const projects = await refreshProjectDirectoryManifest(
+      supabase,
+      user.id,
+      await listProjectsForUserFromDatabase(supabase),
+    );
     revalidatePath("/");
 
     return ok({
@@ -263,7 +268,7 @@ export async function deleteProjectAction(
     return context;
   }
 
-  const { supabase } = context.data;
+  const { supabase, user } = context.data;
 
   try {
     await requireProjectWriteAccess(supabase, parsedProjectId.data);
@@ -282,7 +287,11 @@ export async function deleteProjectAction(
       throw archiveError;
     }
 
-    const projects = await listProjectsForUser(supabase);
+    const projects = await refreshProjectDirectoryManifest(
+      supabase,
+      user.id,
+      await listProjectsForUserFromDatabase(supabase),
+    );
     revalidatePath("/");
 
     return ok({ projects });
@@ -323,7 +332,7 @@ export async function saveLessonArtifactVersionAction(input: {
     return context;
   }
 
-  const { supabase } = context.data;
+  const { supabase, user } = context.data;
 
   try {
     await requireProjectWriteAccess(supabase, parsedProjectId.data);
@@ -331,6 +340,7 @@ export async function saveLessonArtifactVersionAction(input: {
     await saveArtifactVersionWithSupabase(supabase, {
       projectId: parsedProjectId.data,
       requestId: randomUUID(),
+      userId: user.id,
       artifact: {
         protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
         stage: "lesson",
@@ -383,7 +393,7 @@ export async function restoreArtifactVersionAction(input: {
     return context;
   }
 
-  const { supabase } = context.data;
+  const { supabase, user } = context.data;
 
   try {
     const versions = await restoreArtifactVersionByProject(supabase, {
@@ -391,6 +401,7 @@ export async function restoreArtifactVersionAction(input: {
       requestId: randomUUID(),
       versionId: parsedVersionId.data,
     });
+    await refreshProjectDirectoryManifest(supabase, user.id);
     revalidatePath("/");
 
     return ok({

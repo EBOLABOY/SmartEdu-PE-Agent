@@ -863,7 +863,7 @@ function AppContent({
                     今天准备哪节<span className="text-brand">体育课</span>？
                   </h1>
                   <p className="mx-auto max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-                    直接描述课程条件，系统会先生成可审阅课时计划。需要找旧课时计划时，展开左侧栏查看历史记录。
+                    直接描述课程条件，系统会先生成可审阅课时计划。
                   </p>
                 </div>
                 <motion.form

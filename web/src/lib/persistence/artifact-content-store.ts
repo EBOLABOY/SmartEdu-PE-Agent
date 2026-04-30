@@ -1,22 +1,26 @@
 import { createHash } from "node:crypto";
 
+import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import {
-  deleteR2Object,
-  getR2ObjectText,
-  putR2Object,
-  type R2S3RestConfig,
-} from "@/lib/r2/s3-rest-client";
+  deleteS3Object,
+  getS3ObjectText,
+  putS3Object,
+  S3ObjectNotFoundError,
+  type S3RestConfig,
+} from "@/lib/s3/s3-rest-client";
 import type { Database } from "@/lib/supabase/database.types";
 
-const ARTIFACT_CONTENT_R2_PROVIDER = "cloudflare-r2" as const;
+const ARTIFACT_CONTENT_S3_PROVIDER = "s3-compatible" as const;
+const LEGACY_ARTIFACT_CONTENT_R2_PROVIDER = "cloudflare-r2" as const;
 export const INLINE_CONTENT_PROVIDER = "inline" as const;
 
 type ArtifactVersionRow = Database["public"]["Tables"]["artifact_versions"]["Row"];
 
-type ArtifactContentStorageConfig = R2S3RestConfig;
+type ArtifactContentStorageConfig = S3RestConfig;
 
 export type ArtifactContentStorageProvider =
-  | typeof ARTIFACT_CONTENT_R2_PROVIDER
+  | typeof ARTIFACT_CONTENT_S3_PROVIDER
+  | typeof LEGACY_ARTIFACT_CONTENT_R2_PROVIDER
   | typeof INLINE_CONTENT_PROVIDER;
 
 export type OffloadedArtifactContent = {
@@ -24,32 +28,13 @@ export type OffloadedArtifactContent = {
   byteSize: number;
   checksum: string;
   objectKey: string;
-  provider: typeof ARTIFACT_CONTENT_R2_PROVIDER;
+  provider: typeof ARTIFACT_CONTENT_S3_PROVIDER;
 };
 
 function getArtifactContentStorageConfig():
   | ArtifactContentStorageConfig
   | null {
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const bucket =
-    process.env.CLOUDFLARE_R2_ARTIFACT_BUCKET ??
-    process.env.CLOUDFLARE_R2_EXPORT_BUCKET;
-  const endpoint =
-    process.env.CLOUDFLARE_R2_ENDPOINT ??
-    (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : undefined);
-  const accessKeyId = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
-
-  if (!bucket || !endpoint || !accessKeyId || !secretAccessKey) {
-    return null;
-  }
-
-  return {
-    accessKeyId,
-    bucket,
-    endpoint,
-    secretAccessKey,
-  };
+  return getS3ObjectStorageConfig("artifact");
 }
 
 function getArtifactPayloadContentType(
@@ -97,7 +82,7 @@ export async function uploadArtifactContent(input: {
   const buffer = Buffer.from(input.content, "utf8");
   const checksum = createHash("sha256").update(buffer).digest("hex");
   const objectKey = buildArtifactContentObjectKey(input);
-  await putR2Object({
+  await putS3Object({
     body: buffer,
     config,
     contentType: getArtifactPayloadContentType(input.contentType),
@@ -105,7 +90,7 @@ export async function uploadArtifactContent(input: {
   });
 
   return {
-    provider: ARTIFACT_CONTENT_R2_PROVIDER,
+    provider: ARTIFACT_CONTENT_S3_PROVIDER,
     bucket: config.bucket,
     objectKey,
     byteSize: buffer.byteLength,
@@ -122,7 +107,7 @@ export async function deleteOffloadedArtifactContent(
     return;
   }
 
-  await deleteR2Object({
+  await deleteS3Object({
     config: {
       ...config,
       bucket: content.bucket,
@@ -141,7 +126,7 @@ export async function resolveArtifactVersionContent(
   >,
 ) {
   if (
-    row.content_storage_provider !== ARTIFACT_CONTENT_R2_PROVIDER ||
+    !isExternalObjectStorageProvider(row.content_storage_provider) ||
     !row.content_storage_bucket ||
     !row.content_storage_object_key
   ) {
@@ -158,11 +143,45 @@ export async function resolveArtifactVersionContent(
     throw new Error("artifact payload storage is not configured");
   }
 
-  return getR2ObjectText({
+  return getS3ObjectText({
     config: {
       ...config,
       bucket: row.content_storage_bucket,
     },
     key: row.content_storage_object_key,
   });
+}
+
+export async function tryResolveArtifactVersionContent(
+  row: Pick<
+    ArtifactVersionRow,
+    | "content"
+    | "content_storage_bucket"
+    | "content_storage_object_key"
+    | "content_storage_provider"
+  >,
+) {
+  try {
+    return await resolveArtifactVersionContent(row);
+  } catch (error) {
+    if (error instanceof S3ObjectNotFoundError) {
+      console.warn("[artifact-content-store] external-content-missing", {
+        bucket: error.details.bucket,
+        key: error.details.key,
+        provider: row.content_storage_provider,
+        status: error.details.status,
+      });
+
+      return row.content || null;
+    }
+
+    throw error;
+  }
+}
+
+function isExternalObjectStorageProvider(value: string | null | undefined) {
+  return (
+    value === ARTIFACT_CONTENT_S3_PROVIDER ||
+    value === LEGACY_ARTIFACT_CONTENT_R2_PROVIDER
+  );
 }

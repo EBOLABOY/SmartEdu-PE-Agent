@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { extractJsonObjectText } from "@/lib/artifact-protocol";
+import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
 import type {
   StructuredArtifactData,
   WorkflowTraceData,
@@ -11,6 +13,7 @@ import {
   deleteOffloadedArtifactContent,
   uploadArtifactContent,
 } from "./artifact-content-store";
+import { refreshProjectDirectoryManifest } from "./project-workspace-history";
 
 export type LessonAuthoringPersistence = {
   saveArtifactVersion: (input: {
@@ -25,6 +28,31 @@ function toJson(value: unknown): Json {
   return JSON.parse(JSON.stringify(value)) as Json;
 }
 
+function deriveArtifactTitle(artifact: StructuredArtifactData) {
+  if (artifact.title?.trim()) {
+    return artifact.title;
+  }
+
+  if (artifact.contentType === "lesson-json") {
+    try {
+      const lessonPlan = competitionLessonPlanSchema.parse(
+        JSON.parse(extractJsonObjectText(artifact.content)),
+      );
+      const title = lessonPlan.title.trim();
+
+      if (title) {
+        return title;
+      }
+    } catch {
+      // Fall through to generic titles when generated content is malformed.
+    }
+  }
+
+  return artifact.stage === "html"
+    ? "互动大屏 Artifact"
+    : "课时计划 Artifact";
+}
+
 export async function saveArtifactVersionWithSupabase(
   supabase: SmartEduSupabaseClient,
   {
@@ -32,11 +60,13 @@ export async function saveArtifactVersionWithSupabase(
     projectId,
     requestId,
     trace,
+    userId,
   }: {
     artifact: StructuredArtifactData;
     projectId: string;
     requestId: string;
     trace?: WorkflowTraceData;
+    userId?: string;
   },
 ) {
   const versionId = randomUUID();
@@ -62,11 +92,7 @@ export async function saveArtifactVersionWithSupabase(
   const artifactVersionArgs = {
     target_project_id: projectId,
     artifact_stage: artifact.stage,
-    artifact_title:
-      artifact.title ??
-      (artifact.stage === "html"
-        ? "互动大屏 Artifact"
-        : "课时计划 Artifact"),
+    artifact_title: deriveArtifactTitle(artifact),
     artifact_content_type: artifact.contentType,
     artifact_content: offloadedContent ? "" : artifact.content,
     artifact_status: artifact.status,
@@ -104,10 +130,15 @@ export async function saveArtifactVersionWithSupabase(
 
     throw new Error(error.message);
   }
+
+  if (userId) {
+    await refreshProjectDirectoryManifest(supabase, userId);
+  }
 }
 
 export function createLessonAuthoringPersistence(
   supabase: SmartEduSupabaseClient | null,
+  userId?: string,
 ): LessonAuthoringPersistence | null {
   if (!supabase) {
     return null;
@@ -120,6 +151,7 @@ export function createLessonAuthoringPersistence(
         projectId,
         requestId,
         trace,
+        userId,
       });
     },
   };
