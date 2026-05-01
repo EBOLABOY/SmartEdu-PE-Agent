@@ -1,4 +1,5 @@
 import { listArtifactVersionsByProject } from "@/lib/persistence/artifact-version-history";
+import { restoreArtifactVersionInS3Manifest } from "@/lib/persistence/artifact-version-manifest";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 export class ArtifactRestoreError extends Error {
@@ -11,27 +12,6 @@ export class ArtifactRestoreError extends Error {
   }
 }
 
-function normalizeRestoreError(message: string) {
-  switch (message) {
-    case "authentication required":
-      return new ArtifactRestoreError("当前会话未登录，无法恢复 Artifact 版本。", 401);
-    case "project access denied":
-    case "project write access denied":
-      return new ArtifactRestoreError("当前账号无权恢复该项目版本。", 403);
-    case "project not found":
-      return new ArtifactRestoreError("目标项目不存在。", 404);
-    case "artifact version not found":
-      return new ArtifactRestoreError("目标 Artifact 版本不存在或不属于当前项目。", 404);
-    case "artifact not found":
-      return new ArtifactRestoreError("目标 Artifact 不存在或已失效。", 404);
-    default:
-      return new ArtifactRestoreError(
-        message || "恢复 Artifact 版本失败。",
-        500,
-      );
-  }
-}
-
 export async function restoreArtifactVersionByProject(
   supabase: SmartEduSupabaseClient,
   input: {
@@ -40,14 +20,13 @@ export async function restoreArtifactVersionByProject(
     requestId?: string;
   },
 ) {
-  const { error } = await supabase.rpc("restore_artifact_version", {
-    target_project_id: input.projectId,
-    target_version_id: input.versionId,
-    restore_request_id: input.requestId,
+  const s3Versions = await restoreArtifactVersionInS3Manifest({
+    projectId: input.projectId,
+    versionId: input.versionId,
   });
 
-  if (error) {
-    throw normalizeRestoreError(error.message);
+  if (!s3Versions) {
+    throw new ArtifactRestoreError("目标 Artifact 版本不存在或 S3 版本清单不可用。", 404);
   }
 
   return listArtifactVersionsByProject(supabase, input.projectId);

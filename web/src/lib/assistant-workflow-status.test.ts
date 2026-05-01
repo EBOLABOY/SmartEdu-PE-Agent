@@ -44,12 +44,12 @@ describe("assistant-workflow-status", () => {
     const state = buildAssistantWorkflowState(message);
 
     expect(state.isStreaming).toBe(true);
-    expect(state.title).toBe("生成结构化课时计划");
+    expect(state.title).toBe("生成课时计划");
     expect(state.status).toBe("active");
     expect(state.details).toEqual([
       expect.objectContaining({
         status: "complete",
-        title: "检索课程标准",
+        title: "查找课程标准",
       }),
     ]);
   });
@@ -192,12 +192,12 @@ describe("assistant-workflow-status", () => {
     expect(state.details).toEqual([
       expect.objectContaining({
         status: "active",
-        title: "自动修复课时计划",
+        title: "完善教案内容",
       }),
     ]);
   });
 
-  it("会把服务端确定性管线 trace 显示为左侧工作流步骤", () => {
+  it("会把服务端确定性管线 trace 显示为老师能理解的左侧步骤", () => {
     const message = {
       id: "assistant-server-pipeline",
       role: "assistant",
@@ -244,17 +244,82 @@ describe("assistant-workflow-status", () => {
     expect(state.status).toBe("active");
     expect(state.details).toEqual([
       expect.objectContaining({
-        title: "进入服务端管线",
+        title: "准备生成教案",
+        description: "正在根据你的要求生成课时计划。",
         status: "complete",
+        debugStep: "server-deterministic-entry",
       }),
       expect.objectContaining({
-        title: "服务端检索课标",
+        title: "查找课程标准",
+        description: "已找到 2 条可参考的课程标准。",
         status: "complete",
+        debugStep: "server-standards-retrieval",
       }),
       expect.objectContaining({
-        title: "流式生成草稿",
+        title: "生成教案初稿",
+        description: "右侧正在同步教案初稿。",
         status: "active",
+        debugStep: "stream-lesson-draft",
       }),
     ]);
+  });
+
+  it("课标检索为空时不向老师展示 embedding 等技术词", () => {
+    const message = {
+      id: "assistant-empty-standards",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-empty-standards",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-empty-standards",
+            mode: "lesson",
+            phase: "generation",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: [],
+            uiHints: [],
+            updatedAt: "2026-04-30T00:00:00.000Z",
+            trace: [
+              {
+                step: "server-standards-retrieval",
+                status: "success",
+                detail: "服务端已检索 0 条课标条目并注入结构化生成提示。",
+              },
+              {
+                step: "server-standards-retrieval-warning",
+                status: "blocked",
+                detail: "课程标准语义检索当前未返回匹配条目；请先灌入带 embedding 的课标数据后再检索。",
+              },
+              {
+                step: "validate-lesson-output",
+                status: "success",
+                detail: "结构化课时计划已通过最终 schema 与业务校验。",
+              },
+              {
+                step: "generation-finished",
+                status: "success",
+                detail: "课时计划 Artifact 已完成结构化封装。",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+    const copy = state.details.map((detail) => `${detail.title} ${detail.description}`).join("\n");
+
+    expect(copy).toContain("本次没有匹配到课程标准");
+    expect(copy).toContain("教案内容已检查通过");
+    expect(copy).toContain("课时计划已生成");
+    expect(copy).not.toContain("embedding");
+    expect(copy).not.toContain("schema");
+    expect(copy).not.toContain("Artifact");
+    expect(copy).not.toContain("服务端");
+    expect(copy).not.toContain("结构化封装");
   });
 });

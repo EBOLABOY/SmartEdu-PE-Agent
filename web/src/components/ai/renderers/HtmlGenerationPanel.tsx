@@ -4,6 +4,7 @@ import { Code2, Loader2 } from "lucide-react";
 import React, { useMemo } from "react";
 
 import { AutoScrollArea } from "@/components/ai-elements/auto-scroll";
+import { formatWorkflowTraceDetailForTeacher } from "@/lib/assistant-workflow-status";
 import type { WorkflowTraceData } from "@/lib/lesson-authoring-contract";
 
 interface HtmlGenerationPanelProps {
@@ -15,8 +16,9 @@ interface HtmlGenerationPanelProps {
 function getCurrentStep(trace?: WorkflowTraceData) {
   const latestRunningStep = trace?.trace.findLast((entry) => entry.status === "running");
   const latestStep = trace?.trace.at(-1);
+  const currentStep = latestRunningStep ?? latestStep;
 
-  return latestRunningStep?.detail ?? latestStep?.detail ?? "正在接收互动大屏源码流。";
+  return currentStep ? formatWorkflowTraceDetailForTeacher(currentStep) : "正在生成互动大屏。";
 }
 
 export default function HtmlGenerationPanel({
@@ -38,9 +40,9 @@ export default function HtmlGenerationPanel({
                 <Code2 className="size-4" />
               </span>
               <div>
-                <h2 className="text-sm font-semibold text-foreground">AI 正在生成互动大屏源码</h2>
+                <h2 className="text-sm font-semibold text-foreground">AI 正在生成互动大屏</h2>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  完成结构校验和安全检查后，系统会一次性切换到课堂投屏预览。
+                  完成检查后，系统会切换到课堂投屏预览。
                 </p>
               </div>
             </div>
@@ -57,7 +59,7 @@ export default function HtmlGenerationPanel({
             <strong className="mt-1 block truncate font-medium text-foreground">{currentStep}</strong>
           </div>
           <div className="rounded-xl border border-border/70 bg-muted/35 px-3 py-2">
-            <span className="block text-muted-foreground">已生成行数</span>
+            <span className="block text-muted-foreground">已生成内容</span>
             <strong className="mt-1 block font-medium text-foreground">{lineCount || "准备中"}</strong>
           </div>
           <div className="rounded-xl border border-border/70 bg-muted/35 px-3 py-2">

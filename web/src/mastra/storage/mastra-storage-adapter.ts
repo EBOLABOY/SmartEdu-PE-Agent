@@ -1,5 +1,9 @@
-import type { Json } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
+import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import {
+  listConversationMessagesFromS3,
+  saveConversationMessagesToS3,
+} from "@/lib/persistence/conversation-message-manifest";
 
 export type MastraThread = {
   id: string;
@@ -36,10 +40,6 @@ export type ListMessagesInput = {
   threadId: string;
   limit?: number;
 };
-
-function toJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value)) as Json;
-}
 
 function extractUiMessageId(message: MastraMessage): string {
   if (
@@ -118,37 +118,6 @@ export class SupabaseMastraStorageAdapter {
     };
   }
 
-  private async deactivateStaleMessages(projectId: string, nextUiMessageIds: string[]) {
-    const { data, error } = await this.supabase
-      .from("messages")
-      .select("ui_message_id")
-      .eq("project_id", projectId)
-      .eq("is_active", true);
-
-    if (error) {
-      throw new Error(`[MastraStorageAdapter] 查询活跃消息失败: ${error.message}`);
-    }
-
-    const nextIds = new Set(nextUiMessageIds);
-    const staleMessageIds = ((data ?? []) as Array<{ ui_message_id: string }>)
-      .map((row) => row.ui_message_id)
-      .filter((uiMessageId) => !nextIds.has(uiMessageId));
-
-    if (staleMessageIds.length === 0) {
-      return;
-    }
-
-    const { error: deactivateError } = await this.supabase
-      .from("messages")
-      .update({ is_active: false })
-      .eq("project_id", projectId)
-      .in("ui_message_id", staleMessageIds);
-
-    if (deactivateError) {
-      throw new Error(`[MastraStorageAdapter] 失活旧消息失败: ${deactivateError.message}`);
-    }
-  }
-
   async saveMessages(input: SaveMessagesInput): Promise<void> {
     if (input.messages.length === 0) {
       return;
@@ -167,63 +136,49 @@ export class SupabaseMastraStorageAdapter {
       conversationId = newThread.id;
     }
 
-    const rows = input.messages.map((message) => ({
-      content: message.content,
-      conversation_id: conversationId,
-      created_by: input.resourceId,
-      is_active: true,
-      project_id: input.threadId,
-      request_id: input.requestId ?? null,
-      role: message.role,
-      ui_message: toJson(message.metadata?.uiMessage ?? message),
-      ui_message_id: extractUiMessageId(message),
-    }));
+    await saveConversationMessagesToS3({
+      conversationId,
+      messages: input.messages.map((message) => {
+        const uiMessage = (message.metadata?.uiMessage ?? message) as SmartEduUIMessage;
 
-    const { error } = await this.supabase.from("messages").upsert(rows, {
-      onConflict: "project_id,ui_message_id",
+        return {
+          ...uiMessage,
+          id: extractUiMessageId(message),
+          role: message.role,
+        };
+      }),
+      projectId: input.threadId,
+      requestId: input.requestId,
     });
-
-    if (error) {
-      throw new Error(`[MastraStorageAdapter] 保存消息失败: ${error.message}`);
-    }
-
-    await this.deactivateStaleMessages(
-      input.threadId,
-      input.messages.map(extractUiMessageId),
-    );
   }
 
   async listMessages(input: ListMessagesInput): Promise<MastraMessage[]> {
     const limit = input.limit ?? 30;
+    const thread = await this.getThread(input.threadId);
 
-    const { data, error } = await this.supabase
-      .from("messages")
-      .select("*")
-      .eq("project_id", input.threadId)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+    if (thread) {
+      const s3Messages = await listConversationMessagesFromS3({
+        conversationId: thread.id,
+        limit,
+        projectId: input.threadId,
+      });
 
-    if (error) {
-      throw new Error(`[MastraStorageAdapter] 获取消息列表失败: ${error.message}`);
+      if (s3Messages) {
+        return s3Messages.map((message) => ({
+          content: message.content,
+          createdAt: message.createdAt,
+          id: message.uiMessageId,
+          metadata: {
+            uiMessage: message.uiMessage,
+            uiMessageId: message.uiMessageId,
+          },
+          role: message.role,
+          threadId: input.threadId,
+        }));
+      }
     }
 
-    if (!data || data.length === 0) {
-      return [];
-    }
-
-    return data.reverse().map((row) => ({
-      id: row.ui_message_id,
-      threadId: row.project_id,
-      role: row.role as MastraMessage["role"],
-      content: row.content,
-      createdAt: row.created_at,
-      metadata: {
-        uiMessageId: row.ui_message_id,
-        requestId: row.request_id ?? undefined,
-        uiMessage: row.ui_message,
-      },
-    }));
+    return [];
   }
 }
 

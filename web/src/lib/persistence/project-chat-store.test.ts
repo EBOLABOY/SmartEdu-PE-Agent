@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createProjectChatPersistence,
@@ -7,7 +7,19 @@ import {
 } from "@/lib/persistence/project-chat-store";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 
+const { saveConversationMessagesToS3Mock } = vi.hoisted(() => ({
+  saveConversationMessagesToS3Mock: vi.fn(),
+}));
+
+vi.mock("@/lib/persistence/conversation-message-manifest", () => ({
+  saveConversationMessagesToS3: saveConversationMessagesToS3Mock,
+}));
+
 describe("project-chat-store", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("derives the conversation title from the first user message", () => {
     const title = deriveConversationTitle([
       {
@@ -75,7 +87,7 @@ describe("project-chat-store", () => {
     expect(content).toBe("互动大屏已生成，请在右侧工作台查看。");
   });
 
-  it("appends active messages without deactivating the existing branch", async () => {
+  it("writes messages to S3 and keeps Supabase as a lightweight conversation index", async () => {
     const conversationUpdateEqFn = vi.fn().mockResolvedValue({ error: null });
     const conversationUpdateFn = vi.fn().mockReturnValue({ eq: conversationUpdateEqFn });
     const conversationSelectLimitFn = vi.fn().mockResolvedValue({
@@ -91,16 +103,6 @@ describe("project-chat-store", () => {
     const conversationSelectOrderFn = vi.fn().mockReturnValue({ limit: conversationSelectLimitFn });
     const conversationSelectEqFn = vi.fn().mockReturnValue({ order: conversationSelectOrderFn });
 
-    const existingRowsInFn = vi.fn().mockResolvedValue({
-      data: [{ ui_message_id: "user-1" }],
-      error: null,
-    });
-    const existingRowsEqFn = vi.fn().mockReturnValue({ in: existingRowsInFn });
-    const messageSelectFn = vi
-      .fn()
-      .mockReturnValueOnce({ eq: existingRowsEqFn });
-    const upsertFn = vi.fn().mockResolvedValue({ error: null });
-
     const mockSupabase = {
       from: vi.fn((table: string) => {
         if (table === "conversations") {
@@ -113,10 +115,7 @@ describe("project-chat-store", () => {
         }
 
         if (table === "messages") {
-          return {
-            select: messageSelectFn,
-            upsert: upsertFn,
-          };
+          throw new Error("messages table should not be used for new chat persistence");
         }
 
         return {};
@@ -124,31 +123,24 @@ describe("project-chat-store", () => {
     } as never;
 
     const persistence = createProjectChatPersistence(mockSupabase, "user-001");
+    const message = {
+      id: "user-1",
+      role: "user",
+      parts: [{ type: "text", text: "三年级排球双循环赛制" }],
+    } as SmartEduUIMessage;
 
     await persistence?.saveMessages({
       projectId: "project-aaa",
       requestId: "req-001",
-      messages: [
-        {
-          id: "user-1",
-          role: "user",
-          parts: [{ type: "text", text: "三年级排球双循环赛制" }],
-        } as SmartEduUIMessage,
-      ],
+      messages: [message],
     });
 
-    expect(upsertFn).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({
-          conversation_id: "conv-001",
-          created_by: "user-001",
-          is_active: true,
-          project_id: "project-aaa",
-          request_id: "req-001",
-          ui_message_id: "user-1",
-        }),
-      ]),
-      { onConflict: "project_id,ui_message_id" },
-    );
+    expect(saveConversationMessagesToS3Mock).toHaveBeenCalledWith({
+      conversationId: "conv-001",
+      messages: [message],
+      projectId: "project-aaa",
+      requestId: "req-001",
+    });
+    expect(conversationUpdateFn).toHaveBeenCalled();
   });
 });

@@ -14,139 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      artifact_versions: {
-        Row: {
-          artifact_id: string
-          content: string
-          content_byte_size: number | null
-          content_checksum: string | null
-          content_storage_bucket: string | null
-          content_storage_object_key: string | null
-          content_storage_provider: string
-          content_type: string
-          created_at: string
-          created_by: string | null
-          id: string
-          project_id: string
-          protocol_version: string
-          source_message_id: string | null
-          stage: Database["public"]["Enums"]["artifact_stage"]
-          status: Database["public"]["Enums"]["artifact_status"]
-          version_number: number
-          warning_text: string | null
-          workflow_trace: Json
-        }
-        Insert: {
-          artifact_id: string
-          content: string
-          content_byte_size?: number | null
-          content_checksum?: string | null
-          content_storage_bucket?: string | null
-          content_storage_object_key?: string | null
-          content_storage_provider?: string
-          content_type: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          project_id: string
-          protocol_version: string
-          source_message_id?: string | null
-          stage: Database["public"]["Enums"]["artifact_stage"]
-          status?: Database["public"]["Enums"]["artifact_status"]
-          version_number: number
-          warning_text?: string | null
-          workflow_trace?: Json
-        }
-        Update: {
-          artifact_id?: string
-          content?: string
-          content_byte_size?: number | null
-          content_checksum?: string | null
-          content_storage_bucket?: string | null
-          content_storage_object_key?: string | null
-          content_storage_provider?: string
-          content_type?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          project_id?: string
-          protocol_version?: string
-          source_message_id?: string | null
-          stage?: Database["public"]["Enums"]["artifact_stage"]
-          status?: Database["public"]["Enums"]["artifact_status"]
-          version_number?: number
-          warning_text?: string | null
-          workflow_trace?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "artifact_versions_artifact_id_fkey"
-            columns: ["artifact_id"]
-            isOneToOne: false
-            referencedRelation: "artifacts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "artifact_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "artifact_versions_source_message_id_fkey"
-            columns: ["source_message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      artifacts: {
-        Row: {
-          created_at: string
-          current_version_id: string | null
-          id: string
-          project_id: string
-          stage: Database["public"]["Enums"]["artifact_stage"]
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          current_version_id?: string | null
-          id?: string
-          project_id: string
-          stage: Database["public"]["Enums"]["artifact_stage"]
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          current_version_id?: string | null
-          id?: string
-          project_id?: string
-          stage?: Database["public"]["Enums"]["artifact_stage"]
-          title?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "artifacts_current_version_fk"
-            columns: ["current_version_id"]
-            isOneToOne: false
-            referencedRelation: "artifact_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "artifacts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       audit_events: {
         Row: {
           action: Database["public"]["Enums"]["audit_action"]
@@ -238,7 +105,6 @@ export type Database = {
       }
       export_files: {
         Row: {
-          artifact_version_id: string | null
           bucket: string
           byte_size: number | null
           checksum: string | null
@@ -251,7 +117,6 @@ export type Database = {
           provider: string
         }
         Insert: {
-          artifact_version_id?: string | null
           bucket: string
           byte_size?: number | null
           checksum?: string | null
@@ -264,7 +129,6 @@ export type Database = {
           provider: string
         }
         Update: {
-          artifact_version_id?: string | null
           bucket?: string
           byte_size?: number | null
           checksum?: string | null
@@ -278,71 +142,7 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "export_files_artifact_version_id_fkey"
-            columns: ["artifact_version_id"]
-            isOneToOne: false
-            referencedRelation: "artifact_versions"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "export_files_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      messages: {
-        Row: {
-          content: string
-          conversation_id: string | null
-          created_at: string
-          created_by: string | null
-          id: string
-          is_active: boolean
-          project_id: string
-          request_id: string | null
-          role: string
-          ui_message: Json
-          ui_message_id: string
-        }
-        Insert: {
-          content?: string
-          conversation_id?: string | null
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          is_active?: boolean
-          project_id: string
-          request_id?: string | null
-          role: string
-          ui_message?: Json
-          ui_message_id: string
-        }
-        Update: {
-          content?: string
-          conversation_id?: string | null
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          is_active?: boolean
-          project_id?: string
-          request_id?: string | null
-          role?: string
-          ui_message?: Json
-          ui_message_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "messages_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "messages_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -646,50 +446,10 @@ export type Database = {
         Args: { invitation_token: string }
         Returns: string
       }
-      can_insert_org_member: {
-        Args: {
-          inserted_role: Database["public"]["Enums"]["member_role"]
-          target_organization_id: string
-        }
+      can_write_project: {
+        Args: { target_project_id: string }
         Returns: boolean
       }
-      create_artifact_version:
-        | {
-            Args: {
-              artifact_content: string
-              artifact_content_type: string
-              artifact_protocol_version: string
-              artifact_request_id?: string
-              artifact_stage: Database["public"]["Enums"]["artifact_stage"]
-              artifact_status: Database["public"]["Enums"]["artifact_status"]
-              artifact_title: string
-              artifact_warning_text?: string
-              artifact_workflow_trace?: Json
-              target_project_id: string
-            }
-            Returns: string
-          }
-        | {
-            Args: {
-              artifact_content: string
-              artifact_content_byte_size?: number
-              artifact_content_checksum?: string
-              artifact_content_storage_bucket?: string
-              artifact_content_storage_object_key?: string
-              artifact_content_storage_provider?: string
-              artifact_content_type: string
-              artifact_protocol_version: string
-              artifact_request_id?: string
-              artifact_stage: Database["public"]["Enums"]["artifact_stage"]
-              artifact_status: Database["public"]["Enums"]["artifact_status"]
-              artifact_title: string
-              artifact_version_id?: string
-              artifact_warning_text?: string
-              artifact_workflow_trace?: Json
-              target_project_id: string
-            }
-            Returns: string
-          }
       create_organization_invitation: {
         Args: {
           invitation_email: string
@@ -711,15 +471,7 @@ export type Database = {
         Args: { target_organization_id: string }
         Returns: boolean
       }
-      is_org_writer: {
-        Args: { target_organization_id: string }
-        Returns: boolean
-      }
       is_project_member: {
-        Args: { target_project_id: string }
-        Returns: boolean
-      }
-      is_project_writer: {
         Args: { target_project_id: string }
         Returns: boolean
       }
@@ -786,14 +538,6 @@ export type Database = {
         Args: { next_token_hash: string; target_invitation_id: string }
         Returns: undefined
       }
-      restore_artifact_version: {
-        Args: {
-          restore_request_id?: string
-          target_project_id: string
-          target_version_id: string
-        }
-        Returns: string
-      }
       revoke_organization_invitation: {
         Args: { target_invitation_id: string }
         Returns: undefined
@@ -836,14 +580,9 @@ export type Database = {
       }
     }
     Enums: {
-      artifact_stage: "lesson" | "html"
-      artifact_status: "streaming" | "ready" | "error"
       audit_action:
         | "project.created"
-        | "message.created"
-        | "artifact.version_created"
         | "artifact.exported"
-        | "artifact.restored"
         | "generation.failed"
         | "organization.invitation_created"
         | "organization.invitation_revoked"
@@ -979,14 +718,9 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      artifact_stage: ["lesson", "html"],
-      artifact_status: ["streaming", "ready", "error"],
       audit_action: [
         "project.created",
-        "message.created",
-        "artifact.version_created",
         "artifact.exported",
-        "artifact.restored",
         "generation.failed",
         "organization.invitation_created",
         "organization.invitation_revoked",

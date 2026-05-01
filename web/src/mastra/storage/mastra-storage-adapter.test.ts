@@ -1,10 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   SupabaseMastraStorageAdapter,
   createMastraStorageAdapter,
   type MastraMessage,
 } from "./mastra-storage-adapter";
+
+const { listConversationMessagesFromS3Mock, saveConversationMessagesToS3Mock } = vi.hoisted(() => ({
+  listConversationMessagesFromS3Mock: vi.fn(),
+  saveConversationMessagesToS3Mock: vi.fn(),
+}));
+
+vi.mock("@/lib/persistence/conversation-message-manifest", () => ({
+  listConversationMessagesFromS3: listConversationMessagesFromS3Mock,
+  saveConversationMessagesToS3: saveConversationMessagesToS3Mock,
+}));
 
 function buildTestMessage(overrides: Partial<MastraMessage> = {}): MastraMessage {
   return {
@@ -18,6 +28,11 @@ function buildTestMessage(overrides: Partial<MastraMessage> = {}): MastraMessage
 }
 
 describe("createMastraStorageAdapter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listConversationMessagesFromS3Mock.mockResolvedValue(null);
+  });
+
   it("returns null when supabase client is unavailable", () => {
     expect(createMastraStorageAdapter(null)).toBeNull();
   });
@@ -31,87 +46,138 @@ describe("createMastraStorageAdapter", () => {
 });
 
 describe("SupabaseMastraStorageAdapter.listMessages", () => {
-  it("returns an empty array when there are no active messages", async () => {
-    const limitFn = vi.fn().mockResolvedValue({ data: [], error: null });
-    const orderFn = vi.fn().mockReturnValue({ limit: limitFn });
-    const activeEqFn = vi.fn().mockReturnValue({ order: orderFn });
-    const projectEqFn = vi.fn().mockReturnValue({ eq: activeEqFn });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listConversationMessagesFromS3Mock.mockResolvedValue(null);
+  });
 
+  it("returns messages from S3 when a conversation manifest exists", async () => {
+    const conversationSelectResult = {
+      data: {
+        id: "conv-001",
+        created_by: "user-001",
+        title: null,
+        created_at: "2026-04-28T00:00:00Z",
+        updated_at: "2026-04-28T00:00:00Z",
+      },
+      error: null,
+    };
     const mockSupabase = {
       from: vi.fn(() => ({
         select: () => ({
-          eq: projectEqFn,
+          eq: () => ({
+            order: () => ({
+              limit: () => ({
+                maybeSingle: () => Promise.resolve(conversationSelectResult),
+              }),
+            }),
+          }),
         }),
       })),
+    } as never;
+    listConversationMessagesFromS3Mock.mockResolvedValueOnce([
+      {
+        id: "msg-001",
+        uiMessageId: "msg-001",
+        role: "user",
+        content: "S3 消息",
+        createdAt: "2026-04-28T10:00:00.000Z",
+        uiMessage: { id: "msg-001", role: "user", parts: [{ type: "text", text: "S3 消息" }] },
+      },
+    ]);
+
+    const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
+    const result = await adapter.listMessages({ threadId: "project-aaa", limit: 10 });
+
+    expect(listConversationMessagesFromS3Mock).toHaveBeenCalledWith({
+      conversationId: "conv-001",
+      limit: 10,
+      projectId: "project-aaa",
+    });
+    expect(result[0]).toMatchObject({
+      content: "S3 消息",
+      id: "msg-001",
+      role: "user",
+    });
+  });
+
+  it("returns an empty array when no thread exists", async () => {
+    const conversationMaybeSingleFn = vi.fn().mockResolvedValue({ data: null, error: null });
+    const conversationLimitFn = vi.fn().mockReturnValue({
+      maybeSingle: conversationMaybeSingleFn,
+    });
+    const conversationOrderFn = vi.fn().mockReturnValue({ limit: conversationLimitFn });
+    const conversationEqFn = vi.fn().mockReturnValue({ order: conversationOrderFn });
+
+    const mockSupabase = {
+      from: vi.fn((table: string) => {
+        if (table === "conversations") {
+          return {
+            select: () => ({
+              eq: conversationEqFn,
+            }),
+          };
+        }
+
+        return {};
+      }),
     } as never;
 
     const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
     const result = await adapter.listMessages({ threadId: "project-aaa" });
 
-    expect(projectEqFn).toHaveBeenCalledWith("project_id", "project-aaa");
-    expect(activeEqFn).toHaveBeenCalledWith("is_active", true);
     expect(result).toEqual([]);
   });
 
-  it("reads only active messages and reorders them into chronological order", async () => {
-    const dbRows = [
-      {
-        ui_message_id: "msg-002",
-        project_id: "project-aaa",
-        role: "assistant",
-        content: "这是第二条",
-        created_at: "2026-04-28T10:05:00Z",
-        request_id: "req-002",
-        ui_message: { foo: "bar" },
+  it("returns an empty array when the S3 conversation manifest is unavailable", async () => {
+    const conversationMaybeSingleFn = vi.fn().mockResolvedValue({
+      data: {
+        id: "conv-001",
+        created_by: "user-001",
+        title: null,
+        created_at: "2026-04-28T00:00:00Z",
+        updated_at: "2026-04-28T00:00:00Z",
       },
-      {
-        ui_message_id: "msg-001",
-        project_id: "project-aaa",
-        role: "user",
-        content: "这是第一条",
-        created_at: "2026-04-28T10:00:00Z",
-        request_id: "req-001",
-        ui_message: '{"type":"stringified"}',
-      },
-    ];
-
-    const limitFn = vi.fn().mockResolvedValue({ data: dbRows, error: null });
-    const orderFn = vi.fn().mockReturnValue({ limit: limitFn });
-    const activeEqFn = vi.fn().mockReturnValue({ order: orderFn });
-    const projectEqFn = vi.fn().mockReturnValue({ eq: activeEqFn });
+      error: null,
+    });
+    const conversationLimitFn = vi.fn().mockReturnValue({
+      maybeSingle: conversationMaybeSingleFn,
+    });
+    const conversationOrderFn = vi.fn().mockReturnValue({ limit: conversationLimitFn });
+    const conversationEqFn = vi.fn().mockReturnValue({ order: conversationOrderFn });
 
     const mockSupabase = {
-      from: vi.fn(() => ({
-        select: () => ({
-          eq: projectEqFn,
-        }),
-      })),
+      from: vi.fn((table: string) => {
+        if (table === "conversations") {
+          return {
+            select: () => ({
+              eq: conversationEqFn,
+            }),
+          };
+        }
+
+        return {};
+      }),
     } as never;
 
     const adapter = new SupabaseMastraStorageAdapter(mockSupabase);
     const result = await adapter.listMessages({ threadId: "project-aaa", limit: 10 });
 
-    expect(projectEqFn).toHaveBeenCalledWith("project_id", "project-aaa");
-    expect(activeEqFn).toHaveBeenCalledWith("is_active", true);
-    expect(orderFn).toHaveBeenCalledWith("created_at", { ascending: false });
-    expect(limitFn).toHaveBeenCalledWith(10);
-    expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({
-      id: "msg-001",
-      role: "user",
-      content: "这是第一条",
+    expect(listConversationMessagesFromS3Mock).toHaveBeenCalledWith({
+      conversationId: "conv-001",
+      limit: 10,
+      projectId: "project-aaa",
     });
-    expect(result[0]?.metadata?.uiMessage).toBe('{"type":"stringified"}');
-    expect(result[1]).toMatchObject({
-      id: "msg-002",
-      role: "assistant",
-      content: "这是第二条",
-    });
-    expect(result[1]?.metadata?.uiMessage).toEqual({ foo: "bar" });
+    expect(result).toEqual([]);
   });
 });
 
 describe("SupabaseMastraStorageAdapter.saveMessages", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listConversationMessagesFromS3Mock.mockResolvedValue(null);
+  });
+
   it("does nothing when the input message list is empty", async () => {
     const mockSupabase = {
       from: vi.fn(),
@@ -129,7 +195,7 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
     expect(mockSupabase.from).not.toHaveBeenCalled();
   });
 
-  it("upserts the active branch and deactivates stale messages", async () => {
+  it("writes messages to S3 instead of the Supabase messages table", async () => {
     const conversationSelectResult = {
       data: {
         id: "conv-001",
@@ -140,18 +206,6 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
       },
       error: null,
     };
-
-    const upsertFn = vi.fn().mockResolvedValue({ error: null });
-    const updateInFn = vi.fn().mockResolvedValue({ error: null });
-    const updateEqFn = vi.fn().mockReturnValue({ in: updateInFn });
-    const updateFn = vi.fn().mockReturnValue({ eq: updateEqFn });
-    const activeRows = {
-      data: [{ ui_message_id: "ui-msg-001" }, { ui_message_id: "stale-001" }],
-      error: null,
-    };
-    const activeEqSecondFn = vi.fn().mockResolvedValue(activeRows);
-    const activeEqFirstFn = vi.fn().mockReturnValue({ eq: activeEqSecondFn });
-    const selectFn = vi.fn().mockReturnValue({ eq: activeEqFirstFn });
 
     const mockSupabase = {
       from: vi.fn((table: string) => {
@@ -170,11 +224,7 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
         }
 
         if (table === "messages") {
-          return {
-            select: selectFn,
-            update: updateFn,
-            upsert: upsertFn,
-          };
+          throw new Error("messages table should not be used for new message persistence");
         }
 
         return {};
@@ -195,26 +245,17 @@ describe("SupabaseMastraStorageAdapter.saveMessages", () => {
       ],
     });
 
-    expect(upsertFn).toHaveBeenCalledWith(
-      expect.arrayContaining([
+    expect(saveConversationMessagesToS3Mock).toHaveBeenCalledWith({
+      conversationId: "conv-001",
+      messages: [
         expect.objectContaining({
-          conversation_id: "conv-001",
-          created_by: "user-001",
-          is_active: true,
-          project_id: "project-aaa",
-          request_id: "req-001",
+          id: "ui-msg-001",
           role: "user",
-          ui_message_id: "ui-msg-001",
         }),
-      ]),
-      { onConflict: "project_id,ui_message_id" },
-    );
-    expect(selectFn).toHaveBeenCalledWith("ui_message_id");
-    expect(activeEqFirstFn).toHaveBeenCalledWith("project_id", "project-aaa");
-    expect(activeEqSecondFn).toHaveBeenCalledWith("is_active", true);
-    expect(updateFn).toHaveBeenCalledWith({ is_active: false });
-    expect(updateEqFn).toHaveBeenCalledWith("project_id", "project-aaa");
-    expect(updateInFn).toHaveBeenCalledWith("ui_message_id", ["stale-001"]);
+      ],
+      projectId: "project-aaa",
+      requestId: "req-001",
+    });
   });
 });
 

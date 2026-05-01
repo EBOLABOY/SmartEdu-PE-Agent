@@ -1,7 +1,8 @@
 import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact-protocol";
 import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
-import type { Json } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
+
+import { saveConversationMessagesToS3 } from "./conversation-message-manifest";
 
 const MAX_CONVERSATION_TITLE_LENGTH = 80;
 
@@ -12,10 +13,6 @@ export type ProjectChatPersistence = {
     messages: SmartEduUIMessage[];
   }) => Promise<void>;
 };
-
-function toJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value)) as Json;
-}
 
 function normalizeInlineText(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -143,44 +140,12 @@ export function createProjectChatPersistence(
         userId,
       });
 
-      const uiMessageIds = messages.map((message) => message.id);
-      const { data: existingRows, error: existingRowsError } = await supabase
-        .from("messages")
-        .select("ui_message_id")
-        .eq("project_id", projectId)
-        .in("ui_message_id", uiMessageIds);
-
-      if (existingRowsError) {
-        throw existingRowsError;
-      }
-
-      const existingMessageIds = new Set(
-        ((existingRows ?? []) as Array<{ ui_message_id: string }>).map((row) => row.ui_message_id),
-      );
-
-      const rows = messages.map((message) => ({
-        content: getPersistedMessageContent(message),
-        conversation_id: conversation.id,
-        created_by: userId,
-        is_active: true,
-        project_id: projectId,
-        request_id: requestId ?? null,
-        role: message.role,
-        ui_message: toJson(message),
-        ui_message_id: message.id,
-      }));
-
-      const { error: upsertError } = await supabase.from("messages").upsert(rows, {
-        onConflict: "project_id,ui_message_id",
+      await saveConversationMessagesToS3({
+        conversationId: conversation.id,
+        messages,
+        projectId,
+        requestId,
       });
-
-      if (upsertError) {
-        throw upsertError;
-      }
-
-      if (existingMessageIds.size === messages.length) {
-        return;
-      }
 
       const { error: touchConversationError } = await supabase
         .from("conversations")

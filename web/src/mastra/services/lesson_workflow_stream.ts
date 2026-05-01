@@ -89,6 +89,17 @@ function nowIsoString() {
   return new Date().toISOString();
 }
 
+function collectWorkflowWarnings(workflow: LessonWorkflowOutput) {
+  const standardsWarning = workflow.standards.warning?.startsWith("正式生成前将由服务端主动检索")
+    ? undefined
+    : workflow.standards.warning;
+
+  return [
+    ...workflow.safety.warnings,
+    ...(standardsWarning ? [standardsWarning] : []),
+  ];
+}
+
 export function createWorkflowTraceEntry(
   step: string,
   status: WorkflowTraceEntry["status"],
@@ -161,7 +172,7 @@ export function buildWorkflowTraceDataFromWorkflow(
         : undefined,
       trace,
       uiHints,
-      warnings: workflow.safety.warnings,
+      warnings: collectWorkflowWarnings(workflow),
     },
     requestId,
     phase,

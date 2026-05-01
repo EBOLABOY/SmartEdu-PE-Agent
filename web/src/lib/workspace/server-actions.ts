@@ -29,7 +29,7 @@ import {
   ArtifactRestoreError,
   restoreArtifactVersionByProject,
 } from "@/lib/persistence/artifact-restore-store";
-import { saveArtifactVersionWithSupabase } from "@/lib/persistence/lesson-authoring-store";
+import { saveArtifactVersionToS3 } from "@/lib/persistence/lesson-authoring-store";
 import {
   ProjectAuthorizationError,
   requireProjectWriteAccess,
@@ -56,6 +56,8 @@ export type WorkspaceActionResult<T> =
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ExistingProjectOrganization = Pick<ProjectRow, "organization_id">;
+type OrganizationMembershipRow = Database["public"]["Tables"]["organization_members"]["Row"];
+type ExistingOrganizationMembership = Pick<OrganizationMembershipRow, "organization_id">;
 
 const PATCH_RATE_LIMIT = 30;
 const PATCH_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -72,6 +74,65 @@ function ok<T>(data: T): WorkspaceActionResult<T> {
 
 function fail<T>(error: string, status: number): WorkspaceActionResult<T> {
   return { ok: false, error, status };
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+
+  return fallback;
+}
+
+function getErrorDiagnostic(error: unknown) {
+  if (typeof error !== "object" || error === null) {
+    return { message: getErrorMessage(error, "unknown-error") };
+  }
+
+  const postgrestLikeError = error as {
+    code?: unknown;
+    details?: unknown;
+    hint?: unknown;
+    message?: unknown;
+    name?: unknown;
+  };
+
+  return {
+    code: typeof postgrestLikeError.code === "string" ? postgrestLikeError.code : undefined,
+    details: typeof postgrestLikeError.details === "string" ? postgrestLikeError.details : undefined,
+    hint: typeof postgrestLikeError.hint === "string" ? postgrestLikeError.hint : undefined,
+    message: getErrorMessage(error, "unknown-error"),
+    name: typeof postgrestLikeError.name === "string" ? postgrestLikeError.name : undefined,
+  };
+}
+
+function normalizeCreateProjectError(error: unknown) {
+  const message = getErrorMessage(error, "创建项目失败。");
+
+  if (message.includes("create_personal_workspace") || message.includes("PGRST202")) {
+    return {
+      message: "数据库工作区初始化函数 create_personal_workspace 尚未应用。请执行最新 Supabase migration 并刷新 schema cache。",
+      status: 503,
+    };
+  }
+
+  if (message === "authentication required") {
+    return { message: "当前会话未登录，无法创建项目。", status: 401 };
+  }
+
+  if (message.includes("row-level security") || message.includes("violates row-level security")) {
+    return { message: "数据库 RLS 拒绝创建项目，请检查组织成员关系和 projects 插入策略。", status: 403 };
+  }
+
+  return { message, status: 500 };
 }
 
 function buildRestoreUiHints(versions: PersistedArtifactVersion[]): UiHint[] {
@@ -208,6 +269,21 @@ export async function createProjectAction(
       ?.organization_id;
 
     if (!organizationId) {
+      const { data: existingMemberships, error: existingMembershipsError } = await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      if (existingMembershipsError) {
+        throw existingMembershipsError;
+      }
+
+      organizationId = (existingMemberships as ExistingOrganizationMembership[] | null | undefined)?.[0]
+        ?.organization_id;
+    }
+
+    if (!organizationId) {
       const { data: newOrganizationId, error: newOrganizationError } = await supabase.rpc(
         "create_personal_workspace",
         {
@@ -249,7 +325,14 @@ export async function createProjectAction(
       projects,
     });
   } catch (error) {
-    return fail(error instanceof Error ? error.message : "创建项目失败。", 500);
+    const normalizedError = normalizeCreateProjectError(error);
+
+    console.warn("[workspace-action] create-project-failed", {
+      ...getErrorDiagnostic(error),
+      userId: user.id,
+    });
+
+    return fail(normalizedError.message, normalizedError.status);
   }
 }
 
@@ -337,7 +420,7 @@ export async function saveLessonArtifactVersionAction(input: {
   try {
     await requireProjectWriteAccess(supabase, parsedProjectId.data);
 
-    await saveArtifactVersionWithSupabase(supabase, {
+    await saveArtifactVersionToS3(supabase, {
       projectId: parsedProjectId.data,
       requestId: randomUUID(),
       userId: user.id,

@@ -16,6 +16,7 @@ import {
   jsonRequestErrorResponse,
   readJsonRequest,
 } from "@/lib/api/request";
+import { injectBrowserSandboxCsp } from "@/lib/browser-sandbox-html";
 import { toIsoDateTime } from "@/lib/date-time";
 import {
   ProjectAuthorizationError,
@@ -25,7 +26,6 @@ import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
-import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 export const runtime = "nodejs";
 
@@ -33,7 +33,6 @@ const HTML_CONTENT_TYPE = "text/html;charset=utf-8" as const;
 const S3_PROVIDER = "s3-compatible" as const;
 
 type ExportFileRow = {
-  artifact_version_id: string | null;
   bucket: string;
   byte_size: number | null;
   checksum: string | null;
@@ -44,16 +43,6 @@ type ExportFileRow = {
   project_id: string;
   provider: typeof S3_PROVIDER;
 };
-
-class ExportHtmlRouteError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
-    this.name = "ExportHtmlRouteError";
-  }
-}
 
 function sanitizeFilename(filename: string | undefined) {
   const normalized = filename?.trim() || "smartedu-pe-screen.html";
@@ -73,33 +62,9 @@ function buildObjectKey(projectId: string, filename: string) {
   return `projects/${projectId}/exports/${datePath}/${crypto.randomUUID()}-${filename}`;
 }
 
-async function assertArtifactVersionBelongsToProject({
-  artifactVersionId,
-  projectId,
-  supabase,
-}: {
-  artifactVersionId: string | undefined;
-  projectId: string;
-  supabase: SmartEduSupabaseClient;
-}) {
-  if (!artifactVersionId) {
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("artifact_versions")
-    .select("id")
-    .eq("id", artifactVersionId)
-    .eq("project_id", projectId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    throw new ExportHtmlRouteError("目标 Artifact 版本不存在或不属于当前项目。", 404);
-  }
+function buildAttachmentContentDisposition(filename: string) {
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 async function removeUploadedObject({
@@ -200,20 +165,16 @@ export async function POST(
   try {
     await requireProjectWriteAccess(supabase, parsedProjectId.data);
 
-    await assertArtifactVersionBelongsToProject({
-      artifactVersionId: parsedBody.data.artifactVersionId,
-      projectId: parsedProjectId.data,
-      supabase,
-    });
-
-    const htmlBuffer = Buffer.from(parsedBody.data.html, "utf8");
-    const checksum = createHash("sha256").update(htmlBuffer).digest("hex");
     const filename = sanitizeFilename(parsedBody.data.filename);
+    const securedHtml = injectBrowserSandboxCsp(parsedBody.data.html);
+    const htmlBuffer = Buffer.from(securedHtml, "utf8");
+    const checksum = createHash("sha256").update(htmlBuffer).digest("hex");
     const objectKey = buildObjectKey(parsedProjectId.data, filename);
 
     await putS3Object({
       body: htmlBuffer,
       config: s3Config,
+      contentDisposition: buildAttachmentContentDisposition(filename),
       contentType: HTML_CONTENT_TYPE,
       key: objectKey,
     });
@@ -222,7 +183,6 @@ export async function POST(
     const { data: exportFile, error: exportFileError } = await supabase
       .from("export_files")
       .insert({
-        artifact_version_id: parsedBody.data.artifactVersionId ?? null,
         bucket: s3Config.bucket,
         byte_size: htmlBuffer.byteLength,
         checksum,
@@ -246,7 +206,6 @@ export async function POST(
         exportFile: {
           id: row.id,
           projectId: row.project_id,
-          artifactVersionId: row.artifact_version_id,
           provider: row.provider,
           bucket: row.bucket,
           objectKey: row.object_key,
@@ -272,10 +231,7 @@ export async function POST(
       });
     }
 
-    const status =
-      error instanceof ProjectAuthorizationError || error instanceof ExportHtmlRouteError
-        ? error.status
-        : 500;
+    const status = error instanceof ProjectAuthorizationError ? error.status : 500;
 
     return Response.json(
       {

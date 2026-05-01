@@ -39,6 +39,7 @@ export class S3ObjectNotFoundError extends S3ObjectError {
 
 type S3RequestInput = {
   body?: Buffer | string;
+  contentDisposition?: string;
   contentType?: string;
   config: S3RestConfig;
   key: string;
@@ -108,6 +109,10 @@ function buildSignedHeaders(input: S3RequestInput) {
 
   if (input.contentType) {
     headers.set("content-type", input.contentType);
+  }
+
+  if (input.contentDisposition) {
+    headers.set("content-disposition", input.contentDisposition);
   }
 
   const canonicalHeaders = [...headers.entries()]
@@ -204,12 +209,14 @@ async function requestS3Object(input: S3RequestInput) {
 export async function putS3Object(input: {
   body: Buffer | string;
   config: S3RestConfig;
+  contentDisposition?: string;
   contentType: string;
   key: string;
 }) {
   await requestS3Object({
     body: input.body,
     config: input.config,
+    contentDisposition: input.contentDisposition,
     contentType: input.contentType,
     key: input.key,
     method: "PUT",

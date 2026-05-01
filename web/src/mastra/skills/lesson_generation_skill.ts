@@ -1,13 +1,10 @@
 import type { MastraModelOutput } from "@mastra/core/stream";
 import {
   convertToModelMessages,
-  extractJsonMiddleware,
-  Output,
   stepCountIs,
   streamText,
   type DeepPartial,
   type UIMessageChunk,
-  wrapLanguageModel,
 } from "ai";
 import { z } from "zod";
 
@@ -18,6 +15,10 @@ import {
   type CompetitionLessonPlan,
   unwrapAgentLessonGenerationResult,
 } from "@/lib/competition-lesson-contract";
+import {
+  formatLessonPlanProtocolDiagnostics,
+  parseLessonPlanProtocolToCompetitionLessonPlan,
+} from "@/lib/competition-lesson-protocol";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
 import { createChatModel } from "@/mastra/models";
@@ -53,8 +54,6 @@ type ReadableObjectStream<T> = {
     releaseLock: () => void;
   };
 };
-
-type LessonGenerationEnvelope = z.infer<typeof lessonGenerationEnvelopeSchema>;
 
 export type AgentStreamRunner<OUTPUT = unknown> = (
   messages: AgentModelMessages,
@@ -171,22 +170,100 @@ function normalizeLessonGenerationStreams(
   return output instanceof ReadableStream ? { stream: output } : output;
 }
 
-function createStructuredModel(modelId: string) {
-  return wrapLanguageModel({
-    model: createChatModel(modelId),
-    middleware: extractJsonMiddleware(),
-  });
-}
-
-function createServerLessonSystemPrompt(system: string) {
+function createServerLessonProtocolSystemPrompt(system: string) {
   return [
     system,
     "你正在执行服务端确定性课时计划生成任务，不是工具调用或聊天回复。",
-    "输出必须符合内部 envelope schema：顶层只能包含 _thinking_process 和 lessonPlan。",
-    "_thinking_process 写简短设计草稿；lessonPlan 写完整 CompetitionLessonPlan。",
-    "不要调用 submit_lesson_plan，不要输出 Markdown、HTML、XML、代码围栏或解释文字。",
-    "业务系统只会保存 lessonPlan；_thinking_process 仅用于生成 trace。",
-  ].join("\n\n");
+    "你必须只输出“自定义教案行协议”文本。不要输出 JSON、Markdown 标题、HTML、XML、代码围栏或解释文字。",
+    "所有字段必须使用 UTF-8 中文内容，普通字段使用 key=value；允许正文行直接写在 @section、@safety、@load 等块下。",
+    "必须包含：@lesson、三个 narrative @section、三个 objectives @section、三个 @flow、三个 @evaluation、@equipment、@safety、@load。",
+    "三个 @flow 必须分别覆盖 part=准备部分、part=基本部分、part=结束部分。",
+    "三个 @evaluation 必须分别覆盖 level=三颗星、level=二颗星、level=一颗星。",
+    "协议模板如下，实际内容必须替换为完整、具体、无占位符的教学内容：",
+    "@lesson",
+    "title=篮球行进间运球",
+    "subtitle=小学体育课时计划",
+    "topic=篮球行进间运球",
+    "grade=三年级",
+    "student_count=40人",
+    "lesson_no=第1课时",
+    "level=水平二",
+    "teacher_school=未填写学校",
+    "teacher_name=未填写教师",
+    "",
+    "@section narrative.guiding_thought",
+    "写 1-2 条指导思想。",
+    "",
+    "@section narrative.textbook_analysis",
+    "写 1-2 条教材分析。",
+    "",
+    "@section narrative.student_analysis",
+    "写 1-2 条学情分析。",
+    "",
+    "@section objectives.sport_ability",
+    "写运动能力目标。",
+    "",
+    "@section objectives.health_behavior",
+    "写健康行为目标。",
+    "",
+    "@section objectives.sport_morality",
+    "写体育品德目标。",
+    "",
+    "@flow",
+    "part=准备部分",
+    "time=8分钟",
+    "intensity=中",
+    "content=课堂常规、热身活动和专项准备",
+    "teacher=讲解安全要求并组织热身",
+    "students=按队形完成热身并保持安全距离",
+    "organization=四列横队或散点队形",
+    "",
+    "@flow",
+    "part=基本部分",
+    "time=27分钟",
+    "intensity=中高",
+    "content=主要技能学练、分组练习和课堂挑战",
+    "teacher=示范动作、分层指导并巡回纠错",
+    "students=分组练习、互评改进并完成挑战",
+    "organization=分组轮换队形",
+    "",
+    "@flow",
+    "part=结束部分",
+    "time=5分钟",
+    "intensity=低",
+    "content=放松拉伸、课堂评价和课后练习布置",
+    "teacher=组织放松并总结课堂表现",
+    "students=完成放松、自评互评并整理器材",
+    "organization=集合队形",
+    "",
+    "@evaluation",
+    "level=三颗星",
+    "description=写高水平达成标准。",
+    "",
+    "@evaluation",
+    "level=二颗星",
+    "description=写基本达成标准。",
+    "",
+    "@evaluation",
+    "level=一颗星",
+    "description=写继续努力标准。",
+    "",
+    "@equipment",
+    "venue=学校运动场",
+    "equipment=标志桶",
+    "equipment=秒表",
+    "",
+    "@safety",
+    "写至少 2 条安全提示。",
+    "",
+    "@load",
+    "load_level=中等偏上",
+    "target_heart_rate_range=140-155次/分钟",
+    "average_heart_rate=145次/分钟",
+    "group_density=约75%",
+    "individual_density=约45%",
+    "rationale=说明课堂负荷安排依据。",
+  ].join("\n");
 }
 
 function createEmptyUiStream(): ReadableStream<UIMessageChunk> {
@@ -196,16 +273,6 @@ function createEmptyUiStream(): ReadableStream<UIMessageChunk> {
       controller.close();
     },
   });
-}
-
-async function* mapEnvelopePartialOutputStream(
-  partialOutputStream: AsyncIterable<DeepPartial<LessonGenerationEnvelope>>,
-): AsyncIterable<DeepPartial<CompetitionLessonPlan>> {
-  for await (const partial of partialOutputStream) {
-    if (partial.lessonPlan) {
-      yield partial.lessonPlan as DeepPartial<CompetitionLessonPlan>;
-    }
-  }
 }
 
 async function streamCompetitionLessonPlanServerSide({
@@ -220,29 +287,29 @@ async function streamCompetitionLessonPlanServerSide({
   system: string;
 }): Promise<LessonGenerationStreams> {
   const result = streamText({
-    model: createStructuredModel(modelId),
-    system: createServerLessonSystemPrompt(system),
+    model: createChatModel(modelId),
+    system: createServerLessonProtocolSystemPrompt(system),
     messages,
     stopWhen: stepCountIs(Math.max(1, maxSteps)),
     temperature: 0,
-    output: Output.object({
-      schema: lessonGenerationEnvelopeSchema,
-      name: "LessonGenerationEnvelope",
-      description: "服务端课时计划生成 envelope；业务层只使用 lessonPlan。",
-    }),
   });
 
-  const finalLessonPlanPromise = Promise.resolve(result.output).then((envelope) =>
-    competitionLessonPlanSchema.parse(envelope.lessonPlan),
-  );
+  const finalLessonPlanPromise = Promise.resolve(result.text)
+    .then((protocolText) => parseLessonPlanProtocolToCompetitionLessonPlan(protocolText))
+    .catch((error) => {
+      throw new Error(
+        error && typeof error === "object" && "diagnostics" in error
+          ? `教案行协议生成失败：\n${formatLessonPlanProtocolDiagnostics(
+              error as Parameters<typeof formatLessonPlanProtocolDiagnostics>[0],
+            )}`
+          : `教案行协议生成失败：${error instanceof Error ? error.message : "unknown-error"}`,
+      );
+    });
 
   void finalLessonPlanPromise.catch(() => undefined);
 
   return {
     finalLessonPlanPromise,
-    partialOutputStream: mapEnvelopePartialOutputStream(
-      result.partialOutputStream as AsyncIterable<DeepPartial<LessonGenerationEnvelope>>,
-    ),
     stream: createEmptyUiStream(),
   };
 }

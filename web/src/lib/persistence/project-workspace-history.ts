@@ -1,5 +1,3 @@
-import { safeValidateUIMessages } from "ai";
-
 import { extractJsonObjectText } from "@/lib/artifact-protocol";
 import {
   competitionLessonPlanSchema,
@@ -7,27 +5,23 @@ import {
 } from "@/lib/competition-lesson-contract";
 import {
   persistedConversationSchema,
-  persistedProjectMessageSchema,
   persistedProjectSummarySchema,
-  smartEduDataSchemas,
   type ArtifactContentType,
   type PersistedConversation,
   type PersistedProjectMessage,
   type PersistedProjectSummary,
-  type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
 import { toIsoDateTime } from "@/lib/date-time";
 import {
   readProjectDirectoryManifest,
   writeProjectDirectoryManifest,
 } from "@/lib/persistence/project-directory-manifest";
+import { listConversationMessagesFromS3 } from "@/lib/persistence/conversation-message-manifest";
 import type { Database } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 type ConversationRow = Database["public"]["Tables"]["conversations"]["Row"];
-type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
-type ArtifactRow = Database["public"]["Tables"]["artifacts"]["Row"];
 
 const MAX_PROJECT_DISPLAY_TITLE_LENGTH = 160;
 const GENERIC_ARTIFACT_TITLES = new Set([
@@ -115,63 +109,6 @@ function toPersistedConversation(row: ConversationRow): PersistedConversation {
   });
 }
 
-async function toPersistedProjectMessage(
-  row: MessageRow,
-): Promise<PersistedProjectMessage | null> {
-  const parsedMessage = await safeValidateUIMessages<SmartEduUIMessage>({
-    messages: [row.ui_message],
-    dataSchemas: smartEduDataSchemas,
-  });
-
-  if (!parsedMessage.success) {
-    return null;
-  }
-
-  return persistedProjectMessageSchema.parse({
-    id: row.id,
-    uiMessageId: row.ui_message_id,
-    role: row.role,
-    content: row.content,
-    createdAt: toIsoDateTime(row.created_at, "messages.created_at"),
-    uiMessage: parsedMessage.data[0],
-  });
-}
-
-async function getLessonTitleOverridesByProjectId(
-  supabase: SmartEduSupabaseClient,
-  projectIds: string[],
-) {
-  const titleOverrides = new Map<string, string>();
-
-  if (!projectIds.length) {
-    return titleOverrides;
-  }
-
-  const { data: artifactRows, error: artifactRowsError } = await supabase
-    .from("artifacts")
-    .select("*")
-    .in("project_id", projectIds)
-    .eq("stage", "lesson");
-
-  if (artifactRowsError) {
-    throw artifactRowsError;
-  }
-
-  const lessonArtifacts = (artifactRows ?? []) as ArtifactRow[];
-
-  lessonArtifacts.forEach((artifact) => {
-    const title = deriveLessonTitleOverride({
-      artifactTitle: artifact.title,
-    });
-
-    if (title) {
-      titleOverrides.set(artifact.project_id, title);
-    }
-  });
-
-  return titleOverrides;
-}
-
 export async function listProjectsForUserFromDatabase(
   supabase: SmartEduSupabaseClient,
 ) {
@@ -186,13 +123,9 @@ export async function listProjectsForUserFromDatabase(
   }
 
   const projectRows = (data ?? []) as ProjectRow[];
-  const titleOverrides = await getLessonTitleOverridesByProjectId(
-    supabase,
-    projectRows.map((row) => row.id),
-  );
 
   return projectRows.map((row) =>
-    toPersistedProjectSummary(row, titleOverrides.get(row.id)),
+    toPersistedProjectSummary(row),
   );
 }
 
@@ -261,13 +194,7 @@ export async function getProjectWorkspaceHistory(
   }
 
   const projectRow = project as ProjectRow;
-  const titleOverrides = await getLessonTitleOverridesByProjectId(supabase, [
-    projectRow.id,
-  ]);
-  const persistedProject = toPersistedProjectSummary(
-    projectRow,
-    titleOverrides.get(projectRow.id),
-  );
+  const persistedProject = toPersistedProjectSummary(projectRow);
   const { data: conversations, error: conversationsError } = await supabase
     .from("conversations")
     .select("*")
@@ -290,36 +217,19 @@ export async function getProjectWorkspaceHistory(
     };
   }
 
-  const { data: messageRows, error: messageRowsError } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("conversation_id", latestConversation.id)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true });
-
-  if (messageRowsError) {
-    throw messageRowsError;
-  }
-
-  const messages = (
-    await Promise.all(
-      ((messageRows ?? []) as MessageRow[]).map((row) =>
-        toPersistedProjectMessage(row),
-      ),
-    )
-  ).filter(
-    (message): message is PersistedProjectMessage => message !== null,
-  );
+  const messages = await listConversationMessagesFromS3({
+    conversationId: latestConversation.id,
+    projectId,
+  });
 
   return {
     project: persistedProject,
     conversation: toPersistedConversation(latestConversation),
-    messages,
+    messages: messages ?? [],
   };
 }
 
 export {
   toPersistedConversation,
-  toPersistedProjectMessage,
   toPersistedProjectSummary,
 };

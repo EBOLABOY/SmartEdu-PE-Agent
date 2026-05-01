@@ -431,7 +431,6 @@ export const acceptWorkspaceInvitationRequestBodySchema = z
 export const exportHtmlRequestBodySchema = z
   .object({
     html: z.string().trim().min(1).max(5 * 1024 * 1024),
-    artifactVersionId: z.string().uuid().optional(),
     filename: z.string().trim().min(1).max(120).optional(),
   })
   .strict();
@@ -442,8 +441,7 @@ export const exportHtmlResponseSchema = z.object({
   exportFile: z.object({
     id: z.string().uuid(),
     projectId: projectIdSchema,
-    artifactVersionId: z.string().uuid().nullable(),
-    provider: z.enum(["s3-compatible", "cloudflare-r2"]),
+    provider: z.literal("s3-compatible"),
     bucket: z.string().trim().min(1),
     objectKey: z.string().trim().min(1),
     contentType: z.literal("text/html;charset=utf-8"),

@@ -31,6 +31,7 @@ import * as authoringSkills from "@/mastra/skills";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 import {
   buildWorkflowTraceData,
+  buildWorkflowTraceDataFromWorkflow,
   createLessonWorkflowTraceState,
   createWorkflowTraceEntry,
 } from "./lesson_workflow_stream";
@@ -97,6 +98,18 @@ function writeTracePart(
     id: "lesson-authoring-trace",
     data,
   });
+}
+
+function writeWorkflowTracePart(input: {
+  phase: "workflow" | "generation" | "completed" | "failed";
+  requestId: string;
+  workflow: LessonWorkflowOutput;
+  writer: UIMessageStreamWriter<SmartEduUIMessage>;
+}) {
+  writeTracePart(
+    input.writer,
+    buildWorkflowTraceDataFromWorkflow(input.workflow, input.requestId, input.phase),
+  );
 }
 
 function inferAgenticMode(input: {
@@ -357,11 +370,19 @@ async function executeLessonAuthoringStream(input: {
 
   if (agenticMode === "lesson" && shouldUseStructuredAdapter) {
     workflow.trace.push(createServerGenerationTraceEntry("lesson"));
-    workflow = await authoringSkills.enrichWorkflowWithServerStandards({
+    workflow = authoringSkills.createServerStandardsPendingWorkflow(workflow);
+    writeWorkflowTracePart({
+      phase: "workflow",
+      requestId,
+      workflow,
+      writer,
+    });
+    workflow = (await authoringSkills.resolveWorkflowWithServerStandards({
       market: request.market,
       query,
       workflow,
-    });
+    })).workflow;
+
     const generation = await authoringSkills.runLessonGenerationWithRepair({
       messages: executionMessages,
       requestId,

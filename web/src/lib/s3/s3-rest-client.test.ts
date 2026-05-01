@@ -130,6 +130,24 @@ describe("S3 REST client", () => {
     expect(headers.get("authorization")).not.toContain("user-agent");
   });
 
+  it("signs PUT object response metadata headers", async () => {
+    await putS3Object({
+      body: "hello",
+      config: CONFIG,
+      contentDisposition: "attachment; filename=\"screen.html\"",
+      contentType: "text/html;charset=utf-8",
+      key: "projects/p1/screen.html",
+    });
+
+    const { init } = getFetchCall();
+    const headers = init.headers as Headers;
+
+    expect(headers.get("content-disposition")).toBe("attachment; filename=\"screen.html\"");
+    expect(headers.get("authorization")).toContain(
+      "SignedHeaders=content-disposition;content-type;host;x-amz-content-sha256;x-amz-date",
+    );
+  });
+
   it("signs DELETE requests without sending a body", async () => {
     await deleteS3Object({
       config: CONFIG,

@@ -30,43 +30,58 @@ const mocks = vi.hoisted(() => {
     createStructuredAuthoringStreamAdapter: vi.fn(() =>
       createChunkStream([{ type: "finish", finishReason: "stop" }]),
     ),
-    enrichWorkflowWithServerStandards: vi.fn(async ({ workflow }) => ({
+    createServerStandardsPendingWorkflow: vi.fn((workflow) => ({
       ...workflow,
-      standardsContext: "课标上下文：长拳基本动作与套路要求。",
-      standards: {
-        ...workflow.standards,
-        corpus: {
-          availability: "ready",
-          corpusId: "cn-compulsory-2022",
-          displayName: "义务教育体育与健康课程标准",
-          issuer: "教育部",
-          url: "https://example.com/standards.pdf",
-          version: "2022",
-        },
-        referenceCount: 1,
-        references: [
-          {
-            citation: "课程标准 第1页",
-            gradeBands: ["5-6年级"],
-            id: "std-1",
-            module: "武术",
-            score: 0.9,
-            sectionPath: ["运动技能", "中华传统体育"],
-            summary: "学练长拳基本动作与套路。",
-            title: "长拳内容要求",
-          },
-        ],
-      },
-      system: `${workflow.system}\n\n课标上下文：长拳基本动作与套路要求。`,
       trace: [
-        ...workflow.trace,
+        ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-standards-retrieval"),
         {
-          detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
-          status: "success",
+          detail: "正在服务端检索体育课程标准；若向量库不可用，将自动降级继续生成。",
+          status: "running",
           step: "server-standards-retrieval",
           timestamp: "2026-04-30T00:00:00.000Z",
         },
       ],
+    })),
+    resolveWorkflowWithServerStandards: vi.fn(async ({ workflow }) => ({
+      outcome: "success",
+      workflow: {
+        ...workflow,
+        standardsContext: "课标上下文：长拳基本动作与套路要求。",
+        standards: {
+          ...workflow.standards,
+          corpus: {
+            availability: "ready",
+            corpusId: "cn-compulsory-2022",
+            displayName: "义务教育体育与健康课程标准",
+            issuer: "教育部",
+            url: "https://example.com/standards.pdf",
+            version: "2022",
+          },
+          referenceCount: 1,
+          references: [
+            {
+              citation: "课程标准 第1页",
+              gradeBands: ["5-6年级"],
+              id: "std-1",
+              module: "武术",
+              score: 0.9,
+              sectionPath: ["运动技能", "中华传统体育"],
+              summary: "学练长拳基本动作与套路。",
+              title: "长拳内容要求",
+            },
+          ],
+        },
+        system: `${workflow.system}\n\n课标上下文：长拳基本动作与套路要求。`,
+        trace: [
+          ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-standards-retrieval"),
+          {
+            detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
+            status: "success",
+            step: "server-standards-retrieval",
+            timestamp: "2026-04-30T00:00:00.000Z",
+          },
+        ],
+      },
     })),
     getAgent: vi.fn(() => ({
       stream: agentStream,
@@ -102,8 +117,9 @@ vi.mock("@/mastra/ai_sdk_stream", () => ({
 }));
 
 vi.mock("@/mastra/skills", () => ({
+  createServerStandardsPendingWorkflow: mocks.createServerStandardsPendingWorkflow,
   createStructuredAuthoringStreamAdapter: mocks.createStructuredAuthoringStreamAdapter,
-  enrichWorkflowWithServerStandards: mocks.enrichWorkflowWithServerStandards,
+  resolveWorkflowWithServerStandards: mocks.resolveWorkflowWithServerStandards,
   runLessonGenerationWithRepair: mocks.runLessonGenerationWithRepair,
   runServerHtmlGenerationSkill: mocks.runServerHtmlGenerationSkill,
 }));
@@ -133,43 +149,58 @@ describe("lesson authoring service", () => {
     mocks.createStructuredAuthoringStreamAdapter.mockReturnValue(
       mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
     );
-    mocks.enrichWorkflowWithServerStandards.mockImplementation(async ({ workflow }) => ({
+    mocks.createServerStandardsPendingWorkflow.mockImplementation((workflow) => ({
       ...workflow,
-      standardsContext: "课标上下文：长拳基本动作与套路要求。",
-      standards: {
-        ...workflow.standards,
-        corpus: {
-          availability: "ready",
-          corpusId: "cn-compulsory-2022",
-          displayName: "义务教育体育与健康课程标准",
-          issuer: "教育部",
-          url: "https://example.com/standards.pdf",
-          version: "2022",
-        },
-        referenceCount: 1,
-        references: [
-          {
-            citation: "课程标准 第1页",
-            gradeBands: ["5-6年级"],
-            id: "std-1",
-            module: "武术",
-            score: 0.9,
-            sectionPath: ["运动技能", "中华传统体育"],
-            summary: "学练长拳基本动作与套路。",
-            title: "长拳内容要求",
-          },
-        ],
-      },
-      system: `${workflow.system}\n\n课标上下文：长拳基本动作与套路要求。`,
       trace: [
-        ...workflow.trace,
+        ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-standards-retrieval"),
         {
-          detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
-          status: "success",
+          detail: "正在服务端检索体育课程标准；若向量库不可用，将自动降级继续生成。",
+          status: "running",
           step: "server-standards-retrieval",
           timestamp: "2026-04-30T00:00:00.000Z",
         },
       ],
+    }));
+    mocks.resolveWorkflowWithServerStandards.mockImplementation(async ({ workflow }) => ({
+      outcome: "success",
+      workflow: {
+        ...workflow,
+        standardsContext: "课标上下文：长拳基本动作与套路要求。",
+        standards: {
+          ...workflow.standards,
+          corpus: {
+            availability: "ready",
+            corpusId: "cn-compulsory-2022",
+            displayName: "义务教育体育与健康课程标准",
+            issuer: "教育部",
+            url: "https://example.com/standards.pdf",
+            version: "2022",
+          },
+          referenceCount: 1,
+          references: [
+            {
+              citation: "课程标准 第1页",
+              gradeBands: ["5-6年级"],
+              id: "std-1",
+              module: "武术",
+              score: 0.9,
+              sectionPath: ["运动技能", "中华传统体育"],
+              summary: "学练长拳基本动作与套路。",
+              title: "长拳内容要求",
+            },
+          ],
+        },
+        system: `${workflow.system}\n\n课标上下文：长拳基本动作与套路要求。`,
+        trace: [
+          ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-standards-retrieval"),
+          {
+            detail: "服务端已检索 1 条课标条目并注入结构化生成提示。",
+            status: "success",
+            step: "server-standards-retrieval",
+            timestamp: "2026-04-30T00:00:00.000Z",
+          },
+        ],
+      },
     }));
     mocks.runLessonGenerationWithRepair.mockResolvedValue({
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
@@ -209,11 +240,27 @@ describe("lesson authoring service", () => {
 
     expect(mocks.getWorkflow).not.toHaveBeenCalled();
     expect(mocks.getAgent).not.toHaveBeenCalled();
-    expect(mocks.enrichWorkflowWithServerStandards).toHaveBeenCalledWith(
+    expect(mocks.createServerStandardsPendingWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trace: expect.arrayContaining([
+          expect.objectContaining({
+            step: "server-deterministic-entry",
+            status: "success",
+          }),
+        ]),
+      }),
+    );
+    expect(mocks.resolveWorkflowWithServerStandards).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "帮我做一节篮球运球接力课",
         workflow: expect.objectContaining({
           generationPlan: expect.objectContaining({ mode: "lesson" }),
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-standards-retrieval",
+              status: "running",
+            }),
+          ]),
         }),
       }),
     );
@@ -283,6 +330,85 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
+  });
+
+  it("课标向量检索异常不会阻断课时计划流式生成", async () => {
+    mocks.resolveWorkflowWithServerStandards.mockImplementationOnce(async ({ workflow }) => ({
+      outcome: "failure",
+      workflow: {
+        ...workflow,
+        standardsContext: "课标检索失败，已降级继续生成：vector rpc unavailable",
+        standards: {
+          ...workflow.standards,
+          corpus: null,
+          referenceCount: 0,
+          references: [],
+          warning: "服务端课标检索失败，已退回通用课标原则生成：vector rpc unavailable",
+        },
+        system: `${workflow.system}\n\n课标检索失败，已降级继续生成：vector rpc unavailable`,
+        trace: [
+          ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-standards-retrieval"),
+          {
+            detail: "服务端课标检索失败，已退回通用课标原则生成：vector rpc unavailable",
+            status: "blocked",
+            step: "server-standards-retrieval",
+            timestamp: "2026-04-30T00:00:00.000Z",
+          },
+        ],
+      },
+    }));
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      messages: [
+        {
+          id: "user-standards-fallback",
+          role: "user",
+          parts: [{ type: "text", text: "生成一份三年级篮球运球课时计划" }],
+        },
+      ],
+      mode: "lesson",
+      projectId: "00000000-0000-4000-8000-000000000021",
+    });
+    const chunks = await readChunks(result.stream);
+
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "start" }),
+        expect.objectContaining({ type: "data-trace" }),
+        expect.objectContaining({ type: "finish" }),
+      ]),
+    );
+    expect(mocks.resolveWorkflowWithServerStandards).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: expect.objectContaining({
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-standards-retrieval",
+              status: "running",
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: expect.objectContaining({
+          standards: expect.objectContaining({
+            referenceCount: 0,
+            warning: expect.stringContaining("vector rpc unavailable"),
+          }),
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-standards-retrieval",
+              status: "blocked",
+              detail: expect.stringContaining("vector rpc unavailable"),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalled();
   });
 
   it("普通问候只走 Agent 文本流，不进入结构化 Artifact adapter", async () => {

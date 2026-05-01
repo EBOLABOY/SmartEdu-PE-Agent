@@ -37,8 +37,31 @@ const CSP_CONTENT = [
   "form-action 'none'",
 ].join("; ");
 
+const CSP_META_TAG = `<meta http-equiv="Content-Security-Policy" content="${CSP_CONTENT}">`;
+
 function parseBrowserHtmlDocument(htmlContent: string) {
   return new DOMParser().parseFromString(htmlContent, "text/html");
+}
+
+function stripExistingCspMetaTags(htmlContent: string) {
+  return htmlContent.replace(
+    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(?:"Content-Security-Policy"|'Content-Security-Policy'|Content-Security-Policy))[^>]*>/gi,
+    "",
+  );
+}
+
+function injectBrowserSandboxCspWithoutDomParser(htmlContent: string) {
+  const withoutExistingCsp = stripExistingCspMetaTags(htmlContent);
+
+  if (/<head\b[^>]*>/i.test(withoutExistingCsp)) {
+    return withoutExistingCsp.replace(/<head\b[^>]*>/i, (headTag) => `${headTag}\n${CSP_META_TAG}`);
+  }
+
+  if (/<html\b[^>]*>/i.test(withoutExistingCsp)) {
+    return withoutExistingCsp.replace(/<html\b[^>]*>/i, (htmlTag) => `${htmlTag}\n<head>${CSP_META_TAG}</head>`);
+  }
+
+  return `<!DOCTYPE html>\n<html><head>${CSP_META_TAG}</head><body>${withoutExistingCsp}</body></html>`;
 }
 
 function normalizeUrlLikeValue(value: string | null) {
@@ -108,7 +131,16 @@ export function analyzeBrowserSandboxHtml(htmlContent: string): SandboxSecurityR
 }
 
 export function injectBrowserSandboxCsp(htmlContent: string) {
+  if (typeof DOMParser === "undefined") {
+    return injectBrowserSandboxCspWithoutDomParser(htmlContent);
+  }
+
   const document = parseBrowserHtmlDocument(htmlContent);
+  document
+    .querySelectorAll('meta[http-equiv="Content-Security-Policy" i]')
+    .forEach((element) => {
+      element.remove();
+    });
   const metaElement = document.createElement("meta");
 
   metaElement.httpEquiv = "Content-Security-Policy";

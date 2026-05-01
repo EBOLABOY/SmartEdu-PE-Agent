@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const migrationPath = resolve(
   process.cwd(),
-  "supabase/migrations/20260429133000_hybrid_standards_search.sql",
+  "supabase/migrations/20260501000000_s3_only_baseline.sql",
 );
 
 describe("hybrid-standards-search-migration", () => {

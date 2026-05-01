@@ -1,33 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { S3RestConfig } from "@/lib/s3/s3-rest-client";
-
 const mocks = vi.hoisted(() => ({
+  deleteS3Object: vi.fn(),
   getS3ObjectStorageConfig: vi.fn(),
-  getS3ObjectText: vi.fn(),
+  putS3Object: vi.fn(),
 }));
 
 vi.mock("@/lib/s3/object-storage-config", () => ({
   getS3ObjectStorageConfig: mocks.getS3ObjectStorageConfig,
 }));
 
-vi.mock("@/lib/s3/s3-rest-client", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@/lib/s3/s3-rest-client")>();
-
-  return {
-    ...actual,
-    getS3ObjectText: mocks.getS3ObjectText,
-  };
-});
+vi.mock("@/lib/s3/s3-rest-client", () => ({
+  deleteS3Object: mocks.deleteS3Object,
+  putS3Object: mocks.putS3Object,
+}));
 
 import {
-  resolveArtifactVersionContent,
-  tryResolveArtifactVersionContent,
+  deleteOffloadedArtifactContent,
+  uploadArtifactContent,
 } from "./artifact-content-store";
-import { S3ObjectNotFoundError } from "@/lib/s3/s3-rest-client";
 
-const CONFIG: S3RestConfig = {
+const CONFIG = {
   accessKeyId: "access-key",
   bucket: "artifact-bucket",
   endpoint: "https://s3.example.com",
@@ -41,58 +34,58 @@ describe("artifact-content-store", () => {
     mocks.getS3ObjectStorageConfig.mockReturnValue(CONFIG);
   });
 
-  it("keeps strict external content reads strict", async () => {
-    const error = new S3ObjectNotFoundError("missing", {
-      bucket: "artifact-bucket",
-      code: "NoSuchKey",
-      key: "projects/p1/versions/v1/lesson.json",
-      method: "GET",
-      responseText: "<Error><Code>NoSuchKey</Code></Error>",
-      status: 404,
-      statusText: "Not Found",
-    });
-    mocks.getS3ObjectText.mockRejectedValueOnce(error);
+  it("把 Artifact 内容写入 S3-compatible 对象存储", async () => {
+    const content = "{\"title\":\"篮球运球\"}";
 
-    await expect(
-      resolveArtifactVersionContent({
-        content: "",
-        content_storage_bucket: "artifact-bucket",
-        content_storage_object_key: "projects/p1/versions/v1/lesson.json",
-        content_storage_provider: "s3-compatible",
+    const result = await uploadArtifactContent({
+      content,
+      contentType: "lesson-json",
+      projectId: "project-1",
+      stage: "lesson",
+      versionId: "version-1",
+    });
+
+    expect(mocks.putS3Object).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: Buffer.from(content, "utf8"),
+        config: CONFIG,
+        contentType: "application/json;charset=utf-8",
+        key: "projects/project-1/versions/version-1/lesson.json",
       }),
-    ).rejects.toBe(error);
+    );
+    expect(result).toMatchObject({
+      bucket: "artifact-bucket",
+      objectKey: "projects/project-1/versions/version-1/lesson.json",
+      provider: "s3-compatible",
+    });
   });
 
-  it("returns inline fallback for optional reads when external content is missing", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    mocks.getS3ObjectText.mockRejectedValueOnce(
-      new S3ObjectNotFoundError("missing", {
-        bucket: "artifact-bucket",
-        code: "NoSuchKey",
-        key: "projects/p1/versions/v1/lesson.json",
-        method: "GET",
-        responseText: "<Error><Code>NoSuchKey</Code></Error>",
-        status: 404,
-        statusText: "Not Found",
-      }),
-    );
+  it("缺少 S3 artifact 配置时返回 null", async () => {
+    mocks.getS3ObjectStorageConfig.mockReturnValueOnce(null);
 
     await expect(
-      tryResolveArtifactVersionContent({
-        content: "{\"title\":\"inline fallback\"}",
-        content_storage_bucket: "artifact-bucket",
-        content_storage_object_key: "projects/p1/versions/v1/lesson.json",
-        content_storage_provider: "s3-compatible",
+      uploadArtifactContent({
+        content: "{}",
+        contentType: "lesson-json",
+        projectId: "project-1",
+        stage: "lesson",
+        versionId: "version-1",
       }),
-    ).resolves.toBe("{\"title\":\"inline fallback\"}");
+    ).resolves.toBeNull();
+  });
 
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[artifact-content-store] external-content-missing",
-      expect.objectContaining({
-        bucket: "artifact-bucket",
-        key: "projects/p1/versions/v1/lesson.json",
-      }),
-    );
-    warnSpy.mockRestore();
+  it("删除已写入的 S3 内容", async () => {
+    await deleteOffloadedArtifactContent({
+      bucket: "artifact-bucket",
+      byteSize: 2,
+      checksum: "checksum",
+      objectKey: "projects/project-1/versions/version-1/html.html",
+      provider: "s3-compatible",
+    });
+
+    expect(mocks.deleteS3Object).toHaveBeenCalledWith({
+      config: CONFIG,
+      key: "projects/project-1/versions/version-1/html.html",
+    });
   });
 });

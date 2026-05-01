@@ -8,6 +8,8 @@ dist-ssr/
 .codex-tasks/
 paths.json
 .external/
+downloads/
+scripts/
 
 # Editor and OS noise
 .DS_Store

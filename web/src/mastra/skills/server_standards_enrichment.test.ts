@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
-import { enrichWorkflowWithServerStandards } from "./server_standards_enrichment";
+import {
+  createServerStandardsPendingWorkflow,
+  enrichWorkflowWithServerStandards,
+  resolveWorkflowWithServerStandards,
+} from "./server_standards_enrichment";
 
 function createBaseWorkflow(): LessonWorkflowOutput {
   return {
@@ -52,6 +56,31 @@ function createBaseWorkflow(): LessonWorkflowOutput {
 }
 
 describe("server standards enrichment", () => {
+  it("creates a pending workflow state without duplicating retrieval trace entries", () => {
+    const pending = createServerStandardsPendingWorkflow({
+      ...createBaseWorkflow(),
+      trace: [
+        ...createBaseWorkflow().trace,
+        {
+          detail: "旧的课标检索状态。",
+          status: "blocked",
+          step: "server-standards-retrieval",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const retrievalTraces = pending.trace.filter((entry) => entry.step === "server-standards-retrieval");
+
+    expect(retrievalTraces).toHaveLength(1);
+    expect(retrievalTraces[0]).toEqual(
+      expect.objectContaining({
+        status: "running",
+        detail: expect.stringContaining("正在服务端检索体育课程标准"),
+      }),
+    );
+  });
+
   it("retrieves standards before generation and injects them into workflow system prompt", async () => {
     const retriever = vi.fn().mockResolvedValue({
       requestedMarket: "cn-compulsory-2022",
@@ -84,17 +113,19 @@ describe("server standards enrichment", () => {
       context: "水平三武术内容要求：学练长拳基本功、基本动作和套路。",
     });
 
-    const workflow = await enrichWorkflowWithServerStandards({
+    const result = await resolveWorkflowWithServerStandards({
       market: "cn-compulsory-2022",
       query: "帮我生成一个六年级武术长拳课时计划",
       retriever,
       workflow: createBaseWorkflow(),
     });
+    const { workflow } = result;
 
     expect(retriever).toHaveBeenCalledWith({
       market: "cn-compulsory-2022",
       query: "帮我生成一个六年级武术长拳课时计划",
     });
+    expect(result.outcome).toBe("success");
     expect(workflow.standardsContext).toContain("水平三武术内容要求");
     expect(workflow.system).toContain("服务端已在正式生成前检索体育课程标准");
     expect(workflow.system).toContain("水平三武术内容要求");
@@ -117,12 +148,14 @@ describe("server standards enrichment", () => {
   });
 
   it("keeps generation deterministic when retrieval fails by injecting an honest fallback context", async () => {
-    const workflow = await enrichWorkflowWithServerStandards({
+    const result = await resolveWorkflowWithServerStandards({
       query: "帮我生成一个六年级武术长拳课时计划",
       retriever: vi.fn().mockRejectedValue(new Error("vector store unavailable")),
       workflow: createBaseWorkflow(),
     });
+    const { workflow } = result;
 
+    expect(result.outcome).toBe("failure");
     expect(workflow.standardsContext).toContain("本轮检索失败");
     expect(workflow.standards.referenceCount).toBe(0);
     expect(workflow.standards.references).toEqual([]);
@@ -134,6 +167,61 @@ describe("server standards enrichment", () => {
           step: "server-standards-retrieval",
           status: "blocked",
           detail: expect.stringContaining("vector store unavailable"),
+        }),
+      ]),
+    );
+  });
+
+  it("falls back when standards retrieval exceeds the configured timeout", async () => {
+    const result = await resolveWorkflowWithServerStandards({
+      query: "帮我生成一个三年级篮球运球课时计划",
+      retriever: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve({
+                requestedMarket: "cn-compulsory-2022",
+                resolvedMarket: "cn-compulsory-2022",
+                corpus: null,
+                references: [],
+                context: "迟到的课标上下文。",
+              });
+            }, 50);
+          }),
+      ),
+      timeoutMs: 5,
+      workflow: createBaseWorkflow(),
+    });
+    const { workflow } = result;
+
+    expect(result.outcome).toBe("failure");
+    expect(workflow.standardsContext).toContain("本轮检索失败");
+    expect(workflow.standards.referenceCount).toBe(0);
+    expect(workflow.standards.warning).toContain("课程标准检索超过 5ms");
+    expect(workflow.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "server-standards-retrieval",
+          status: "blocked",
+          detail: expect.stringContaining("课程标准检索超过 5ms"),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps enrichWorkflowWithServerStandards as a stable workflow-only compatibility API", async () => {
+    const workflow = await enrichWorkflowWithServerStandards({
+      query: "帮我生成一个六年级武术长拳课时计划",
+      retriever: vi.fn().mockRejectedValue(new Error("vector store unavailable")),
+      workflow: createBaseWorkflow(),
+    });
+
+    expect(workflow.standards.warning).toContain("vector store unavailable");
+    expect(workflow.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "server-standards-retrieval",
+          status: "blocked",
         }),
       ]),
     );

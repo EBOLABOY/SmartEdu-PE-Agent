@@ -35,30 +35,30 @@ export type AssistantWorkflowState = {
 };
 
 const STEP_TITLES: Record<string, string> = {
-  "retrieve-standards-context": "检索课程标准",
-  "resolve-standards-market": "解析课程标准市场",
+  "retrieve-standards-context": "查找课程标准",
+  "resolve-standards-market": "确认课程标准",
   "collect-lesson-requirements": "收集上课信息",
-  "construct-generation-prompt": "构建生成提示",
-  "plan-structured-delivery": "规划结构化输出",
-  "plan-html-screen-sections": "规划大屏分镜",
-  "validate-generation-safety": "校验生成安全",
-  "authoring-entry": "进入创作入口",
-  "server-deterministic-entry": "进入服务端管线",
-  "server-standards-retrieval": "服务端检索课标",
-  "server-standards-retrieval-warning": "课标检索提示",
-  "agent-stream-started": "启动模型生成",
-  "stream-lesson-draft": "流式生成草稿",
-  "validate-lesson-output": "校验课时计划输出",
-  "lesson-repair-started": "自动修复课时计划",
-  "lesson-repair-finished": "完成自动修复",
-  "lesson-repair-failed": "课时计划修复失败",
-  "convert-lesson-json-artifact": "转换结构化课时计划",
-  "extract-html-document": "提取 HTML 文档",
-  "persist-artifact-version": "保存 Artifact 版本",
+  "construct-generation-prompt": "整理生成要求",
+  "plan-structured-delivery": "准备右侧预览",
+  "plan-html-screen-sections": "安排大屏页面",
+  "validate-generation-safety": "检查安全要求",
+  "authoring-entry": "开始创建体育课",
+  "server-deterministic-entry": "准备生成教案",
+  "server-standards-retrieval": "查找课程标准",
+  "server-standards-retrieval-warning": "课程标准提示",
+  "agent-stream-started": "开始生成内容",
+  "stream-lesson-draft": "生成教案初稿",
+  "validate-lesson-output": "检查教案内容",
+  "lesson-repair-started": "完善教案内容",
+  "lesson-repair-finished": "完成教案完善",
+  "lesson-repair-failed": "教案完善失败",
+  "convert-lesson-json-artifact": "整理教案预览",
+  "extract-html-document": "整理大屏页面",
+  "persist-artifact-version": "保存版本",
   "generation-finished": "生成完成",
-  "generation-stream-closed": "关闭生成流",
-  "generation-stream-exception": "生成流异常",
-  "agent-stream-error": "模型生成异常",
+  "generation-stream-closed": "结束生成",
+  "generation-stream-exception": "生成异常",
+  "agent-stream-error": "生成异常",
   "agent-stream-abort": "生成已中断",
 };
 
@@ -108,12 +108,93 @@ function toDetailTitle(step: string) {
   return STEP_TITLES[step] ?? step.replaceAll("-", " ");
 }
 
-function normalizeDetail(detail: string) {
+function getCountFromDetail(detail: string) {
+  const match = detail.match(/检索\s*(\d+)\s*条课标/);
+  if (!match) {
+    return undefined;
+  }
+
+  return Number.parseInt(match[1] ?? "", 10);
+}
+
+function normalizeTechnicalWords(detail: string) {
   return detail
     .replaceAll("CompetitionLessonPlan JSON", "结构化课时计划 JSON")
     .replaceAll("Artifact", "版本")
     .replaceAll("lesson-json", "课时计划 JSON")
     .replaceAll("html", "HTML");
+}
+
+export function formatWorkflowTraceDetailForTeacher(entry: WorkflowTraceEntry) {
+  const detail = normalizeTechnicalWords(entry.detail);
+
+  switch (entry.step) {
+    case "authoring-entry":
+      return "已收到课堂主题，正在准备生成教案。";
+    case "server-deterministic-entry":
+      return entry.detail.includes("HTML")
+        ? "正在根据已确认的教案制作互动大屏。"
+        : "正在根据你的要求生成课时计划。";
+    case "server-standards-retrieval": {
+      const count = getCountFromDetail(entry.detail);
+
+      if (entry.status === "running") {
+        return "正在查找可参考的课程标准。";
+      }
+
+      if (entry.status === "blocked") {
+        return "暂时没有查到课程标准，系统会先按通用体育教学要求继续生成。";
+      }
+
+      if (count === 0) {
+        return "本次没有匹配到课程标准，系统会先按通用体育教学要求生成。";
+      }
+
+      if (typeof count === "number" && Number.isFinite(count)) {
+        return `已找到 ${count} 条可参考的课程标准。`;
+      }
+
+      return "已查找课程标准。";
+    }
+    case "server-standards-retrieval-warning":
+      return detail.includes("未返回匹配条目") || detail.includes("embedding")
+        ? "本次没有匹配到课程标准，可先继续生成；如需严格引用，请先补充课程标准资料。"
+        : detail;
+    case "agent-stream-started":
+      return entry.status === "running" ? "正在生成内容，请稍等。" : "内容生成已完成。";
+    case "stream-lesson-draft":
+      return entry.status === "running"
+        ? "右侧正在同步教案初稿。"
+        : "教案初稿已同步完成。";
+    case "validate-lesson-output":
+      return entry.status === "running"
+        ? "正在检查教案是否完整、可用。"
+        : "教案内容已检查通过。";
+    case "lesson-repair-started":
+      return "正在补齐教案里不完整的地方。";
+    case "lesson-repair-finished":
+      return "教案内容已补齐。";
+    case "convert-lesson-json-artifact":
+      return "正在整理右侧教案预览。";
+    case "extract-html-document":
+      return "正在整理互动大屏页面。";
+    case "persist-artifact-version":
+      return entry.status === "blocked"
+        ? "教案已生成，但版本保存需要稍后再试。"
+        : "已保存为新版本。";
+    case "generation-finished":
+      return entry.detail.includes("HTML") ? "互动大屏已生成。" : "课时计划已生成。";
+    case "generation-stream-closed":
+    case "generation-stream-closed-without-finish":
+      return "生成已结束。";
+    case "generation-stream-exception":
+    case "agent-stream-error":
+      return "生成过程中出现问题，请稍后重试。";
+    case "agent-stream-abort":
+      return "本次生成已中断。";
+    default:
+      return detail;
+  }
 }
 
 function buildDetails(trace: WorkflowTraceData | undefined): AssistantWorkflowDetail[] {
@@ -124,7 +205,7 @@ function buildDetails(trace: WorkflowTraceData | undefined): AssistantWorkflowDe
         id: `${entry.step}-${entry.timestamp ?? index}`,
         status: toDetailStatus(entry.status),
         title: toDetailTitle(entry.step),
-        description: normalizeDetail(entry.detail),
+        description: formatWorkflowTraceDetailForTeacher(entry),
         debugStep: entry.step,
       })) ?? []
   );
@@ -196,11 +277,11 @@ function getTitle(input: {
   }
 
   if (input.phase === "generation") {
-    return input.mode === "html" ? "生成互动大屏" : "生成结构化课时计划";
+    return input.mode === "html" ? "生成互动大屏" : "生成课时计划";
   }
 
   if (input.phase === "completed" || input.status === "complete") {
-    return input.mode === "html" ? "互动大屏已完成" : "结构化课时计划已完成";
+    return input.mode === "html" ? "互动大屏已完成" : "课时计划已完成";
   }
 
   return input.mode === "html" ? "互动大屏工作流" : "课时计划工作流";
@@ -228,23 +309,22 @@ function getDescription(input: {
   status: AssistantWorkflowState["status"];
 }) {
   if (input.status === "failed") {
-    return "模型或结构化封装失败，保留原始错误信息用于定位。";
+    return "生成时遇到问题，请稍后重试或调整要求。";
   }
 
   if (input.status === "blocked") {
-    return "主结果仍可用，但持久化或辅助步骤需要关注。";
+    return "主要内容可继续查看，但有一项辅助步骤需要注意。";
   }
 
-  const marketText = input.resolvedMarket ? `课标市场：${input.resolvedMarket}` : "课标市场待解析";
   const standardsText = input.standardsCount
-    ? `已引用 ${input.standardsCount} 条课标依据`
-    : "尚无课标引用";
+    ? `已找到 ${input.standardsCount} 条课程标准`
+    : "未找到匹配课程标准";
 
   if (input.mode === "html") {
-    return `正在把已确认课时计划转换为可预览互动大屏。${marketText}，${standardsText}。`;
+    return `正在把已确认的课时计划做成课堂互动大屏。${standardsText}。`;
   }
 
-  return `正在把课堂需求转换为结构化课时计划。${marketText}，${standardsText}。`;
+  return `正在根据课堂需求生成课时计划。${standardsText}。`;
 }
 
 export function buildAssistantWorkflowState(message: SmartEduUIMessage): AssistantWorkflowState {

@@ -1,4 +1,4 @@
-import { resolveArtifactVersionContent } from "./artifact-content-store";
+import { resolveCurrentLessonPlanFromS3Manifest } from "./artifact-version-manifest";
 
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
@@ -11,53 +11,14 @@ export async function resolveRequestedLessonPlan(input: {
     return input.explicitLessonPlan;
   }
 
-  if (!input.supabase || !input.projectId) {
+  if (!input.projectId) {
     return undefined;
   }
 
   try {
-    const { data: artifact, error: artifactError } = await input.supabase
-      .from("artifacts")
-      .select("current_version_id")
-      .eq("project_id", input.projectId)
-      .eq("stage", "lesson")
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (artifactError) {
-      throw artifactError;
-    }
-
-    const versionQuery = artifact?.current_version_id
-      ? input.supabase
-          .from("artifact_versions")
-          .select("content, content_storage_provider, content_storage_bucket, content_storage_object_key")
-          .eq("id", artifact.current_version_id)
-          .maybeSingle()
-      : input.supabase
-          .from("artifact_versions")
-          .select("content, content_storage_provider, content_storage_bucket, content_storage_object_key")
-          .eq("project_id", input.projectId)
-          .eq("stage", "lesson")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-    const { data: version, error: versionError } = await versionQuery;
-
-    if (versionError) {
-      throw versionError;
-    }
-
-    if (!version) {
-      return undefined;
-    }
-
-    const content = await resolveArtifactVersionContent(version);
-    return content.trim() ? content : undefined;
+    return await resolveCurrentLessonPlanFromS3Manifest(input.projectId);
   } catch (error) {
-    console.warn("[current-lesson-plan] resolve-requested-lesson-plan-failed", {
+    console.warn("[current-lesson-plan] resolve-s3-lesson-plan-failed", {
       projectId: input.projectId,
       message: error instanceof Error ? error.message : "unknown-error",
     });

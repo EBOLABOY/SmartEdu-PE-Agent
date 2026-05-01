@@ -133,7 +133,6 @@ export function useArtifactController(input: UseArtifactControllerInput) {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            artifactVersionId: lifecycle.activeArtifact?.persistedVersionId,
             filename: "smartedu-pe-screen.html",
             html: lifecycle.html,
           }),

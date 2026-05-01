@@ -6,12 +6,9 @@ import { readFileSync } from "node:fs";
 const CONFIRM_TOKEN = "CLEAR_WORKSPACE_DATA";
 const S3_PREFIXES = ["projects/", "users/", "health-checks/"];
 const WORKSPACE_TABLES = [
-  "artifact_versions",
-  "artifacts",
   "audit_events",
   "conversations",
   "export_files",
-  "messages",
   "organization_members",
   "organizations",
   "projects",

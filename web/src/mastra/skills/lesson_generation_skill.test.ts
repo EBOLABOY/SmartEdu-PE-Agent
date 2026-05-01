@@ -1,6 +1,6 @@
 import type { FullOutput, MastraModelOutput } from "@mastra/core/stream";
-import type { UIMessageChunk } from "ai";
-import { describe, expect, it, vi } from "vitest";
+import { streamText, type UIMessageChunk } from "ai";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
@@ -18,6 +18,22 @@ import {
 } from "./index";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
+vi.mock("@/mastra/models", () => ({
+  createChatModel: vi.fn((modelId: string) => ({
+    modelId,
+    provider: "mock-provider",
+  })),
+}));
+
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+
+  return {
+    ...actual,
+    streamText: vi.fn(),
+  };
+});
+
 const workflow = {
   system: "system prompt",
   generationPlan: {
@@ -32,6 +48,70 @@ const concreteLessonPlan = JSON.parse(
 const placeholderLessonPlan = JSON.parse(
   JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "待补充"),
 );
+const lessonProtocolText = `
+@lesson
+title=篮球行进间运球
+topic=篮球行进间运球
+grade=三年级
+student_count=40人
+lesson_no=第1课时
+@section narrative.guiding_thought
+坚持健康第一，通过游戏化练习提升篮球行进间运球能力。
+@section narrative.textbook_analysis
+行进间运球是篮球基础技能的重要内容。
+@section narrative.student_analysis
+三年级学生已有原地运球经验，但移动中控球稳定性仍需提升。
+@section objectives.sport_ability
+能在慢跑中完成连续行进间运球。
+@section objectives.health_behavior
+能保持安全距离并调整练习节奏。
+@section objectives.sport_morality
+能遵守规则并鼓励同伴。
+@flow
+part=准备部分
+time=8分钟
+content=热身跑和球性练习
+teacher=组织热身并提示安全距离
+students=按队形完成热身
+organization=四列横队
+@flow
+part=基本部分
+time=27分钟
+content=行进间运球和绕桶接力
+teacher=示范动作并巡回指导
+students=分组练习并完成挑战
+organization=四组纵队
+@flow
+part=结束部分
+time=5分钟
+content=放松拉伸和课堂评价
+teacher=组织放松并总结
+students=自评互评并整理器材
+organization=圆形队伍
+@evaluation
+level=三颗星
+description=能稳定完成行进间运球并遵守规则。
+@evaluation
+level=二颗星
+description=能基本完成运球接力，偶有失误。
+@evaluation
+level=一颗星
+description=能积极参与练习但控球仍需加强。
+@equipment
+venue=半个篮球场
+equipment=篮球20个
+equipment=标志桶8个
+@safety
+保持前后左右安全距离。
+绕桶返回时不得逆向穿插。
+@load
+load_level=中等偏上
+target_heart_rate_range=140-155次/分钟
+average_heart_rate=145次/分钟
+group_density=约75%
+individual_density=约45%
+rationale=准备部分逐步升温，基本部分保持中高强度，结束部分放松恢复。
+`;
 
 function fullOutput<T>(object: T) {
   return { object } as FullOutput<T>;
@@ -53,6 +133,51 @@ async function readAll(stream: ReadableStream<UIMessageChunk>) {
 }
 
 describe("generation skills", () => {
+  beforeEach(() => {
+    vi.mocked(streamText).mockReset();
+  });
+
+  it("server-side lesson generation uses the custom line protocol instead of schema-bound object output", async () => {
+    vi.mocked(streamText).mockReturnValueOnce({
+      text: Promise.resolve(lessonProtocolText),
+    } as ReturnType<typeof streamText>);
+    const messages = [
+      {
+        id: "user-protocol",
+        role: "user",
+        parts: [{ type: "text", text: "生成三年级篮球行进间运球课" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationSkill({
+      messages,
+      modelId: "mimo-v2.5-pro",
+      requestId: "request-protocol",
+      serverSide: true,
+      workflow,
+    });
+    const chunks = await readAll(result.stream);
+
+    await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
+      meta: {
+        topic: "篮球行进间运球",
+      },
+      title: "篮球行进间运球",
+    });
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ modelId: "mimo-v2.5-pro" }),
+        system: expect.stringContaining("@lesson"),
+      }),
+    );
+    expect(streamText).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        output: expect.anything(),
+      }),
+    );
+    expect(chunks).toEqual([expect.objectContaining({ type: "finish", finishReason: "stop" })]);
+  });
+
   it("lesson generation uses schema-bound streaming output and preserves text deltas", async () => {
     const structuredStream = vi.fn().mockImplementation(
       async () =>
@@ -434,6 +559,39 @@ describe("generation skills", () => {
       expect.objectContaining({
         step: "lesson-repair-finished",
         status: "success",
+      }),
+    );
+  });
+
+  it("repair pass still repairs business issues after protocol-based server generation", async () => {
+    vi.mocked(streamText).mockReturnValueOnce({
+      text: Promise.resolve(lessonProtocolText.replace("篮球行进间运球", "待补充")),
+    } as ReturnType<typeof streamText>);
+    const repairGenerate = vi.fn().mockResolvedValue(fullOutput(concreteLessonPlan));
+    const onTrace = vi.fn();
+    const messages = [
+      {
+        id: "user-protocol-repair",
+        role: "user",
+        parts: [{ type: "text", text: "生成一节篮球课" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationWithRepair({
+      messages,
+      onTrace,
+      repairGenerate,
+      requestId: "request-protocol-repair",
+      serverSide: true,
+      workflow,
+    });
+
+    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
+    expect(repairGenerate).toHaveBeenCalledTimes(1);
+    expect(onTrace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: "lesson-repair-started",
+        status: "running",
       }),
     );
   });
