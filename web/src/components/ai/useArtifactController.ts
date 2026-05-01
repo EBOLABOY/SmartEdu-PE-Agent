@@ -30,7 +30,7 @@ type UseArtifactControllerInput = {
 
 function getNativeScreenKey(slides: NonNullable<ArtifactLifecycle["slideData"]>) {
   return slides
-    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.supportModule}`)
+    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.pagePrompt ?? ""}`)
     .join("|");
 }
 

@@ -8,9 +8,9 @@ import {
 } from "@/lib/artifact-protocol";
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
+import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 import type {
   ArtifactContentType,
-  LessonScreenPlan,
   PersistedArtifactVersion,
   SmartEduUIMessage,
   UiHint,
@@ -27,7 +27,7 @@ export type ArtifactSnapshot = {
   content: string;
   contentType?: ArtifactContentType;
   lessonPlan?: CompetitionLessonPlan;
-  screenPlan?: LessonScreenPlan;
+  screenPlan?: HtmlScreenPlan;
   status: ArtifactLifecycleStatus;
   version: number;
   artifactId?: string;
@@ -44,8 +44,8 @@ export type ArtifactLifecycle = {
   isHtmlStreaming: boolean;
   htmlPreviewVersionId?: string;
   lessonPlan?: CompetitionLessonPlan;
-  screenPlan?: LessonScreenPlan;
-  slideData?: LessonScreenPlan["sections"];
+  screenPlan?: HtmlScreenPlan;
+  slideData?: HtmlScreenPlan["sections"];
   status: ArtifactLifecycleStatus;
   stage: ArtifactStage;
   activeArtifact?: ArtifactSnapshot;

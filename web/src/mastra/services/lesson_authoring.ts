@@ -15,7 +15,6 @@ import {
   smartEduDataSchemas,
   type GenerationMode,
   type LessonAuthoringMemory,
-  type LessonScreenPlan,
   type PeTeacherContext,
   type SmartEduUIMessage,
   type StandardsMarket,
@@ -47,7 +46,6 @@ export type LessonAuthoringRequest = {
   context?: PeTeacherContext;
   mode?: GenerationMode;
   lessonPlan?: string;
-  screenPlan?: LessonScreenPlan;
   market?: StandardsMarket;
 };
 
@@ -178,6 +176,7 @@ function createAgenticWorkflowContext(input: {
       references: [],
       warning: "正式生成前将由服务端主动检索课标并注入结构化生成提示。",
     },
+    textbook: undefined,
     generationPlan: {
       mode: input.mode,
       confirmedLessonRequired: input.mode === "html",
@@ -355,10 +354,9 @@ async function executeLessonAuthoringStream(input: {
   const executionMessages = await buildExecutionMessages(request);
   const agenticMode = inferAgenticMode({ explicitMode: mode, query });
   const shouldUseStructuredAdapter = !isPlainConversationQuery(query);
-  const system = buildPeTeacherSystemPrompt(request.context, {
+  let system = buildPeTeacherSystemPrompt(request.context, {
     lessonPlan: request.lessonPlan,
     mode: agenticMode,
-    screenPlan: request.screenPlan,
   });
   let workflow = createAgenticWorkflowContext({
     mode: agenticMode,
@@ -380,6 +378,20 @@ async function executeLessonAuthoringStream(input: {
     workflow = (await authoringSkills.resolveWorkflowWithServerStandards({
       market: request.market,
       query,
+      workflow,
+    })).workflow;
+    workflow = authoringSkills.createServerTextbookPendingWorkflow(workflow);
+    writeWorkflowTracePart({
+      phase: "workflow",
+      requestId,
+      workflow,
+      writer,
+    });
+    workflow = (await authoringSkills.resolveWorkflowWithServerTextbook({
+      grade: request.context?.grade ?? request.context?.teachingGrade,
+      market: request.market,
+      query,
+      stage: "小学",
       workflow,
     })).workflow;
 
@@ -408,10 +420,37 @@ async function executeLessonAuthoringStream(input: {
 
   if (agenticMode === "html" && shouldUseStructuredAdapter) {
     workflow.trace.push(createServerGenerationTraceEntry("html"));
+    const planning = await authoringSkills.runServerHtmlScreenPlanningSkill({
+      additionalInstructions: query,
+      lessonPlan: request.lessonPlan,
+      maxSteps: workflow.generationPlan.maxSteps,
+      requestId,
+    });
+    const plannedScreenPlan = planning.plan;
+
+    system = buildPeTeacherSystemPrompt(request.context, {
+      lessonPlan: request.lessonPlan,
+      mode: "html",
+      screenPlan: plannedScreenPlan,
+    });
+    workflow = {
+      ...workflow,
+      system,
+      trace: [
+        ...workflow.trace,
+        createWorkflowTraceEntry(
+          "html-screen-planning",
+          "success",
+          `已生成 ${plannedScreenPlan.sections.length} 个页面提示词，规划来源：${planning.source}。`,
+        ),
+      ],
+    };
     const htmlStream = await authoringSkills.runServerHtmlGenerationSkill({
       lessonPlan: request.lessonPlan ?? "",
       messages: executionMessages,
+      projectId: request.projectId,
       requestId,
+      screenPlan: plannedScreenPlan,
       workflow,
     });
 

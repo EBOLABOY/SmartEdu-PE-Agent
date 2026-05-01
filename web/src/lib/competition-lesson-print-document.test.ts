@@ -28,4 +28,35 @@ describe("competition-lesson-print-document", () => {
     expect(html).toContain("健康第一教育理念，落实教会、勤练、常赛要求。");
     expect(html).not.toContain("<p class=\"competition-print-paragraph\">健康第一</p>");
   });
+
+  it("会优先渲染课时计划行内的 AI 教学站位图", () => {
+    const html = buildCompetitionLessonPrintHtml({
+      ...DEFAULT_COMPETITION_LESSON_PLAN,
+      periodPlan: {
+        ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan,
+        rows: DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows.map((row, index) =>
+          index === 0
+            ? {
+                ...row,
+                diagramAssets: [
+                  {
+                    alt: "准备部分站位图",
+                    caption: "准备部分队形",
+                    height: 320,
+                    imageUrl: "data:image/png;base64,diagram",
+                    kind: "formation",
+                    source: "ai-generated",
+                    width: 320,
+                  },
+                ],
+              }
+            : row,
+        ),
+      },
+    });
+
+    expect(html).toContain("competition-print-ai-diagram-image");
+    expect(html).toContain("准备部分站位图");
+    expect(html).toContain("data:image/png;base64,diagram");
+  });
 });

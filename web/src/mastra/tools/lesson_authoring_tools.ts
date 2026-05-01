@@ -17,29 +17,20 @@ import {
   DEFAULT_STANDARDS_MARKET,
   lessonAuthoringMemorySchema,
   lessonIntakeResultSchema,
-  lessonScreenPlanSchema,
   peTeacherContextSchema,
   standardsMarketSchema,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
-import { extractHtmlDocumentFromText } from "@/lib/artifact-protocol";
 
-import { buildHtmlScreenPlanningSystemPrompt } from "../agents/html_screen_planner";
 import { createLessonPatchAgent } from "../agents/lesson_patch";
 import { buildPeTeacherSystemPrompt } from "../skills/pe_teacher_prompt";
 import { runCompetitionLessonPatchSkill } from "../skills/competition_lesson_patch_skill";
-import {
-  buildFallbackHtmlScreenPlan,
-  runHtmlScreenPlanningSkill,
-  type HtmlScreenPlanAgentRunner,
-} from "../skills/html_screen_planning_skill";
 import { runLessonIntakeSkill } from "../skills/lesson_intake_skill";
 import { runModelOperationWithRetry } from "../skills/lesson_generation_skill";
 import { createChatModel } from "../models";
 
 const DEFAULT_MODEL_ID = process.env.AI_MODEL ?? "gpt-4.1-mini";
 const LESSON_PATCH_MODEL_ID = process.env.AI_LESSON_PATCH_MODEL ?? process.env.AI_PATCH_MODEL ?? DEFAULT_MODEL_ID;
-const HTML_PLANNER_MODEL_ID = process.env.AI_HTML_PLANNER_MODEL ?? DEFAULT_MODEL_ID;
 const TOOL_MAX_STEPS = 5;
 
 function nowRequestId(prefix: string) {
@@ -327,111 +318,9 @@ export const applyLessonPatchTool = createTool({
   },
 });
 
-const designHtmlScreenInputSchema = z
-  .object({
-    lessonPlan: competitionLessonPlanSchema,
-    screenPlan: lessonScreenPlanSchema.optional(),
-    preference: z.string().trim().max(2000).optional(),
-  })
-  .strict();
-
-const designHtmlScreenOutputSchema = z
-  .object({
-    html: z.string().trim().min(1).max(5 * 1024 * 1024),
-    planningSource: z.string(),
-    sectionCount: z.number().int().positive(),
-    summary: z.string().trim().min(1).max(500),
-  })
-  .strict();
-
-export const designHtmlScreenTool = createTool({
-  id: "design_html_screen",
-  description:
-    "[Deprecated legacy compatibility only] 旧版 Agent 工具链使用的大屏 HTML 生成工具。正式新链路由服务端确定性 HTML 管线生成、校验和封装，不应让 Agent 调用本工具搬运 HTML。",
-  inputSchema: designHtmlScreenInputSchema,
-  outputSchema: designHtmlScreenOutputSchema,
-  execute: async ({ lessonPlan, screenPlan, preference }) => {
-    const parsedLessonPlan = competitionLessonPlanSchema.parse(lessonPlan);
-    const parsedScreenPlan = screenPlan ? lessonScreenPlanSchema.parse(screenPlan) : undefined;
-    const fallback = buildFallbackHtmlScreenPlan({
-      lessonPlan: JSON.stringify(parsedLessonPlan),
-      seedPlan: parsedScreenPlan,
-    });
-    const plannerModel = createStructuredModel(HTML_PLANNER_MODEL_ID);
-    const agentGenerate: HtmlScreenPlanAgentRunner = async (messages, options) => {
-      const result = await generateText({
-        model: plannerModel,
-        system: options.system,
-        messages,
-        stopWhen: stepCountIs(options.maxSteps),
-        temperature: 0,
-        output: Output.object({
-          schema: lessonScreenPlanSchema,
-          name: "LessonScreenPlan",
-          description: options.structuredOutput.instructions,
-        }),
-      });
-
-      return {
-        object: result.output,
-        toolResults: [],
-        steps: [],
-      } as unknown as FullOutput<z.infer<typeof lessonScreenPlanSchema>>;
-    };
-    const planning = await runHtmlScreenPlanningSkill({
-      additionalInstructions: preference,
-      agentGenerate,
-      lessonPlan: JSON.stringify(parsedLessonPlan),
-      maxSteps: TOOL_MAX_STEPS,
-      requestId: nowRequestId("html-screen-planning-tool"),
-      seedPlan: fallback.plan,
-    });
-    const htmlSystem = [
-      buildPeTeacherSystemPrompt(undefined, {
-        lessonPlan: JSON.stringify(parsedLessonPlan),
-        mode: "html",
-        screenPlan: planning.plan,
-      }),
-      buildHtmlScreenPlanningSystemPrompt(),
-      "你正在作为 design_html_screen 工具生成最终 HTML。只输出完整 HTML 文档，不要输出 Markdown 或代码围栏。",
-    ].join("\n\n");
-    const htmlPrompt = [
-      "请生成课堂学习辅助大屏 HTML。",
-      preference ? `教师偏好：${preference}` : "",
-      "已确认课时计划 JSON：",
-      compactJson(parsedLessonPlan),
-      "结构化大屏计划：",
-      compactJson(planning.plan),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    const htmlResult = await runModelOperationWithRetry(
-      () =>
-        generateText({
-          model: createChatModel(DEFAULT_MODEL_ID),
-          system: htmlSystem,
-          messages: [{ role: "user", content: htmlPrompt }],
-          stopWhen: stepCountIs(TOOL_MAX_STEPS),
-          temperature: 0.2,
-        }),
-      { mode: "html", requestId: nowRequestId("design-html-screen-tool") },
-    );
-    const extraction = extractHtmlDocumentFromText(htmlResult.text);
-    const html = extraction.html ?? htmlResult.text;
-
-    return designHtmlScreenOutputSchema.parse({
-      html,
-      planningSource: planning.source,
-      sectionCount: planning.plan.sections.length,
-      summary: `已生成《${parsedLessonPlan.meta.topic}》课堂学习辅助大屏，包含 ${planning.plan.sections.length} 个教学内容页。`,
-    });
-  },
-});
-
 export const lessonAuthoringTools = {
   analyze_requirements: analyzeRequirementsTool,
   generate_structured_lesson: generateStructuredLessonTool,
   write_lesson_plan: writeLessonPlanTool,
   apply_lesson_patch: applyLessonPatchTool,
-  design_html_screen: designHtmlScreenTool,
 };

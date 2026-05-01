@@ -28,6 +28,8 @@
 # repository-root generated assets
 /downloads
 /scripts
+!/scripts/
+!/scripts/ingest_textbook_corpus.mjs
 
 # debug
 npm-debug.log*

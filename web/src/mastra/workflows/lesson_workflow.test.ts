@@ -147,7 +147,7 @@ describe("lesson-workflow", () => {
     }
   });
 
-  it("会把结构化大屏模块计划注入 HTML 阶段系统提示词", async () => {
+  it("HTML 阶段系统提示词不再要求固定大屏模块契约", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_html"));
     const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
@@ -157,15 +157,6 @@ describe("lesson-workflow", () => {
         mode: "html",
         market: "cn-compulsory-2022",
         lessonPlan: "## 十、课时计划\n| 比赛展示 | 6 分钟 |",
-        screenPlan: {
-          sections: [
-            {
-              title: "比赛展示",
-              durationSeconds: 360,
-              supportModule: "scoreboard",
-            },
-          ],
-        },
       },
     });
 
@@ -188,9 +179,10 @@ describe("lesson-workflow", () => {
     expect(result.result.system).toContain("服务端");
     expect(result.result.system).toContain("不要调用提交工具");
     expect(result.result.system).not.toContain("submit_html_screen");
-    expect(result.result.system).toContain("data-support-module");
-    expect(result.result.system).toContain("比赛展示");
-    expect(result.result.system).toContain("durationSeconds=360");
+    expect(result.result.system).toContain("自由分镜契约");
+    expect(result.result.system).toContain("不使用固定组件枚举限制页面设计");
+    expect(result.result.system).not.toContain("data-support-module");
+    expect(result.result.system).not.toContain("support module 只能是");
   });
 
   it("咨询课标时直接返回 respond decision", async () => {

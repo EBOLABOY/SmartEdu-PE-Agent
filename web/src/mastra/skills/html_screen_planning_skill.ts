@@ -1,14 +1,23 @@
 import type { FullOutput } from "@mastra/core/stream";
-import { convertToModelMessages } from "ai";
+import {
+  convertToModelMessages,
+  extractJsonMiddleware,
+  generateText,
+  Output,
+  stepCountIs,
+  wrapLanguageModel,
+} from "ai";
 
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import {
-  lessonScreenPlanSchema,
+  htmlScreenPlanSchema,
+  type HtmlScreenPlan,
+} from "@/lib/html-screen-plan-contract";
+import {
   type GenerationMode,
-  type LessonScreenPlan,
 } from "@/lib/lesson-authoring-contract";
 import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
 
@@ -16,9 +25,13 @@ import {
   buildHtmlScreenPlanningSystemPrompt,
   formatLessonScreenPlanForPrompt,
 } from "../agents/html_screen_planner";
+import { createChatModel } from "../models";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
+
+const DEFAULT_HTML_PLANNER_MODEL_ID =
+  process.env.AI_HTML_PLANNER_MODEL ?? process.env.AI_MODEL ?? "gpt-4.1-mini";
 
 type HtmlScreenPlanGenerateOptions = {
   system: string;
@@ -29,7 +42,7 @@ type HtmlScreenPlanGenerateOptions = {
     };
   };
   structuredOutput: {
-    schema: typeof lessonScreenPlanSchema;
+    schema: typeof htmlScreenPlanSchema;
     instructions: string;
     jsonPromptInjection: boolean;
   };
@@ -38,14 +51,23 @@ type HtmlScreenPlanGenerateOptions = {
 export type HtmlScreenPlanAgentRunner = (
   messages: AgentModelMessages,
   options: HtmlScreenPlanGenerateOptions,
-) => Promise<FullOutput<LessonScreenPlan>>;
+) => Promise<FullOutput<HtmlScreenPlan>>;
 
 export type HtmlScreenPlanningResult = {
   modelMessageCount: number;
-  plan: LessonScreenPlan;
-  source: "agent" | "deterministic-fallback" | "seed-fallback" | "minimal-fallback";
-  warning?: string;
+  plan: HtmlScreenPlan;
+  source: "agent";
 };
+
+export class HtmlScreenPlanningError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = "HtmlScreenPlanningError";
+  }
+}
 
 function parseConfirmedLessonPlan(lessonPlan?: string): CompetitionLessonPlan | undefined {
   if (!lessonPlan?.trim()) {
@@ -61,65 +83,37 @@ function parseConfirmedLessonPlan(lessonPlan?: string): CompetitionLessonPlan | 
   }
 }
 
-function buildMinimalScreenPlan(): LessonScreenPlan {
-  return {
-    sections: [
-      {
-        title: "课堂学习辅助",
-        durationSeconds: 300,
-        supportModule: "formation",
-        objective: "在无法解析结构化课时行时，提供安全的课堂组织提示页。",
-        studentActions: ["看清当前任务", "保持练习距离", "听教师口令切换"],
-        safetyCue: "保持前后左右安全距离，按教师口令开始与停止。",
-        evaluationCue: "观察学生是否按提示完成动作并遵守安全边界。",
-        visualIntent: "绘制课堂组织队形图和安全边界提示。",
-        reason: "未能从已确认课时计划中解析课时行，使用最小可运行页面计划。",
-      },
-    ],
-  };
-}
-
-export function buildFallbackHtmlScreenPlan(input: {
+function buildSeedHtmlScreenPlan(input: {
   lessonPlan?: string;
-  seedPlan?: LessonScreenPlan;
-}): Pick<HtmlScreenPlanningResult, "plan" | "source"> {
+  seedPlan?: HtmlScreenPlan;
+}): HtmlScreenPlan {
   const parsedLessonPlan = parseConfirmedLessonPlan(input.lessonPlan);
 
   if (parsedLessonPlan) {
-    return {
-      plan: buildLessonScreenPlanFromLessonPlan(parsedLessonPlan),
-      source: "deterministic-fallback",
-    };
+    return buildLessonScreenPlanFromLessonPlan(parsedLessonPlan);
   }
 
-  const parsedSeedPlan = lessonScreenPlanSchema.safeParse(input.seedPlan);
+  const parsedSeedPlan = htmlScreenPlanSchema.safeParse(input.seedPlan);
 
   if (parsedSeedPlan.success) {
-    return {
-      plan: parsedSeedPlan.data,
-      source: "seed-fallback",
-    };
+    return parsedSeedPlan.data;
   }
 
-  return {
-    plan: buildMinimalScreenPlan(),
-    source: "minimal-fallback",
-  };
+  throw new HtmlScreenPlanningError("HTML 大屏分镜规划缺少可用课时计划，无法构造规划输入。");
 }
 
 function buildPlanningModelMessages(input: {
-  fallbackPlan: LessonScreenPlan;
   lessonPlan?: string;
-  seedPlan?: LessonScreenPlan;
+  seedPlan: HtmlScreenPlan;
 }) {
   return [
     {
       role: "user" as const,
       content: [
-        "请基于已确认课时计划输出最终 LessonScreenPlan。必须自动判断课堂有几个真实教学环节页。",
+        "请基于已确认课时计划输出最终 HtmlScreenPlan。必须自动判断课堂需要几个页面，并把首页作为 sections[0]。",
         "",
-        "确定性初始计划（可修正但不能遗漏环节）：",
-        formatLessonScreenPlanForPrompt(input.seedPlan ?? input.fallbackPlan),
+        "教学环节参考草案（只用于防止遗漏 periodPlan.rows，不是页面设计稿；你可以补首页、合并、拆分和重写视觉系统）：",
+        formatLessonScreenPlanForPrompt(input.seedPlan),
         "",
         "已确认课时计划 JSON：",
         input.lessonPlan ?? "未提供已确认课时计划 JSON。",
@@ -128,34 +122,71 @@ function buildPlanningModelMessages(input: {
   ] as AgentModelMessages;
 }
 
-function findFallbackSection(fallbackPlan: LessonScreenPlan, section: LessonScreenPlan["sections"][number], index: number) {
+function findSeedSection(seedPlan: HtmlScreenPlan, section: HtmlScreenPlan["sections"][number], index: number) {
+  if (section.pageRole === "cover") {
+    return undefined;
+  }
+
   if (section.sourceRowIndex !== undefined) {
-    const matched = fallbackPlan.sections.find((fallback) => fallback.sourceRowIndex === section.sourceRowIndex);
+    const matched = seedPlan.sections.find((seedSection) => seedSection.sourceRowIndex === section.sourceRowIndex);
 
     if (matched) {
       return matched;
     }
   }
 
-  return fallbackPlan.sections[index];
-}
+  const firstSourceRowIndex = section.sourceRowIndexes?.[0];
 
-function normalizeAgentPlan(agentPlan: LessonScreenPlan, fallbackPlan: LessonScreenPlan) {
-  const parsed = lessonScreenPlanSchema.parse(agentPlan);
+  if (firstSourceRowIndex !== undefined) {
+    const matched = seedPlan.sections.find((seedSection) => seedSection.sourceRowIndex === firstSourceRowIndex);
 
-  if (parsed.sections.length < fallbackPlan.sections.length) {
-    throw new Error(
-      `HTML 大屏规划页数少于结构化课时计划环节数：agent=${parsed.sections.length}, fallback=${fallbackPlan.sections.length}`,
-    );
+    if (matched) {
+      return matched;
+    }
   }
 
-  return lessonScreenPlanSchema.parse({
+  return seedPlan.sections[index];
+}
+
+function getCoveredSourceRowIndexes(section: HtmlScreenPlan["sections"][number]) {
+  return new Set([
+    ...(section.sourceRowIndexes ?? []),
+    ...(section.sourceRowIndex !== undefined ? [section.sourceRowIndex] : []),
+  ]);
+}
+
+function assertCoversSeedRows(agentPlan: HtmlScreenPlan, seedPlan: HtmlScreenPlan) {
+  const required = seedPlan.sections
+    .map((section) => section.sourceRowIndex)
+    .filter((index): index is number => index !== undefined);
+  const covered = new Set(
+    agentPlan.sections.flatMap((section) => Array.from(getCoveredSourceRowIndexes(section))),
+  );
+  const missing = required.filter((index) => !covered.has(index));
+
+  if (missing.length) {
+    throw new Error(`HTML 大屏规划遗漏课时计划行：${missing.map((index) => index + 1).join("、")}`);
+  }
+}
+
+function normalizeAgentPlan(agentPlan: HtmlScreenPlan, seedPlan: HtmlScreenPlan) {
+  const parsed = htmlScreenPlanSchema.parse(agentPlan);
+
+  if (parsed.sections[0]?.pageRole !== "cover") {
+    throw new Error("HTML 大屏规划必须把首页作为 sections[0]，且 pageRole 必须为 cover。");
+  }
+
+  assertCoversSeedRows(parsed, seedPlan);
+
+  return htmlScreenPlanSchema.parse({
+    visualSystem: parsed.visualSystem,
     sections: parsed.sections.map((section, index) => {
-      const fallbackSection = findFallbackSection(fallbackPlan, section, index);
+      const seedSection = findSeedSection(seedPlan, section, index);
 
       return {
-        ...fallbackSection,
+        ...(seedSection ?? {}),
         ...section,
+        visualMode: section.visualMode ?? seedSection?.visualMode ?? "html",
       };
     }),
   });
@@ -167,16 +198,15 @@ export async function runHtmlScreenPlanningSkill(input: {
   lessonPlan?: string;
   maxSteps: number;
   requestId: string;
-  seedPlan?: LessonScreenPlan;
+  seedPlan?: HtmlScreenPlan;
 }): Promise<HtmlScreenPlanningResult> {
-  const fallback = buildFallbackHtmlScreenPlan({
+  const seedPlan = buildSeedHtmlScreenPlan({
     lessonPlan: input.lessonPlan,
     seedPlan: input.seedPlan,
   });
   const modelMessages = buildPlanningModelMessages({
-    fallbackPlan: fallback.plan,
     lessonPlan: input.lessonPlan,
-    seedPlan: input.seedPlan,
+    seedPlan,
   });
 
   try {
@@ -191,8 +221,8 @@ export async function runHtmlScreenPlanningSkill(input: {
             },
           },
           structuredOutput: {
-            schema: lessonScreenPlanSchema,
-            instructions: "只输出符合 LessonScreenPlan schema 的结构化对象，不要输出 HTML 或解释文字。",
+            schema: htmlScreenPlanSchema,
+            instructions: "只输出符合 HtmlScreenPlan schema 的结构化对象，不要输出 HTML 或解释文字。",
             jsonPromptInjection: true,
           },
         }),
@@ -204,25 +234,65 @@ export async function runHtmlScreenPlanningSkill(input: {
 
     return {
       modelMessageCount: modelMessages.length,
-      plan: normalizeAgentPlan(result.object, fallback.plan),
+      plan: normalizeAgentPlan(result.object, seedPlan),
       source: "agent",
     };
   } catch (error) {
-    const warning = `HTML 大屏 Agent 分镜规划失败，已使用${fallback.source}：${
+    const errorMessage = `HTML 大屏 Agent 分镜规划失败：${
       error instanceof Error ? error.message : "unknown-error"
     }`;
 
-    console.warn("[lesson-authoring] html-screen-planning-fallback", {
+    console.warn("[lesson-authoring] html-screen-planning-failed", {
       requestId: input.requestId,
-      source: fallback.source,
       message: error instanceof Error ? error.message : "unknown-error",
+    });
+    throw new HtmlScreenPlanningError(errorMessage, error);
+  }
+}
+
+function createStructuredPlannerModel(modelId: string) {
+  return wrapLanguageModel({
+    model: createChatModel(modelId),
+    middleware: extractJsonMiddleware(),
+  });
+}
+
+export async function runServerHtmlScreenPlanningSkill(input: {
+  additionalInstructions?: string;
+  lessonPlan?: string;
+  maxSteps: number;
+  modelId?: string;
+  requestId: string;
+  seedPlan?: HtmlScreenPlan;
+}) {
+  const model = createStructuredPlannerModel(input.modelId ?? DEFAULT_HTML_PLANNER_MODEL_ID);
+  const agentGenerate: HtmlScreenPlanAgentRunner = async (messages, options) => {
+    const result = await generateText({
+      model,
+      system: options.system,
+      messages,
+      stopWhen: stepCountIs(options.maxSteps),
+      temperature: 0,
+      output: Output.object({
+        schema: htmlScreenPlanSchema,
+        name: "HtmlScreenPlan",
+        description: options.structuredOutput.instructions,
+      }),
     });
 
     return {
-      modelMessageCount: modelMessages.length,
-      plan: fallback.plan,
-      source: fallback.source,
-      warning,
-    };
-  }
+      object: result.output,
+      toolResults: [],
+      steps: [],
+    } as unknown as FullOutput<HtmlScreenPlan>;
+  };
+
+  return runHtmlScreenPlanningSkill({
+    additionalInstructions: input.additionalInstructions,
+    agentGenerate,
+    lessonPlan: input.lessonPlan,
+    maxSteps: input.maxSteps,
+    requestId: input.requestId,
+    seedPlan: input.seedPlan,
+  });
 }

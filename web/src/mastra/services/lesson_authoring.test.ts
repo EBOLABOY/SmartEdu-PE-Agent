@@ -2,6 +2,7 @@ import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import type { runLessonGenerationWithRepair } from "@/mastra/skills";
 
 const mocks = vi.hoisted(() => {
   const createChunkStream = (chunks: UIMessageChunk[]) =>
@@ -38,6 +39,18 @@ const mocks = vi.hoisted(() => {
           detail: "正在服务端检索体育课程标准；若向量库不可用，将自动降级继续生成。",
           status: "running",
           step: "server-standards-retrieval",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+      ],
+    })),
+    createServerTextbookPendingWorkflow: vi.fn((workflow) => ({
+      ...workflow,
+      trace: [
+        ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-textbook-retrieval"),
+        {
+          detail: "正在服务端检索教材正文；若教材库不可用，将自动降级继续生成。",
+          status: "running",
+          step: "server-textbook-retrieval",
           timestamp: "2026-04-30T00:00:00.000Z",
         },
       ],
@@ -83,6 +96,22 @@ const mocks = vi.hoisted(() => {
         ],
       },
     })),
+    resolveWorkflowWithServerTextbook: vi.fn(async ({ workflow }) => ({
+      outcome: "success",
+      workflow: {
+        ...workflow,
+        system: `${workflow.system}\n\n教材正文上下文：人教版篮球教材强调运球控球、空间观察和游戏化练习。`,
+        trace: [
+          ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-textbook-retrieval"),
+          {
+            detail: "服务端已检索 2 条教材正文条目并注入教材分析提示。",
+            status: "success",
+            step: "server-textbook-retrieval",
+            timestamp: "2026-04-30T00:00:00.000Z",
+          },
+        ],
+      },
+    })),
     getAgent: vi.fn(() => ({
       stream: agentStream,
     })),
@@ -91,6 +120,34 @@ const mocks = vi.hoisted(() => {
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
       partialOutputStream: undefined,
       stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    })),
+    runServerHtmlScreenPlanningSkill: vi.fn(async () => ({
+      modelMessageCount: 1,
+      plan: {
+        visualSystem: "统一清爽的体育课堂投屏系统，首页和教学页共享同一套色彩、按钮、倒计时和图形语言。",
+        sections: [
+          {
+            title: "课堂首页",
+            pageRole: "cover",
+            pagePrompt: "生成首页封面，大标题居中，学校和教师姓名位于标题下方，并呈现开始上课按钮视觉。",
+            reason: "测试用首页。",
+          },
+          {
+            title: "AI 校正后的分镜",
+            pageRole: "learnPractice",
+            durationSeconds: 300,
+            sourceRowIndex: 0,
+            objective: "让学生明确本环节任务。",
+            studentActions: ["看清任务", "保持距离", "听口令行动"],
+            safetyCue: "保持前后左右安全距离。",
+            evaluationCue: "观察是否按要求完成动作。",
+            visualIntent: "自由设计有助于理解的课堂组织图。",
+            pagePrompt: "生成课堂组织页面片段，自由选择视觉表达。",
+            reason: "测试用规划结果。",
+          },
+        ],
+      },
+      source: "agent",
     })),
     runServerHtmlGenerationSkill: vi.fn(async () =>
       createChunkStream([
@@ -118,9 +175,12 @@ vi.mock("@/mastra/ai_sdk_stream", () => ({
 
 vi.mock("@/mastra/skills", () => ({
   createServerStandardsPendingWorkflow: mocks.createServerStandardsPendingWorkflow,
+  createServerTextbookPendingWorkflow: mocks.createServerTextbookPendingWorkflow,
   createStructuredAuthoringStreamAdapter: mocks.createStructuredAuthoringStreamAdapter,
   resolveWorkflowWithServerStandards: mocks.resolveWorkflowWithServerStandards,
+  resolveWorkflowWithServerTextbook: mocks.resolveWorkflowWithServerTextbook,
   runLessonGenerationWithRepair: mocks.runLessonGenerationWithRepair,
+  runServerHtmlScreenPlanningSkill: mocks.runServerHtmlScreenPlanningSkill,
   runServerHtmlGenerationSkill: mocks.runServerHtmlGenerationSkill,
 }));
 
@@ -157,6 +217,18 @@ describe("lesson authoring service", () => {
           detail: "正在服务端检索体育课程标准；若向量库不可用，将自动降级继续生成。",
           status: "running",
           step: "server-standards-retrieval",
+          timestamp: "2026-04-30T00:00:00.000Z",
+        },
+      ],
+    }));
+    mocks.createServerTextbookPendingWorkflow.mockImplementation((workflow) => ({
+      ...workflow,
+      trace: [
+        ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-textbook-retrieval"),
+        {
+          detail: "正在服务端检索教材正文；若教材库不可用，将自动降级继续生成。",
+          status: "running",
+          step: "server-textbook-retrieval",
           timestamp: "2026-04-30T00:00:00.000Z",
         },
       ],
@@ -202,10 +274,54 @@ describe("lesson authoring service", () => {
         ],
       },
     }));
+    mocks.resolveWorkflowWithServerTextbook.mockImplementation(async ({ workflow }) => ({
+      outcome: "success",
+      workflow: {
+        ...workflow,
+        system: `${workflow.system}\n\n教材正文上下文：人教版篮球教材强调运球控球、空间观察和游戏化练习。`,
+        trace: [
+          ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-textbook-retrieval"),
+          {
+            detail: "服务端已检索 2 条教材正文条目并注入教材分析提示。",
+            status: "success",
+            step: "server-textbook-retrieval",
+            timestamp: "2026-04-30T00:00:00.000Z",
+          },
+        ],
+      },
+    }));
     mocks.runLessonGenerationWithRepair.mockResolvedValue({
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
       partialOutputStream: undefined,
       stream: mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+    mocks.runServerHtmlScreenPlanningSkill.mockResolvedValue({
+      modelMessageCount: 1,
+      plan: {
+        visualSystem: "统一清爽的体育课堂投屏系统，首页和教学页共享同一套色彩、按钮、倒计时和图形语言。",
+        sections: [
+          {
+            title: "课堂首页",
+            pageRole: "cover",
+            pagePrompt: "生成首页封面，大标题居中，学校和教师姓名位于标题下方，并呈现开始上课按钮视觉。",
+            reason: "测试用首页。",
+          },
+          {
+            title: "AI 校正后的分镜",
+            pageRole: "learnPractice",
+            durationSeconds: 300,
+            sourceRowIndex: 0,
+            objective: "让学生明确本环节任务。",
+            studentActions: ["看清任务", "保持距离", "听口令行动"],
+            safetyCue: "保持前后左右安全距离。",
+            evaluationCue: "观察是否按要求完成动作。",
+            visualIntent: "自由设计有助于理解的课堂组织图。",
+            pagePrompt: "生成课堂组织页面片段，自由选择视觉表达。",
+            reason: "测试用规划结果。",
+          },
+        ],
+      },
+      source: "agent",
     });
     mocks.runServerHtmlGenerationSkill.mockResolvedValue(
       mocks.createChunkStream([
@@ -264,12 +380,34 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
+    expect(mocks.resolveWorkflowWithServerTextbook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grade: "三年级",
+        market: undefined,
+        query: "帮我做一节篮球运球接力课",
+        stage: "小学",
+        workflow: expect.objectContaining({
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-textbook-retrieval",
+              status: "running",
+            }),
+          ]),
+        }),
+      }),
+    );
     expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
       expect.objectContaining({
         serverSide: true,
         workflow: expect.objectContaining({
           generationPlan: expect.objectContaining({ mode: "lesson" }),
           system: expect.stringContaining("年级：三年级"),
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-textbook-retrieval",
+              status: "success",
+            }),
+          ]),
           standards: expect.objectContaining({
             referenceCount: 1,
           }),
@@ -318,6 +456,10 @@ describe("lesson authoring service", () => {
             }),
             expect.objectContaining({
               step: "server-standards-retrieval",
+              status: "success",
+            }),
+            expect.objectContaining({
+              step: "server-textbook-retrieval",
               status: "success",
             }),
           ]),
@@ -411,6 +553,74 @@ describe("lesson authoring service", () => {
     expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalled();
   });
 
+  it("教材向量检索异常不会阻断课时计划流式生成", async () => {
+    mocks.resolveWorkflowWithServerTextbook.mockImplementationOnce(async ({ workflow }) => ({
+      outcome: "failure",
+      workflow: {
+        ...workflow,
+        system: `${workflow.system}\n\n教材检索失败，已降级继续生成：textbook vector rpc unavailable`,
+        trace: [
+          ...workflow.trace.filter((entry: { step: string }) => entry.step !== "server-textbook-retrieval"),
+          {
+            detail: "服务端教材检索失败，已退回通用教材分析原则生成：textbook vector rpc unavailable",
+            status: "blocked",
+            step: "server-textbook-retrieval",
+            timestamp: "2026-04-30T00:00:00.000Z",
+          },
+        ],
+      },
+    }));
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      messages: [
+        {
+          id: "user-textbook-fallback",
+          role: "user",
+          parts: [{ type: "text", text: "生成一份三年级篮球运球课时计划" }],
+        },
+      ],
+      mode: "lesson",
+      projectId: "00000000-0000-4000-8000-000000000022",
+    });
+    const chunks = await readChunks(result.stream);
+
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "start" }),
+        expect.objectContaining({ type: "data-trace" }),
+        expect.objectContaining({ type: "finish" }),
+      ]),
+    );
+    expect(mocks.resolveWorkflowWithServerTextbook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: expect.objectContaining({
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-textbook-retrieval",
+              status: "running",
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflow: expect.objectContaining({
+          system: expect.stringContaining("textbook vector rpc unavailable"),
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "server-textbook-retrieval",
+              status: "blocked",
+              detail: expect.stringContaining("textbook vector rpc unavailable"),
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalled();
+  });
+
   it("普通问候只走 Agent 文本流，不进入结构化 Artifact adapter", async () => {
     mocks.createMastraAgentUiMessageStream.mockReturnValue(
       mocks.createChunkStream([
@@ -481,11 +691,32 @@ describe("lesson authoring service", () => {
     await readChunks(result.stream);
 
     expect(mocks.getAgent).not.toHaveBeenCalled();
+    expect(mocks.runServerHtmlScreenPlanningSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        additionalInstructions: "请给这份课生成互动大屏",
+        lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+        maxSteps: 7,
+      }),
+    );
     expect(mocks.runServerHtmlGenerationSkill).toHaveBeenCalledWith(
       expect.objectContaining({
         lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+        screenPlan: expect.objectContaining({
+          sections: expect.arrayContaining([
+            expect.objectContaining({
+              pagePrompt: "生成课堂组织页面片段，自由选择视觉表达。",
+              title: "AI 校正后的分镜",
+            }),
+          ]),
+        }),
         workflow: expect.objectContaining({
           system: expect.stringContaining("当前已确认课时计划 JSON"),
+          trace: expect.arrayContaining([
+            expect.objectContaining({
+              step: "html-screen-planning",
+              status: "success",
+            }),
+          ]),
         }),
       }),
     );
@@ -505,6 +736,39 @@ describe("lesson authoring service", () => {
           ]),
         }),
       }),
+    );
+  });
+
+  it("HTML 分镜规划失败时直接报错，不继续生成大屏", async () => {
+    mocks.runServerHtmlScreenPlanningSkill.mockRejectedValueOnce(new Error("planner unavailable"));
+    const { streamLessonAuthoring } = await import("./lesson_authoring");
+
+    const result = await streamLessonAuthoring({
+      lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+      messages: [
+        {
+          id: "user-html-planning-failed",
+          role: "user",
+          parts: [{ type: "text", text: "请生成互动大屏" }],
+        },
+      ],
+      mode: "html",
+    });
+    const chunks = await readChunks(result.stream);
+
+    expect(mocks.runServerHtmlScreenPlanningSkill).toHaveBeenCalled();
+    expect(mocks.runServerHtmlGenerationSkill).not.toHaveBeenCalled();
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: "planner unavailable",
+        }),
+        expect.objectContaining({
+          type: "finish",
+          finishReason: "error",
+        }),
+      ]),
     );
   });
 
@@ -576,7 +840,9 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    const generationCall = mocks.runLessonGenerationWithRepair.mock.calls.at(-1)?.[0];
+    const generationCall = (
+      mocks.runLessonGenerationWithRepair as unknown as ReturnType<typeof vi.fn<typeof runLessonGenerationWithRepair>>
+    ).mock.calls.at(-1)?.[0];
     const serializedMessages = JSON.stringify(generationCall?.messages);
 
     expect(serializedMessages).toContain("先看课标");
@@ -627,7 +893,9 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    const generationCall = mocks.runLessonGenerationWithRepair.mock.calls.at(-1)?.[0];
+    const generationCall = (
+      mocks.runLessonGenerationWithRepair as unknown as ReturnType<typeof vi.fn<typeof runLessonGenerationWithRepair>>
+    ).mock.calls.at(-1)?.[0];
     const serializedMessages = JSON.stringify(generationCall?.messages);
 
     expect(serializedMessages).toContain("非法 JSON 回退");

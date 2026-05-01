@@ -182,6 +182,25 @@ function FieldDiagram({
 }
 
 function OrganizationDiagram({ row, index }: { row: CompetitionLessonPlanRow; index: number }) {
+  const primaryDiagram = row.diagramAssets?.[0];
+
+  if (primaryDiagram) {
+    return (
+      <div className="competition-print-ai-diagram">
+        <img
+          alt={primaryDiagram.alt}
+          className="competition-print-ai-diagram-image"
+          height={primaryDiagram.height}
+          src={primaryDiagram.imageUrl}
+          width={primaryDiagram.width}
+        />
+        <p className="competition-print-ai-diagram-caption">
+          {primaryDiagram.caption ?? row.organization[0] ?? `第 ${index + 1} 环节组织图`}
+        </p>
+      </div>
+    );
+  }
+
   if (row.structure === "准备部分") {
     return (
       <>

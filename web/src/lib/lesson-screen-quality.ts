@@ -90,12 +90,8 @@ export function analyzeLessonScreenHtml(html: string): LessonScreenQualityReport
     warnings.push("未检测到页面 rhythm 标记，后续难以控制页面节奏。");
   }
 
-  if (!getHtmlElements(document).some((element) => getHtmlAttribute(element, "data-support-module") !== null)) {
-    warnings.push("未检测到支持模块结构化标记，后续难以稳定控制战术板、计分板、轮换路线和队形图。");
-  }
-
-  if (!/战术板|组织队形图|小组轮换路线|分组计分板/.test(visibleText)) {
-    warnings.push("未检测到动作、队形、轮换或计分可视化模块，学生理解支撑不足。");
+  if (!/路线|队形|节奏|规则|挑战|评价|观察|图|卡片|任务/.test(visibleText)) {
+    warnings.push("未检测到明确的课堂可视化或任务支撑表达，学生理解支撑可能不足。");
   }
 
   if (/\b(Unified|Playback|Console|Showcase|Open Class|Phase|AI)\b/i.test(visibleText)) {

@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import React, { useState } from "react";
 import { RotateCw, Trophy, UsersRound } from "lucide-react";
 
-import type { LessonScreenSupportModule } from "@/lib/lesson-authoring-contract";
+import type { LessonSupportModule } from "@/lib/lesson-screen-modules";
 import { cn } from "@/lib/utils";
 
 type VisualizerProps = {
@@ -242,7 +242,7 @@ export function LessonSupportVisualizer({
   title,
   intent,
 }: VisualizerProps & {
-  module: LessonScreenSupportModule;
+  module: LessonSupportModule;
 }) {
   if (module === "scoreboard") {
     return <ScoreboardVisualizer intent={intent} title={title} />;

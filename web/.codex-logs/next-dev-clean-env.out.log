@@ -1,0 +1,87 @@
+▲ Next.js 16.2.4 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.100.140:3000
+- Environments: .env
+✓ Ready in 684ms
+- Experiments (use with caution):
+  · optimizePackageImports
+
+○ Compiling / ...
+ GET / 200 in 12.5s (next.js: 10.9s, application-code: 1638ms)
+ GET / 200 in 3.5s (next.js: 12ms, application-code: 3.5s)
+ POST / 200 in 5.0s (next.js: 9ms, application-code: 5.0s)
+  └─ ƒ createProjectAction("帮我生成一个篮球三步上篮的课时计划") in 3731ms src/app/actions/workspace.ts
+○ Compiling /api/chat ...
+✓ Compiled in 334ms
+ GET / 200 in 1657ms (next.js: 1123ms, application-code: 534ms)
+ GET / 200 in 351ms (next.js: 8ms, application-code: 343ms)
+ GET / 200 in 336ms (next.js: 5ms, application-code: 330ms)
+  Reload env: .env
+✓ Compiled in 1ms
+ GET / 200 in 1990ms (next.js: 1359ms, application-code: 632ms)
+ GET / 200 in 377ms (next.js: 9ms, application-code: 368ms)
+ POST /api/chat 200 in 3.2min (next.js: 5.1s, application-code: 3.1min)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1518ms (next.js: 5ms, application-code: 1512ms)
+✓ Compiled in 248ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 970ms (next.js: 7ms, application-code: 963ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 2.3s (next.js: 982ms, application-code: 1312ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 4.9s (next.js: 1360ms, application-code: 3.5s)
+✓ Compiled in 259ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 2.4s (next.js: 1045ms, application-code: 1330ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 996ms (next.js: 8ms, application-code: 988ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 4.5s (next.js: 1336ms, application-code: 3.2s)
+✓ Compiled in 243ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1294ms (next.js: 11ms, application-code: 1284ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 3.1s (next.js: 1358ms, application-code: 1789ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1204ms (next.js: 7ms, application-code: 1196ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 8.2s (next.js: 6.9s, application-code: 1334ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 866ms (next.js: 4ms, application-code: 862ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 913ms (next.js: 5ms, application-code: 908ms)
+✓ Compiled in 158ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1760ms (next.js: 695ms, application-code: 1065ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 891ms (next.js: 5ms, application-code: 886ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 837ms (next.js: 5ms, application-code: 832ms)
+✓ Compiled in 180ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1619ms (next.js: 665ms, application-code: 954ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 737ms (next.js: 4ms, application-code: 732ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 3.7s (next.js: 772ms, application-code: 2.9s)
+✓ Compiled in 179ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 813ms (next.js: 4ms, application-code: 809ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1676ms (next.js: 678ms, application-code: 999ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 3.4s (next.js: 787ms, application-code: 2.6s)
+✓ Compiled in 156ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1832ms (next.js: 731ms, application-code: 1101ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 895ms (next.js: 5ms, application-code: 891ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 852ms (next.js: 4ms, application-code: 848ms)
+✓ Compiled in 173ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 2.1s (next.js: 858ms, application-code: 1226ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1634ms (next.js: 641ms, application-code: 992ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 835ms (next.js: 4ms, application-code: 831ms)
+✓ Compiled in 222ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1984ms (next.js: 892ms, application-code: 1092ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 787ms (next.js: 5ms, application-code: 781ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 4.2s (next.js: 838ms, application-code: 3.4s)
+✓ Compiled in 191ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 853ms (next.js: 4ms, application-code: 849ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1770ms (next.js: 700ms, application-code: 1070ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 813ms (next.js: 5ms, application-code: 809ms)
+✓ Compiled in 216ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 751ms (next.js: 4ms, application-code: 747ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1516ms (next.js: 581ms, application-code: 934ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 3.0s (next.js: 884ms, application-code: 2.1s)
+✓ Compiled in 183ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1511ms (next.js: 594ms, application-code: 917ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 767ms (next.js: 4ms, application-code: 763ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 3.2s (next.js: 816ms, application-code: 2.4s)
+✓ Compiled in 190ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1897ms (next.js: 718ms, application-code: 1179ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 916ms (next.js: 4ms, application-code: 912ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 961ms (next.js: 4ms, application-code: 957ms)
+ POST /api/chat 401 in 7.5s (next.js: 7.1s, application-code: 345ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 10.3s (next.js: 74ms, application-code: 10.2s)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1635ms (next.js: 8ms, application-code: 1626ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1499ms (next.js: 8ms, application-code: 1491ms)
+ GET /api/account/workspaces 200 in 3.7s (next.js: 1324ms, application-code: 2.4s)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1326ms (next.js: 5ms, application-code: 1320ms)
+AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false.
+ POST /api/chat 200 in 55s (next.js: 18ms, application-code: 55s)

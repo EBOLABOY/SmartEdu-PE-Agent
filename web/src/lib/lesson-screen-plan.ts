@@ -1,12 +1,14 @@
 import type { CompetitionLessonPlan, CompetitionLessonPlanRow } from "@/lib/competition-lesson-contract";
-import type { LessonScreenPlan, LessonScreenSupportModule } from "@/lib/lesson-authoring-contract";
+import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 
-const MODULE_REASON: Record<LessonScreenSupportModule, string> = {
-  tacticalBoard: "该环节包含战术、跑位、攻防配合或路线理解，适合用战术板辅助学生看屏自学。",
-  scoreboard: "该环节包含比赛、展示、挑战或计分反馈，适合用分组计分板强化即时评价。",
-  rotation: "该环节包含站点、分组轮换或接力路线，适合用轮换路线图降低组织理解成本。",
-  formation: "该环节更需要明确队形、任务步骤和安全边界，适合用组织队形图辅助课堂运行。",
-};
+const REFERENCE_VISUAL_SYSTEM = [
+  "统一视觉系统参考：以 Apple Inc. 顶级 UI 设计师视角组织 iOS 18 风格横板课堂大屏，采用毛玻璃效果、Gaussian blur/高斯模糊、动态渐变、细腻阴影、柔和高光和圆角层级。",
+  "页面必须全屏自适应横向投屏，保留大字号中文层级、高对比信息区和清晰安全提示，不因视觉质感牺牲体育课堂可读性。",
+  "首页、学练页、比赛页、体能页和放松页必须共享同一套色彩、按钮、倒计时、图形线条和空间节奏；最终完整 CSS 和 JavaScript 由服务端 HTML 外壳统一提供。",
+  "学练页优先使用 HTML/CSS/SVG 绘制路线、队形、动作结构或器材路径；非学练页优先采用居中的任务模块和醒目倒计时。",
+].join("\n");
+
+type VisualMode = NonNullable<HtmlScreenPlan["sections"][number]["visualMode"]>;
 
 function parseDurationSeconds(timeText: string) {
   const values = timeText.match(/\d+(?:\.\d+)?/g)?.map(Number).filter(Number.isFinite) ?? [];
@@ -18,38 +20,6 @@ function parseDurationSeconds(timeText: string) {
   const minutes = values.length >= 2 ? (values[0] + values[1]) / 2 : values[0];
 
   return Math.max(60, Math.round(minutes * 60));
-}
-
-function selectSupportModule(row: CompetitionLessonPlanRow): LessonScreenSupportModule {
-  if (row.structure === "结束部分" || row.structure === "准备部分") {
-    return "formation";
-  }
-
-  const text = [
-    row.structure,
-    ...row.content,
-    ...row.methods.teacher,
-    ...row.methods.students,
-    ...row.organization,
-  ].join(" ");
-
-  if (/比赛|竞赛|挑战|对抗|展示|计分|得分|积分|闯关/.test(text)) {
-    return "scoreboard";
-  }
-
-  if (/站点|轮换|循环|接力|绕返|换位|分区/.test(text) && !/战术|攻防|跑位|阵型|传切|配合/.test(text)) {
-    return "rotation";
-  }
-
-  if (/战术|攻防|跑位|阵型|路线|传切|传接|掩护|突破|防守|站位|配合/.test(text)) {
-    return "tacticalBoard";
-  }
-
-  return "formation";
-}
-
-function buildLessonPlanSectionReason(module: LessonScreenSupportModule, row: CompetitionLessonPlanRow) {
-  return `${MODULE_REASON[module]}时间已从结构化课时计划解析为 ${row.time}。`;
 }
 
 function firstText(values: string[], fallback: string) {
@@ -72,37 +42,103 @@ function buildEvaluationCue(row: CompetitionLessonPlanRow) {
   return `观察学生能否按“${firstText(row.content, row.structure)}”要求完成动作，并及时给出同伴合作反馈。`;
 }
 
-function buildVisualIntent(module: LessonScreenSupportModule, row: CompetitionLessonPlanRow) {
+function buildVisualIntent(row: CompetitionLessonPlanRow) {
   const title = firstText(row.content, row.structure);
+  const visualMode = inferVisualMode(row);
 
-  switch (module) {
-    case "scoreboard":
-      return `为“${title}”绘制分组计分板，突出得分规则、挑战目标和即时反馈。`;
-    case "rotation":
-      return `为“${title}”绘制小组轮换路线，标清站点顺序、移动方向和等待区。`;
-    case "tacticalBoard":
-      return `为“${title}”绘制战术板或路线图，展示队员点位、移动箭头和关键配合时机。`;
-    case "formation":
-      return `为“${title}”绘制队形组织图，突出集合、练习边界和安全距离。`;
+  if (visualMode === "image") {
+    return `为“${title}”生成 16:9 横板动作辅助讲解图，用清晰动作分解或关键姿态帮助学生形成动作表象。`;
   }
+
+  if (visualMode === "hybrid") {
+    return `为“${title}”先生成 16:9 横板动作辅助讲解图，再用 HTML 叠加任务、安全和评价提示，兼顾直观动作认知与课堂执行。`;
+  }
+
+  return `为“${title}”自由选择最有助于课堂执行的视觉表达，可以是路线、队形、规则、节奏、对比、评价或其他教学图形，不受固定模块限制。`;
 }
 
-export function buildLessonScreenPlanFromLessonPlan(lessonPlan: CompetitionLessonPlan): LessonScreenPlan {
-  return {
-    sections: lessonPlan.periodPlan.rows.map((row, index) => {
-      const supportModule = selectSupportModule(row);
+function rowSearchText(row: CompetitionLessonPlanRow) {
+  return [
+    row.structure,
+    ...row.content,
+    ...row.methods.teacher,
+    ...row.methods.students,
+    ...row.organization,
+  ].join(" ");
+}
 
+function inferVisualMode(row: CompetitionLessonPlanRow): VisualMode {
+  const text = rowSearchText(row);
+
+  if (/五步拳|武术|拳|套路|体操|支撑|翻滚|滚翻|腾空|起跳|落地|投掷|挥臂|蹬地|摆臂|发力|姿态|动作要领|关键姿势/.test(text)) {
+    return "hybrid";
+  }
+
+  if (/战术|跑位|路线|传切|攻防|队形|轮换|站点|分组|绕|接力|拔河|传球|运球|防守|进攻|场地|器材路径/.test(text)) {
+    return "html";
+  }
+
+  return "html";
+}
+
+function buildImagePrompt(row: CompetitionLessonPlanRow) {
+  const title = firstText(row.content, row.structure);
+  const studentActions = takeActionItems(row);
+
+  return [
+    `生成一张 16:9 横板体育课堂辅助讲解图，主题是“${title}”。`,
+    "画面用于小学体育课投屏讲解，要求清晰、干净、远距离可读，采用教学插画或动作分解图风格。",
+    `动作或学习任务：${compactRowLines([...row.content, ...row.methods.teacher, ...row.methods.students])}`,
+    `学生行动重点：${studentActions.length ? studentActions.join("；") : "看图理解动作结构，按教师口令练习"}`,
+    `组织与安全：${compactRowLines(row.organization)}；保持安全距离，按教师口令开始与停止。`,
+    "构图要求：横向 16:9，主体动作居中或按 3-5 个阶段从左到右展开，右侧或下方留出少量空白用于 HTML 叠加提示。",
+    "限制：不要真实人脸，不要照片化杂乱背景，不要大段文字，不要品牌标识，不要血腥或危险画面。",
+  ].join("\n");
+}
+
+function compactRowLines(values: string[]) {
+  return values.map((value) => value.trim()).filter(Boolean).join("；");
+}
+
+function buildPagePrompt(row: CompetitionLessonPlanRow) {
+  const title = firstText(row.content, row.structure);
+  const studentActions = takeActionItems(row);
+  const visualMode = inferVisualMode(row);
+  const visualModeInstruction =
+    visualMode === "html"
+      ? "媒介选择：visualMode=html，本页不调用生图，必须优先用 HTML/CSS/SVG 表达路线、队形、器材路径、规则或课堂组织。"
+      : "媒介选择：visualMode=hybrid，本页会由服务端先生成 16:9 教学辅助图；HTML 片段只需要围绕图片补充核心任务、学生行动、安全提醒和评价观察，不要再手搓复杂动作图。";
+
+  return [
+    `为体育课堂大屏的“${title}”时间段生成一个 HTML 内容片段。`,
+    "片段将被服务端放入固定 slide 模板中，不要输出完整 HTML、section、script、style 或 Markdown。",
+    visualModeInstruction,
+    `视觉目标：${buildVisualIntent(row)}`,
+    `本环节怎么做：${buildObjective(row)}`,
+    `学生行动：${studentActions.length ? studentActions.join("；") : "看清任务；保持距离；听口令切换"}`,
+    `安全提醒：${buildSafetyCue(row)}`,
+    `评价观察：${buildEvaluationCue(row)}`,
+    "页面必须适合体育馆远距离投屏，使用大字号、强层级、清晰图形和简体中文。",
+  ].join("\n");
+}
+
+export function buildLessonScreenPlanFromLessonPlan(lessonPlan: CompetitionLessonPlan): HtmlScreenPlan {
+  return {
+    visualSystem: REFERENCE_VISUAL_SYSTEM,
+    sections: lessonPlan.periodPlan.rows.map((row, index) => {
       return {
         title: row.content[0] ?? row.structure,
         durationSeconds: parseDurationSeconds(row.time),
-        supportModule,
         sourceRowIndex: index,
         objective: buildObjective(row),
         studentActions: takeActionItems(row),
         safetyCue: buildSafetyCue(row),
         evaluationCue: buildEvaluationCue(row),
-        visualIntent: buildVisualIntent(supportModule, row),
-        reason: buildLessonPlanSectionReason(supportModule, row),
+        visualIntent: buildVisualIntent(row),
+        visualMode: inferVisualMode(row),
+        ...(inferVisualMode(row) !== "html" ? { imagePrompt: buildImagePrompt(row) } : {}),
+        pagePrompt: buildPagePrompt(row),
+        reason: `从结构化课时计划第 ${index + 1} 行生成教学环节参考草案，时间解析为 ${row.time}。`,
       };
     }),
   };

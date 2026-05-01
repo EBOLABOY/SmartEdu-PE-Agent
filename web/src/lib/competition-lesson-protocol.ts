@@ -11,6 +11,8 @@ const textListSchema = z.array(nonEmptyString).default([]);
 
 const FLOW_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
+const OMITTED_FLOW_SUMMARY_LABELS = new Set(["课堂评价", "课后作业"]);
+const BASIC_PART_REQUIRED_SEGMENTS = ["技术学习", "分组练习", "教学比赛", "体能练习"] as const;
 const LESSON_KEYS = new Set([
   "grade",
   "lessonNo",
@@ -533,6 +535,140 @@ function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRo
   });
 }
 
+function enrichBasicPartSegments(rows: CompetitionLessonPlanRow[]) {
+  return rows.map((row) => {
+    if (row.structure !== "基本部分") {
+      return row;
+    }
+
+    const contentText = row.content.join("、");
+    const missingSegments = BASIC_PART_REQUIRED_SEGMENTS.filter((segment) => !contentText.includes(segment));
+
+    if (missingSegments.length === 0) {
+      return row;
+    }
+
+    return {
+      ...row,
+      content: [...row.content, missingSegments.join("、")],
+    };
+  });
+}
+
+function splitCompactActivityList(value: string) {
+  const items = value.split("、").map(compactText).filter(Boolean);
+
+  if (items.length <= 1 || items.some((item) => item.length > 14 || /[，,。；;]/.test(item))) {
+    return undefined;
+  }
+
+  return items;
+}
+
+function toFourCharacterFlowLabel(value: string) {
+  const normalized = value
+    .replace(/[“”"「」]/g, "")
+    .replace(/^(进行|组织|完成|开展|实施)/, "")
+    .replace(/课后练习布置|布置课后练习/g, "课后作业")
+    .replace(/课堂总结|总结表现|课堂小结|评价总结/g, "课堂评价")
+    .replace(/教学比赛|简化比赛|三对三比赛|小组比赛|比赛展示/g, "教学比赛")
+    .replace(/分层挑战|挑战练习|过关挑战|闯关挑战/g, "分层挑战")
+    .replace(/绕桶运球|绕桶接力|运球接力/g, "运球接力")
+    .replace(/小组挑战|小组闯关/g, "分层挑战")
+    .replace(/行进间运球练习|行进间运球/g, "技术学练")
+    .replace(/技术学练|技能学练|动作学练|技术练习|技能练习|主要技能学练/g, "技术学练")
+    .replace(/球性练习|熟悉球性|球性活动|球性游戏/g, "球性游戏")
+    .replace(/专项准备|专项练习|热身活动|动态拉伸|热身跑/g, "专项热身")
+    .replace(/放松拉伸|整理放松|静态拉伸|放松活动/g, "放松拉伸")
+    .replace(/集合整队|师生问好|宣布.*?要求|课堂导入/g, "课堂常规")
+    .replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, "");
+
+  if (/课堂常规|常规/.test(normalized)) {
+    return "课堂常规";
+  }
+
+  if (/球性|听数抱团|运球游戏|游戏/.test(normalized)) {
+    return "球性游戏";
+  }
+
+  if (/放松拉伸|放松|恢复/.test(normalized)) {
+    return "放松拉伸";
+  }
+
+  if (/课堂评价|评价|总结|小结/.test(normalized)) {
+    return "课堂评价";
+  }
+
+  if (/课后作业|作业|家庭练习/.test(normalized)) {
+    return "课后作业";
+  }
+
+  if (/专项热身|热身|准备活动/.test(normalized)) {
+    return "专项热身";
+  }
+
+  if (/运球接力|绕桶/.test(normalized)) {
+    return "运球接力";
+  }
+
+  if (/分层挑战|过关|闯关|挑战/.test(normalized)) {
+    return "分层挑战";
+  }
+
+  if (/教学比赛|比赛|对抗/.test(normalized)) {
+    return "教学比赛";
+  }
+
+  if (/技术学练|技能学练|示范|模仿|学练|练习/.test(normalized)) {
+    return "技术学练";
+  }
+
+  return normalized.length > 4 ? normalized.slice(0, 4) : normalized;
+}
+
+function summarizeFlowActivity(value: string) {
+  const normalized = stripListMarker(value)
+    .replace(/[（(][^）)]*(?:分钟|分|min(?:ute)?s?)[^）)]*[）)]/gi, "")
+    .replace(/\s+/g, "")
+    .replace(/[。；;]+$/g, "");
+  const labelMatch = /^([^：:]{2,16})[：:]/.exec(normalized);
+
+  if (labelMatch) {
+    return labelMatch[1];
+  }
+
+  const compactList = splitCompactActivityList(normalized);
+
+  if (compactList) {
+    return compactList;
+  }
+
+  const firstClause = compactText(normalized.split(/[，,。；;]/)[0] ?? normalized);
+
+  if (firstClause.length <= 18) {
+    return firstClause;
+  }
+
+  return `${firstClause.slice(0, 18)}等`;
+}
+
+function summarizeFlowContent(content: string[]) {
+  const activities = content.flatMap((item) => {
+    const expanded = item
+      .replace(/(?:^|[。；;]\s*)(?:\d+|[一二三四五六七八九十]+)[.、．]\s*/g, "\n")
+      .split(/\n|[。；;]/)
+      .map(compactText)
+      .filter(Boolean);
+
+    return expanded.flatMap((activity) => summarizeFlowActivity(activity)).map(toFourCharacterFlowLabel);
+  });
+  const uniqueActivities = Array.from(
+    new Set(activities.filter((activity) => activity && !OMITTED_FLOW_SUMMARY_LABELS.has(activity))),
+  ).slice(0, 3);
+
+  return uniqueActivities;
+}
+
 function collectDiagnostics(draft: LessonPlanProtocolDraft) {
   const diagnostics: LessonPlanProtocolDiagnostic[] = [];
 
@@ -650,15 +786,17 @@ export function normalizeLessonProtocolDraftToCompetitionLessonPlan(
     throw new LessonPlanProtocolError(diagnostics);
   }
 
-  const rows = normalizeFlows(draft);
+  const sourceRows = normalizeFlows(draft);
+  const rows = enrichBasicPartSegments(sourceRows);
   const title = draft.lesson.title ?? draft.lesson.topic ?? "体育课时计划";
   const topic = draft.lesson.topic ?? title;
   const mainContent = rows.flatMap((row) => row.content);
   const basicRow = rows.find((row) => row.structure === "基本部分") ?? rows[1];
+  const flowSummary = sourceRows.flatMap((row) => summarizeFlowContent(row.content));
 
   return competitionLessonPlanSchema.parse({
     evaluation: normalizeEvaluations(draft),
-    flowSummary: rows.map((row) => `${row.structure}：${row.content.join("；")}（${row.time}）`),
+    flowSummary: flowSummary.length > 0 ? flowSummary : ["课堂活动"],
     keyDifficultPoints: {
       studentLearning: [
         `学生能够围绕“${topic}”明确练习任务，逐步提升动作稳定性、合作意识和安全参与能力。`,

@@ -36,20 +36,17 @@ describe("pe_teacher", () => {
     expect(Object.keys(agentTools ?? {})).not.toEqual(
       expect.arrayContaining([
         "apply_lesson_patch",
-        "design_html_screen",
         "generate_structured_lesson",
-        "submit_html_screen",
         "submit_lesson_plan",
         "write_lesson_plan",
       ]),
     );
     expect(globalTools).toHaveProperty("analyze_requirements");
     expect(globalTools).toHaveProperty("apply_lesson_patch");
-    expect(globalTools).toHaveProperty("design_html_screen");
     expect(globalTools).toHaveProperty("generate_structured_lesson");
     expect(globalTools).toHaveProperty("searchStandards");
     expect(globalTools).toHaveProperty("submit_lesson_plan");
-    expect(globalTools).toHaveProperty("submit_html_screen");
+    expect(globalTools).not.toHaveProperty("submit_html_screen");
     expect(globalTools).toHaveProperty("write_lesson_plan");
   });
 
@@ -105,33 +102,55 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("服务端");
     expect(prompt).toContain("不要调用提交工具");
     expect(prompt).not.toContain("submit_html_screen");
-    expect(prompt).toContain("课堂运行总览");
+    expect(prompt).toContain("简洁 PPT 首页");
+    expect(prompt).toContain("首页必须作为 AI 分镜的第 1 页生成");
     expect(prompt).toContain("开始上课");
-    expect(prompt).toContain("data-support-module");
-    expect(prompt).toContain("战术板");
+    expect(prompt).toContain("全屏自适应多页结构");
+    expect(prompt).toContain("统一 visualSystem");
+    expect(prompt).toContain("Apple Inc.");
+    expect(prompt).toContain("iOS 18");
+    expect(prompt).toContain("毛玻璃效果");
+    expect(prompt).toContain("高斯模糊");
+    expect(prompt).toContain("完整 CSS 和 JavaScript");
+    expect(prompt).toContain("学习页面和练习页面原则上合二为一");
+    expect(prompt).toContain("学练页不能是文字板");
+    expect(prompt).toContain("不使用固定组件枚举限制页面设计");
+    expect(prompt).toContain("自由分镜契约");
     expect(prompt).toContain("上一页");
     expect(prompt).toContain("下一页");
   });
 
-  it("html 阶段会注入结构化大屏模块计划", () => {
+  it("html 阶段会注入自由大屏分镜计划", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, {
       mode: "html",
       lessonPlan: "## 十、课时计划\n| 比赛展示 | 6 分钟 |",
       screenPlan: {
+        visualSystem: "统一清爽的体育课堂投屏系统。",
         sections: [
           {
+            title: "课堂首页",
+            pageRole: "cover",
+            pagePrompt: "生成首页封面，大标题居中并显示开始上课按钮。",
+            reason: "首页作为 AI 分镜第 1 页。",
+          },
+          {
             title: "比赛展示",
+            pageRole: "competition",
             durationSeconds: 360,
-            supportModule: "scoreboard",
-            reason: "比赛挑战页需要即时计分反馈。",
+            pagePrompt: "自由设计比赛展示页面，突出规则、挑战目标和即时评价。",
+            reason: "比赛挑战页需要即时反馈。",
           },
         ],
       },
     });
 
-    expect(prompt).toContain("结构化大屏模块计划");
+    expect(prompt).toContain("课堂大屏分镜计划");
+    expect(prompt).toContain("统一视觉系统");
+    expect(prompt).toContain("课堂首页");
+    expect(prompt).toContain("pageRole=cover");
     expect(prompt).toContain("比赛展示");
     expect(prompt).toContain("durationSeconds=360");
-    expect(prompt).toContain("supportModule=scoreboard");
+    expect(prompt).toContain("自由设计比赛展示页面");
+    expect(prompt).not.toContain("supportModule=scoreboard");
   });
 });

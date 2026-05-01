@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
+import type { StandardsSearchResult } from "@/mastra/knowledge/provider-types";
 
 import {
   createServerStandardsPendingWorkflow,
@@ -177,7 +178,7 @@ describe("server standards enrichment", () => {
       query: "帮我生成一个三年级篮球运球课时计划",
       retriever: vi.fn(
         () =>
-          new Promise((resolve) => {
+          new Promise<StandardsSearchResult>((resolve) => {
             setTimeout(() => {
               resolve({
                 requestedMarket: "cn-compulsory-2022",

@@ -8,16 +8,15 @@ import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   generationModeSchema,
   lessonAuthoringMemorySchema,
-  lessonScreenPlanSchema,
   peTeacherContextSchema,
   standardsMarketSchema,
   uiHintSchema,
   workflowTraceEntrySchema,
   workflowStandardsReferenceSchema,
+  workflowTextbookSnapshotSchema,
   type ArtifactView,
   type GenerationMode,
   type LessonAuthoringMemory,
-  type LessonScreenPlan,
   type PeTeacherContext,
   type SmartEduUIMessage,
   type UiHint,
@@ -41,7 +40,6 @@ export const lessonWorkflowInputSchema = z.object({
   context: peTeacherContextSchema.optional(),
   market: standardsMarketSchema.default(DEFAULT_STANDARDS_MARKET),
   lessonPlan: z.string().optional(),
-  screenPlan: lessonScreenPlanSchema.optional(),
   messages: z.array(z.unknown()).max(60).default([]),
   memory: lessonAuthoringMemorySchema.optional(),
   requestId: z.string().trim().min(1).optional(),
@@ -96,6 +94,7 @@ export const lessonWorkflowOutputSchema = z.object({
     references: z.array(workflowStandardsReferenceSchema).optional(),
     warning: z.string().optional(),
   }),
+  textbook: workflowTextbookSnapshotSchema.optional(),
   generationPlan: z.object({
     mode: generationModeSchema,
     confirmedLessonRequired: z.boolean(),
@@ -121,7 +120,6 @@ export type LessonWorkflowInput = Omit<z.infer<typeof lessonWorkflowInputSchema>
   memory?: LessonAuthoringMemory;
   messages?: SmartEduUIMessage[];
   mode: GenerationMode;
-  screenPlan?: LessonScreenPlan;
 };
 
 export type LessonWorkflowDecision = z.infer<typeof lessonWorkflowDecisionSchema>;
@@ -569,7 +567,6 @@ const constructPromptStep = createStep({
       buildPeTeacherSystemPrompt(inputData.context, {
         mode: resolvedMode,
         lessonPlan: inputData.lessonPlan,
-        screenPlan: inputData.screenPlan,
       }),
       ...buildMemoryPromptParts(inputData.memory),
       "课程标准检索策略：正式 lesson 生成由服务端在生成前检索并注入课标依据；Agent 只在普通咨询或显式课标问答时使用 searchStandards。",

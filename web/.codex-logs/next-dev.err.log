@@ -1,0 +1,70 @@
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\server-reference-manifest.json.tmp.ng1r2b42ttn' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\server-reference-manifest.json'
+⨯ Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\server-reference-manifest.json.tmp.ng1r2b42ttn' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\server-reference-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\server-reference-manifest.json.tmp.ng1r2b42ttn',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\server-reference-manifest.json'
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\app-paths-manifest.json.tmp.8mvzj0qy455' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\app-paths-manifest.json'
+⨯ Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\app-paths-manifest.json.tmp.8mvzj0qy455' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\app-paths-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\app-paths-manifest.json.tmp.8mvzj0qy455',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\app-paths-manifest.json'
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\static\development\_buildManifest.js.tmp.2hrvku7lx0f' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\static\development\_buildManifest.js'
+Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\server-reference-manifest.json.tmp.ng1r2b42ttn' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\server-reference-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\server-reference-manifest.json.tmp.ng1r2b42ttn',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\server-reference-manifest.json'
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\build-manifest.json.tmp.k6gjh4e0nv' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\build-manifest.json'
+⨯ Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\build-manifest.json.tmp.k6gjh4e0nv' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\build-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\build-manifest.json.tmp.k6gjh4e0nv',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\build-manifest.json'
+}
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json.tmp.cjzsp0k3lc' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json'
+Node.js fs rename failed after 101 retries with error Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\pages-manifest.json.tmp.b0pa44j20j4' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\pages-manifest.json'
+Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\pages-manifest.json.tmp.b0pa44j20j4' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\pages-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\pages-manifest.json.tmp.b0pa44j20j4',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\pages-manifest.json'
+}
+Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json.tmp.cjzsp0k3lc' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\next-font-manifest.json.tmp.cjzsp0k3lc',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\next-font-manifest.json'
+}
+⨯ unhandledRejection: Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json.tmp.cjzsp0k3lc' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\next-font-manifest.json.tmp.cjzsp0k3lc',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\next-font-manifest.json'
+}
+⨯ unhandledRejection:  Error: EPERM: operation not permitted, rename 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json.tmp.cjzsp0k3lc' -> 'D:\SmartEdu-PE-Agent\web\.next\dev\server\next-font-manifest.json'
+    at ignore-listed frames {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'rename',
+  path: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\next-font-manifest.json.tmp.cjzsp0k3lc',
+  dest: 'D:\\SmartEdu-PE-Agent\\web\\.next\\dev\\server\\next-font-manifest.json'
+}

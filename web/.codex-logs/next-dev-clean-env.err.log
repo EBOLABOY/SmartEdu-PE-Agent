@@ -1,0 +1,27 @@
+TypeError: fetch failed
+    at ignore-listed frames {
+  [cause]: Error: Client network socket disconnected before secure TLS connection was established
+      at ignore-listed frames {
+    code: 'ECONNRESET',
+    path: undefined,
+    host: 'fobhhvtmpkkauyktmebc.supabase.co',
+    port: 443,
+    localAddress: null
+  }
+}
+TypeError: fetch failed
+    at ignore-listed frames {
+  [cause]: Error: Client network socket disconnected before secure TLS connection was established
+      at ignore-listed frames {
+    code: 'ECONNRESET',
+    path: undefined,
+    host: 'fobhhvtmpkkauyktmebc.supabase.co',
+    port: 443,
+    localAddress: null
+  }
+}
+AI SDK Warning (openaiCompatible.chat / mimo-v2.5-pro): The feature "responseFormat" is not supported. JSON response format schema is only supported with structuredOutputs
+[lesson-authoring] html-screen-planning-failed {
+  requestId: '677820dc-99ae-4cf6-912b-00a522f7fd68',
+  message: 'No object generated: response did not match schema.'
+}

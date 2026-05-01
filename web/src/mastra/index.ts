@@ -7,7 +7,6 @@ import { createPeTeacherAgent } from "./agents/pe_teacher";
 import { createChatModel } from "./models";
 import { lessonAuthoringTools } from "./tools/lesson_authoring_tools";
 import {
-  submitHtmlScreenTool,
   submitLessonPlanTool,
 } from "./tools/output_tools";
 import { searchStandardsTool } from "./tools/search_standards";
@@ -25,7 +24,6 @@ export const peTeacherAgent = createPeTeacherAgent(withMastra(createChatModel(mo
 // the server deterministic pipelines, not by Agent tool submission.
 const legacyLessonAuthoringTools = {
   ...lessonAuthoringTools,
-  submit_html_screen: submitHtmlScreenTool,
   submit_lesson_plan: submitLessonPlanTool,
 };
 

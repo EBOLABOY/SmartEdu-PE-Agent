@@ -19,34 +19,6 @@ export type StandardsMarket = z.infer<typeof standardsMarketSchema>;
 
 export const DEFAULT_STANDARDS_MARKET: StandardsMarket = "cn-compulsory-2022";
 
-export const lessonScreenSupportModuleSchema = z.enum(["tacticalBoard", "scoreboard", "rotation", "formation"]);
-export type LessonScreenSupportModule = z.infer<typeof lessonScreenSupportModuleSchema>;
-
-export const lessonScreenSectionPlanSchema = z
-  .object({
-    title: z.string().trim().min(1).max(120),
-    durationSeconds: z.number().int().positive().max(14_400).optional(),
-    supportModule: lessonScreenSupportModuleSchema,
-    sourceRowIndex: z.number().int().nonnegative().optional(),
-    objective: z.string().trim().min(1).max(240).optional(),
-    studentActions: z.array(z.string().trim().min(1).max(120)).min(1).max(3).optional(),
-    safetyCue: z.string().trim().min(1).max(160).optional(),
-    evaluationCue: z.string().trim().min(1).max(160).optional(),
-    visualIntent: z.string().trim().min(1).max(240).optional(),
-    reason: z.string().trim().min(1).max(500).optional(),
-  })
-  .strict();
-
-export type LessonScreenSectionPlan = z.infer<typeof lessonScreenSectionPlanSchema>;
-
-export const lessonScreenPlanSchema = z
-  .object({
-    sections: z.array(lessonScreenSectionPlanSchema).min(1).max(24),
-  })
-  .strict();
-
-export type LessonScreenPlan = z.infer<typeof lessonScreenPlanSchema>;
-
 export const peTeacherContextSchema = z
   .object({
     grade: z.string().trim().min(1).max(80).optional(),
@@ -162,6 +134,40 @@ export const workflowStandardsSnapshotSchema = z
   .strict();
 
 export type WorkflowStandardsSnapshot = z.infer<typeof workflowStandardsSnapshotSchema>;
+
+export const workflowTextbookReferenceSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    title: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    citation: z.string().trim().min(1),
+    publisher: z.string().trim().min(1),
+    textbookName: z.string().trim().min(1),
+    edition: z.string().trim().min(1).nullable(),
+    grade: z.string().trim().min(1).nullable(),
+    level: z.string().trim().min(1).nullable(),
+    module: z.string().trim().min(1),
+    sectionPath: z.array(z.string().trim().min(1)),
+    sourceKind: z.string().trim().min(1),
+    score: z.number(),
+  })
+  .strict();
+
+export type WorkflowTextbookReference = z.infer<typeof workflowTextbookReferenceSchema>;
+
+export const workflowTextbookSnapshotSchema = z
+  .object({
+    market: standardsMarketSchema,
+    stage: z.string().trim().min(1),
+    publisher: z.string().trim().min(1).optional(),
+    grade: z.string().trim().min(1).optional(),
+    referenceCount: z.number().int().nonnegative(),
+    references: z.array(workflowTextbookReferenceSchema),
+    warning: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+export type WorkflowTextbookSnapshot = z.infer<typeof workflowTextbookSnapshotSchema>;
 
 export const uiHintToastLevelSchema = z.enum(["info", "success", "warning", "error"]);
 export type UiHintToastLevel = z.infer<typeof uiHintToastLevelSchema>;
@@ -465,7 +471,6 @@ export const chatRequestBodySchema = z
     context: peTeacherContextSchema.optional(),
     mode: generationModeSchema.optional(),
     lessonPlan: z.string().max(1_000_000).optional(),
-    screenPlan: lessonScreenPlanSchema.optional(),
     market: standardsMarketSchema.optional(),
   })
   .strict();

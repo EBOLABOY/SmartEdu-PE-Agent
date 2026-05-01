@@ -24,9 +24,7 @@ import {
 } from "@/lib/lesson-authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import {
-  SUBMIT_HTML_SCREEN_TOOL_NAME,
   SUBMIT_LESSON_PLAN_TOOL_NAME,
-  parseSubmitHtmlScreenToolInput,
   parseSubmitLessonPlanToolInput,
 } from "@/mastra/tools/output_tools";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
@@ -35,10 +33,12 @@ import {
   formatLessonValidationIssues,
   performLessonBusinessValidation,
 } from "./lesson_generation_validation";
+import { enrichLessonPlanWithDiagramAssets } from "./lesson_diagram_generation_skill";
 
 const DRAFT_TRACE_UPDATE_INTERVAL = 20;
 const TERMINAL_RUNNING_TRACE_STEPS = new Set([
   "agent-stream-started",
+  "generate-lesson-diagrams",
   "stream-lesson-draft",
   "validate-lesson-output",
 ]);
@@ -60,6 +60,12 @@ function createTraceEntry(
   };
 }
 
+function cloneJsonLike<T>(value: T): T {
+  return typeof structuredClone === "function"
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
+}
+
 function buildTraceData(
   workflow: LessonWorkflowOutput,
   requestId: string,
@@ -75,9 +81,9 @@ function buildTraceData(
     responseTransport: workflow.generationPlan.responseTransport,
     requestedMarket: workflow.standards.requestedMarket,
     resolvedMarket: workflow.standards.resolvedMarket,
-    warnings: workflow.safety.warnings,
-    uiHints,
-    trace,
+    warnings: cloneJsonLike(workflow.safety.warnings),
+    uiHints: cloneJsonLike(uiHints),
+    trace: cloneJsonLike(trace),
     updatedAt: nowIsoString(),
   };
 
@@ -200,6 +206,7 @@ function buildLessonJsonArtifactContent(structuredOutput: unknown) {
     return {
       content: JSON.stringify(parsed),
       contentType: "lesson-json" as const,
+      lessonPlan: parsed,
       title: parsed.title,
       warningText: undefined,
     };
@@ -324,12 +331,6 @@ export function createStructuredAuthoringStreamAdapter({
       let rawText = "";
       let hasFinished = false;
       let structuredLessonOutput: unknown;
-      let submittedHtmlDocument:
-        | {
-            html: string;
-            summary: string;
-          }
-        | undefined;
       let hasStructuredActivity = false;
       let lessonDraftChunkCount = 0;
       const forwardAssistantText = allowTextOnlyResponse || shouldForwardAssistantText(mode, workflow);
@@ -564,33 +565,6 @@ export function createStructuredAuthoringStreamAdapter({
             return true;
           }
 
-          if (toolInput.toolName === SUBMIT_HTML_SCREEN_TOOL_NAME) {
-            const submission = parseSubmitHtmlScreenToolInput(toolInput.input);
-
-            markStructuredActivity();
-            submittedHtmlDocument = submission;
-            effectiveUiHints.push({
-              action: "switch_tab",
-              params: { tab: "canvas" },
-            });
-            runtimeTrace.push(
-              createTraceEntry(
-                "submit-html-screen-tool",
-                "success",
-                `已收到 submit_html_screen 工具提交：${submission.summary}`,
-              ),
-            );
-            writeArtifact(
-              buildArtifactData(workflow, {
-                content: submission.html,
-                contentType: "html",
-                isComplete: true,
-                status: "ready",
-              }),
-            );
-            writeTrace("generation");
-          }
-
           return true;
         } catch (error) {
           writeStreamError(
@@ -598,6 +572,53 @@ export function createStructuredAuthoringStreamAdapter({
             error instanceof Error ? error.message : "输出工具输入校验失败。",
           );
           return false;
+        }
+      };
+
+      const enrichLessonWithDiagrams = async (lessonPlan: CompetitionLessonPlan) => {
+        pushOrReplaceTraceEntry(
+          "generate-lesson-diagrams",
+          "running",
+          "课时计划文本已完成，正在生成教学组织站位九宫格并回填到课时计划。",
+        );
+        writeTrace("generation");
+
+        try {
+          const result = await enrichLessonPlanWithDiagramAssets({
+            lessonPlan,
+            projectId,
+            requestId,
+          });
+
+          if (result.generatedCount > 0) {
+            pushOrReplaceTraceEntry(
+              "generate-lesson-diagrams",
+              "success",
+              `已生成并回填 ${result.generatedCount} 张教学组织站位图，存储模式：${
+                result.storageMode ?? "unknown"
+              }。`,
+            );
+            writeTrace("generation");
+            return result.lessonPlan;
+          }
+
+          pushOrReplaceTraceEntry(
+            "generate-lesson-diagrams",
+            "blocked",
+            result.skippedReason ?? "教学组织站位图未生成，课时计划文本已保留。",
+          );
+          writeTrace("generation");
+          return lessonPlan;
+        } catch (error) {
+          pushOrReplaceTraceEntry(
+            "generate-lesson-diagrams",
+            "blocked",
+            `教学组织站位图生成失败，已保留纯文本课时计划：${
+              error instanceof Error ? error.message : "unknown-error"
+            }`,
+          );
+          writeTrace("generation");
+          return lessonPlan;
         }
       };
 
@@ -660,36 +681,47 @@ export function createStructuredAuthoringStreamAdapter({
 
         writeArtifact(artifact);
         await persistArtifact(artifact);
+
+        const enrichedLessonPlan = await enrichLessonWithDiagrams(lessonJson.lessonPlan);
+
+        if (enrichedLessonPlan !== lessonJson.lessonPlan) {
+          const enrichedLessonJson = buildLessonJsonArtifactContent(enrichedLessonPlan);
+          const enrichedArtifact = buildArtifactData(workflow, {
+            content: enrichedLessonJson.content,
+            contentType: enrichedLessonJson.contentType,
+            isComplete: true,
+            status: "ready",
+            title: enrichedLessonJson.title,
+            warningText: enrichedLessonJson.warningText,
+          });
+
+          writeArtifact(enrichedArtifact);
+          await persistArtifact(enrichedArtifact);
+        }
+
         return true;
       };
 
       const finalizeHtmlArtifact = async () => {
-        let htmlDocument = submittedHtmlDocument?.html;
-        let extractedWarning: string | undefined;
-
-        if (!htmlDocument) {
-          if (allowTextOnlyResponse && rawText.trim() && !rawText.includes("<html")) {
-            return true;
-          }
-
-          const extraction = extractHtmlDocumentFromText(rawText);
-
-          if (!extraction.html.trim()) {
-            writeStreamError("extract-html-document", "模型响应中未提取到 HTML 文档，无法生成互动大屏。");
-            return false;
-          }
-
-          if (!extraction.htmlComplete) {
-            writeStreamError("extract-html-document", "模型 HTML 文档未完整关闭，已拒绝使用截断的大屏内容。");
-            return false;
-          }
-
-          htmlDocument = extraction.html;
-          extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
+        if (allowTextOnlyResponse && rawText.trim() && !rawText.includes("<html")) {
+          return true;
         }
 
+        const extraction = extractHtmlDocumentFromText(rawText);
+
+        if (!extraction.html.trim()) {
+          writeStreamError("extract-html-document", "模型响应中未提取到 HTML 文档，无法生成互动大屏。");
+          return false;
+        }
+
+        if (!extraction.htmlComplete) {
+          writeStreamError("extract-html-document", "模型 HTML 文档未完整关闭，已拒绝使用截断的大屏内容。");
+          return false;
+        }
+
+        const extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
         const artifact = buildArtifactData(workflow, {
-          content: htmlDocument,
+          content: extraction.html,
           isComplete: true,
           status: "ready",
           warningText: extractedWarning,
@@ -707,7 +739,7 @@ export function createStructuredAuthoringStreamAdapter({
       const finalizeArtifact = async () => (mode === "lesson" ? finalizeLessonArtifact() : finalizeHtmlArtifact());
 
       const consumeLessonDraftStream = async () => {
-        if (mode !== "lesson" || !lessonDraftStream) {
+        if (mode !== "lesson" || allowTextOnlyResponse) {
           return;
         }
 
@@ -718,6 +750,10 @@ export function createStructuredAuthoringStreamAdapter({
         );
         writeTrace("generation");
         writeLessonDraftArtifact();
+
+        if (!lessonDraftStream) {
+          return;
+        }
 
         for await (const partial of lessonDraftStream) {
           if (hasFinished) {
@@ -784,7 +820,7 @@ export function createStructuredAuthoringStreamAdapter({
             case "text-delta": {
               rawText += part.delta;
 
-              if (mode === "lesson" || submittedHtmlDocument) {
+              if (mode === "lesson") {
                 break;
               }
 

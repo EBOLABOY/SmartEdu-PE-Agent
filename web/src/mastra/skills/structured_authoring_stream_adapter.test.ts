@@ -11,6 +11,14 @@ import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import { createStructuredAuthoringStreamAdapter } from "./structured_authoring_stream_adapter";
 
+vi.mock("./lesson_diagram_generation_skill", () => ({
+  enrichLessonPlanWithDiagramAssets: vi.fn(async ({ lessonPlan }) => ({
+    generatedCount: 0,
+    lessonPlan,
+    skippedReason: "test-default-skip",
+  })),
+}));
+
 function createIntentResult(
   intent: "clarify" | "generate_lesson" | "patch_lesson" | "generate_html" | "consult_standards" = "generate_lesson",
 ) {
@@ -109,18 +117,6 @@ function createLessonToolChunk(lessonPlan = createConcreteLessonPlan(), summary 
   } as UIMessageChunk;
 }
 
-function createHtmlToolChunk(html: string, summary = "生成互动大屏"): UIMessageChunk {
-  return {
-    type: "tool-input-available",
-    toolCallId: "tool-html-1",
-    toolName: "submit_html_screen",
-    input: {
-      html,
-      summary,
-    },
-  } as UIMessageChunk;
-}
-
 async function* createLessonDraftStream() {
   yield {
     learningObjectives: {
@@ -162,6 +158,58 @@ async function readAll(stream: ReadableStream<UIMessageChunk>) {
 }
 
 describe("structured authoring stream adapter", () => {
+  it("final lesson artifact 会等待站位图后处理并写入增强后的课时计划", async () => {
+    const { enrichLessonPlanWithDiagramAssets } = await import("./lesson_diagram_generation_skill");
+    const enhancedLessonPlan = createConcreteLessonPlan();
+
+    enhancedLessonPlan.periodPlan.rows[0].diagramAssets = [
+      {
+        alt: "集合整队站位图",
+        caption: "集合整队",
+        height: 320,
+        imageUrl: "data:image/png;base64,diagram",
+        kind: "formation",
+        source: "ai-generated",
+        width: 320,
+      },
+    ];
+    vi.mocked(enrichLessonPlanWithDiagramAssets).mockResolvedValueOnce({
+      generatedCount: 1,
+      lessonPlan: enhancedLessonPlan,
+      storageMode: "s3-compatible",
+    });
+
+    const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(createConcreteLessonPlan()),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-diagram-enhancement",
+      workflow: baseWorkflow,
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+
+    const chunks = await readAll(stream);
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+    const parsed = competitionLessonPlanSchema.parse(JSON.parse(finalArtifact?.content ?? "{}"));
+    const completedTrace = chunks.map(getTraceData).find((trace) => trace?.phase === "completed");
+
+    expect(parsed.periodPlan.rows[0].diagramAssets?.[0]).toMatchObject({
+      alt: "集合整队站位图",
+      imageUrl: "data:image/png;base64,diagram",
+    });
+    expect(completedTrace?.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "generate-lesson-diagrams",
+          status: "success",
+        }),
+      ]),
+    );
+  });
+
   it("allowTextOnlyResponse 为 true 时纯文本回复不输出 trace 或 artifact", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       allowTextOnlyResponse: true,
@@ -225,7 +273,11 @@ describe("structured authoring stream adapter", () => {
       .filter((chunk) => chunk.type === "data-artifact")
       .map(getArtifactData)
       .filter(Boolean);
-    const trace = chunks.map(getTraceData).find((value) => value?.phase === "generation");
+    const trace = chunks
+      .map(getTraceData)
+      .find((value) =>
+        value?.trace.some((entry) => entry.step === "submit-lesson-plan-tool" && entry.status === "success"),
+      );
 
     expect(artifacts[0]).toMatchObject({
       contentType: "lesson-json",
@@ -292,37 +344,6 @@ describe("structured authoring stream adapter", () => {
     expect(finalArtifact).toMatchObject({
       contentType: "lesson-json",
       status: "ready",
-    });
-  });
-
-  it("submit_html_screen 工具输入会直接转换为 html artifact", async () => {
-    const workflow = {
-      ...baseWorkflow,
-      generationPlan: {
-        ...baseWorkflow.generationPlan,
-        mode: "html",
-        assistantTextPolicy: "suppress-html-text",
-      },
-    } as LessonWorkflowOutput;
-    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">课堂</section></body></html>";
-    const stream = createStructuredAuthoringStreamAdapter({
-      mode: "html",
-      originalMessages: [],
-      requestId: "request-tool-html",
-      workflow,
-      stream: createChunkStream([createHtmlToolChunk(html), { type: "finish", finishReason: "stop" }]),
-    });
-
-    const chunks = await readAll(stream);
-    const finalArtifact = chunks
-      .filter((chunk) => chunk.type === "data-artifact")
-      .map(getArtifactData)
-      .at(-1);
-
-    expect(finalArtifact).toMatchObject({
-      contentType: "html",
-      status: "ready",
-      isComplete: true,
     });
   });
 
@@ -530,6 +551,53 @@ describe("structured authoring stream adapter", () => {
       },
       title: "羽毛球草稿",
     });
+  });
+
+  it("没有 partial output 时也会先输出 lesson-json 草稿首包", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-empty-draft-first-packet",
+      workflow: baseWorkflow,
+      stream: createChunkStream([createLessonToolChunk(), { type: "finish", finishReason: "stop" }]),
+    });
+
+    const chunks = await readAll(stream);
+    const firstArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(0);
+
+    expect(firstArtifact).toMatchObject({
+      contentType: "lesson-json",
+      isComplete: false,
+      status: "streaming",
+    });
+    expect(firstArtifact?.content).toContain("课时计划生成中");
+  });
+
+  it("最终课时计划会先 ready，再执行教学站位图增强", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(createConcreteLessonPlan()),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-ready-before-diagrams",
+      workflow: baseWorkflow,
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+
+    const chunks = await readAll(stream);
+    const firstReadyChunkIndex = chunks.findIndex((chunk) => getArtifactData(chunk)?.status === "ready");
+    const diagramTraceIndex = chunks.findIndex((chunk) => {
+      const trace = getTraceData(chunk);
+
+      return trace?.trace.some(
+        (entry) => entry.step === "generate-lesson-diagrams" && entry.status === "running",
+      );
+    });
+
+    expect(firstReadyChunkIndex).toBeGreaterThanOrEqual(0);
+    expect(diagramTraceIndex).toBeGreaterThan(firstReadyChunkIndex);
   });
 
   it("服务端管线会在草稿和最终校验阶段实时输出 workflow trace", async () => {

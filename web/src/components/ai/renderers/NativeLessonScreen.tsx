@@ -17,18 +17,20 @@ import { LessonSupportVisualizer } from "@/components/ai/renderers/TacticalBoard
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { LessonScreenSectionPlan, LessonScreenSupportModule } from "@/lib/lesson-authoring-contract";
+import type { HtmlScreenSectionPlan } from "@/lib/html-screen-plan-contract";
+import type { LessonSupportModule } from "@/lib/lesson-screen-modules";
 
-export type NativeLessonScreenSlide = Omit<LessonScreenSectionPlan, "durationSeconds"> & {
+export type NativeLessonScreenSlide = Omit<HtmlScreenSectionPlan, "durationSeconds"> & {
   durationSeconds?: number;
   actionSteps?: string[];
   safety?: string;
+  supportModule?: LessonSupportModule;
 };
 
 type NormalizedLessonScreenSlide = {
   title: string;
   durationSeconds: number;
-  supportModule: LessonScreenSupportModule;
+  supportModule: LessonSupportModule;
   objective: string;
   actionSteps: string[];
   safetyCue: string;
@@ -42,7 +44,7 @@ type NativeLessonScreenProps = {
 };
 
 const DEFAULT_DURATION_SECONDS = 180;
-const MODULE_LABELS: Record<LessonScreenSupportModule, string> = {
+const MODULE_LABELS: Record<LessonSupportModule, string> = {
   tacticalBoard: "战术板",
   scoreboard: "计分板",
   rotation: "轮换图",
@@ -61,6 +63,34 @@ function compactText(value: string | undefined) {
   return value?.trim().replace(/\s+/g, " ") ?? "";
 }
 
+function inferSupportModule(slide: NativeLessonScreenSlide): LessonSupportModule {
+  if (slide.supportModule) {
+    return slide.supportModule;
+  }
+
+  const text = [
+    slide.title,
+    slide.objective,
+    slide.visualIntent,
+    slide.pagePrompt,
+    ...(slide.studentActions ?? []),
+  ].join(" ");
+
+  if (/比赛|竞赛|挑战|计分|得分|积分|排行榜|闯关/.test(text)) {
+    return "scoreboard";
+  }
+
+  if (/轮换|站点|循环|接力|换位|分区|路线/.test(text)) {
+    return "rotation";
+  }
+
+  if (/战术|跑位|攻防|阵型|配合|传切|防守|站位|突破/.test(text)) {
+    return "tacticalBoard";
+  }
+
+  return "formation";
+}
+
 function normalizeSlide(slide: NativeLessonScreenSlide): NormalizedLessonScreenSlide {
   const actionSteps = (slide.studentActions?.length ? slide.studentActions : slide.actionSteps ?? [])
     .map(compactText)
@@ -70,7 +100,7 @@ function normalizeSlide(slide: NativeLessonScreenSlide): NormalizedLessonScreenS
   return {
     title: compactText(slide.title) || "课堂环节",
     durationSeconds: positiveDuration(slide.durationSeconds),
-    supportModule: slide.supportModule,
+    supportModule: inferSupportModule(slide),
     objective: compactText(slide.objective) || "看清任务、路线、规则和完成标准。",
     actionSteps:
       actionSteps.length > 0

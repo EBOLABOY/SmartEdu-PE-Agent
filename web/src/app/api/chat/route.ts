@@ -197,7 +197,6 @@ export async function POST(request: Request) {
       mode: parsedBody.data.mode,
       context: mergedContext,
       lessonPlan,
-      screenPlan: parsedBody.data.screenPlan,
       market: parsedBody.data.market,
     });
   } catch (error) {

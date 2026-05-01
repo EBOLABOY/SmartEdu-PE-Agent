@@ -437,6 +437,149 @@ export type Database = {
         }
         Relationships: []
       }
+      textbook_corpora: {
+        Row: {
+          created_at: string
+          curriculum_standard_version: string
+          edition: string | null
+          education_stage: string
+          id: string
+          license_scope: string
+          market: string
+          metadata: Json
+          publisher: string
+          source_path: string | null
+          subject: string
+          textbook_name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          curriculum_standard_version?: string
+          edition?: string | null
+          education_stage?: string
+          id?: string
+          license_scope?: string
+          market?: string
+          metadata?: Json
+          publisher: string
+          source_path?: string | null
+          subject?: string
+          textbook_name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          curriculum_standard_version?: string
+          edition?: string | null
+          education_stage?: string
+          id?: string
+          license_scope?: string
+          market?: string
+          metadata?: Json
+          publisher?: string
+          source_path?: string | null
+          subject?: string
+          textbook_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      textbook_entries: {
+        Row: {
+          body_excerpt: string
+          citation: string
+          corpus_id: string
+          created_at: string
+          embedding: string | null
+          external_id: string
+          grade: string | null
+          id: string
+          keywords: string[]
+          lesson: string | null
+          level: string | null
+          metadata: Json
+          module: string
+          page_end: number | null
+          page_start: number | null
+          safety_notes: string[]
+          section_path: string[]
+          source_kind: string
+          sport_item: string | null
+          summary: string
+          teaching_analysis: string[]
+          teaching_suggestions: string[]
+          technical_points: string[]
+          title: string
+          unit: string | null
+          volume: string | null
+        }
+        Insert: {
+          body_excerpt: string
+          citation: string
+          corpus_id: string
+          created_at?: string
+          embedding?: string | null
+          external_id: string
+          grade?: string | null
+          id?: string
+          keywords?: string[]
+          lesson?: string | null
+          level?: string | null
+          metadata?: Json
+          module: string
+          page_end?: number | null
+          page_start?: number | null
+          safety_notes?: string[]
+          section_path?: string[]
+          source_kind?: string
+          sport_item?: string | null
+          summary: string
+          teaching_analysis?: string[]
+          teaching_suggestions?: string[]
+          technical_points?: string[]
+          title: string
+          unit?: string | null
+          volume?: string | null
+        }
+        Update: {
+          body_excerpt?: string
+          citation?: string
+          corpus_id?: string
+          created_at?: string
+          embedding?: string | null
+          external_id?: string
+          grade?: string | null
+          id?: string
+          keywords?: string[]
+          lesson?: string | null
+          level?: string | null
+          metadata?: Json
+          module?: string
+          page_end?: number | null
+          page_start?: number | null
+          safety_notes?: string[]
+          section_path?: string[]
+          source_kind?: string
+          sport_item?: string | null
+          summary?: string
+          teaching_analysis?: string[]
+          teaching_suggestions?: string[]
+          technical_points?: string[]
+          title?: string
+          unit?: string | null
+          volume?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "textbook_entries_corpus_id_fkey"
+            columns: ["corpus_id"]
+            isOneToOne: false
+            referencedRelation: "textbook_corpora"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -526,6 +669,49 @@ export type Database = {
           title: string
         }[]
       }
+      match_textbook_entries_hybrid: {
+        Args: {
+          lexical_match_limit?: number
+          match_limit?: number
+          query_embedding: string
+          query_text: string
+          rrf_k?: number
+          target_grade?: string
+          target_market?: string
+          target_publisher?: string
+          target_stage?: string
+          vector_match_limit?: number
+        }
+        Returns: {
+          body_excerpt: string
+          citation: string
+          corpus_id: string
+          display_name: string
+          edition: string
+          grade: string
+          id: string
+          keywords: string[]
+          lesson: string
+          level: string
+          module: string
+          page_end: number
+          page_start: number
+          publisher: string
+          safety_notes: string[]
+          section_path: string[]
+          similarity: number
+          source_kind: string
+          sport_item: string
+          summary: string
+          teaching_analysis: string[]
+          teaching_suggestions: string[]
+          technical_points: string[]
+          textbook_name: string
+          title: string
+          unit: string
+          volume: string
+        }[]
+      }
       remove_organization_member: {
         Args: { target_organization_id: string; target_user_id: string }
         Returns: undefined
@@ -567,6 +753,50 @@ export type Database = {
           summary: string
           teaching_implications: string[]
           title: string
+        }
+        Returns: string
+      }
+      textbook_entry_search_document: {
+        Args: {
+          body_excerpt: string
+          citation: string
+          grade: string
+          keywords: string[]
+          lesson: string
+          level: string
+          module: string
+          safety_notes: string[]
+          section_path: string[]
+          sport_item: string
+          summary: string
+          teaching_analysis: string[]
+          teaching_suggestions: string[]
+          technical_points: string[]
+          title: string
+          unit: string
+          volume: string
+        }
+        Returns: unknown
+      }
+      textbook_entry_search_text: {
+        Args: {
+          body_excerpt: string
+          citation: string
+          grade: string
+          keywords: string[]
+          lesson: string
+          level: string
+          module: string
+          safety_notes: string[]
+          section_path: string[]
+          sport_item: string
+          summary: string
+          teaching_analysis: string[]
+          teaching_suggestions: string[]
+          technical_points: string[]
+          title: string
+          unit: string
+          volume: string
         }
         Returns: string
       }

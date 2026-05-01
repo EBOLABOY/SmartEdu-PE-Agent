@@ -1,7 +1,7 @@
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 
 export type LessonBusinessValidationIssue = {
-  code: "empty-text" | "placeholder" | "section-missing" | "evaluation-levels";
+  code: "basic-part-segments" | "empty-text" | "placeholder" | "section-missing" | "evaluation-levels";
   message: string;
   path?: string;
 };
@@ -13,6 +13,24 @@ export type LessonBusinessValidationResult = {
 
 const REQUIRED_PERIOD_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const REQUIRED_EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
+const REQUIRED_BASIC_PART_SEGMENTS = [
+  {
+    label: "学",
+    pattern: /学|学习|学练|讲解|示范|认知|动作方法|技术学习|技能学习/,
+  },
+  {
+    label: "练",
+    pattern: /练|练习|分组练习|巩固|重复|轮换/,
+  },
+  {
+    label: "赛",
+    pattern: /赛|比赛|竞赛|对抗|展示|教学比赛|小组比赛/,
+  },
+  {
+    label: "体能练习",
+    pattern: /体能|素质|力量|灵敏|速度|耐力|协调|体能练习/,
+  },
+] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -107,6 +125,23 @@ export function performLessonBusinessValidation(
       code: "evaluation-levels",
       message: "评价标准必须且只能包含“三颗星 / 二颗星 / 一颗星”各 1 条。",
       path: "lessonPlan.evaluation",
+    });
+  }
+
+  const basicRows = plan.periodPlan.rows.filter((row) => row.structure === "基本部分");
+  const basicPartText = basicRows
+    .flatMap((row) => [row.content, row.methods.teacher, row.methods.students, row.organization])
+    .flat()
+    .join(" ");
+  const missingBasicPartSegments = REQUIRED_BASIC_PART_SEGMENTS.filter(
+    (segment) => !segment.pattern.test(basicPartText),
+  ).map((segment) => segment.label);
+
+  if (missingBasicPartSegments.length > 0) {
+    issues.push({
+      code: "basic-part-segments",
+      message: `基本部分必须体现“学、练、赛、体能练习”四个环节，当前缺少：${missingBasicPartSegments.join("、")}。`,
+      path: "lessonPlan.periodPlan.rows",
     });
   }
 

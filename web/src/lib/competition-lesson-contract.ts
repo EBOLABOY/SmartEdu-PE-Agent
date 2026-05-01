@@ -169,6 +169,21 @@ export const competitionLessonLoadEstimateSchema = z
   })
   .strict();
 
+export const competitionLessonDiagramAssetSchema = z
+  .object({
+    alt: nonEmptyString,
+    caption: nonEmptyString.optional(),
+    height: z.number().int().positive().optional(),
+    imageUrl: nonEmptyString,
+    kind: z
+      .enum(["formation", "movement", "station-rotation", "safety-layout"])
+      .default("formation"),
+    prompt: nonEmptyString.optional(),
+    source: z.enum(["ai-generated", "code-generated", "uploaded"]).default("ai-generated"),
+    width: z.number().int().positive().optional(),
+  })
+  .strict();
+
 export const competitionLessonPlanRowSchema = z
   .preprocess(
     normalizeCompetitionLessonPlanRow,
@@ -186,6 +201,7 @@ export const competitionLessonPlanRowSchema = z
             .strict(),
         ),
         organization: competitionLessonTextBlockSchema,
+        diagramAssets: z.array(competitionLessonDiagramAssetSchema).max(3).optional(),
         time: lessonTimeString,
         intensity: nonEmptyString,
       })
@@ -281,6 +297,7 @@ export type AgentLessonGenerationResult = z.infer<typeof agentLessonGenerationSc
 export type CompetitionLessonPlanRow = z.infer<typeof competitionLessonPlanRowSchema>;
 export type CompetitionLessonLoadEstimate = z.infer<typeof competitionLessonLoadEstimateSchema>;
 export type CompetitionLessonLoadChartPoint = z.infer<typeof competitionLessonLoadChartPointSchema>;
+export type CompetitionLessonDiagramAsset = z.infer<typeof competitionLessonDiagramAssetSchema>;
 
 export function unwrapAgentLessonGenerationResult(value: unknown): CompetitionLessonPlan {
   const wrapped = agentLessonGenerationSchema.safeParse(value);

@@ -50,7 +50,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
 import { withSmartEduProjectHeader } from "@/lib/api/smartedu-request-headers";
-import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
 import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -512,11 +511,9 @@ function AppContent({
     }
 
     const lessonPlanJson = JSON.stringify(currentLessonPlan);
-    const screenPlan = buildLessonScreenPlanFromLessonPlan(currentLessonPlan);
-
     await sendMessage(
       { text: "课时计划已确认，请生成互动大屏。" },
-      { body: withProjectContext({ mode: "html", lessonPlan: lessonPlanJson, screenPlan }) },
+      { body: withProjectContext({ mode: "html", lessonPlan: lessonPlanJson }) },
     );
   };
 

@@ -108,8 +108,33 @@ describe("competition-lesson-protocol", () => {
       school: "未填写学校",
     });
     expect(plan.periodPlan.rows.map((row) => row.structure)).toEqual(["准备部分", "基本部分", "结束部分"]);
+    expect(plan.periodPlan.rows[1]?.content).toEqual([
+      "行进间运球练习、绕桶运球接力、小组挑战",
+      "技术学习、分组练习、教学比赛、体能练习",
+    ]);
+    expect(plan.flowSummary).toEqual([
+      "课堂常规",
+      "专项热身",
+      "球性游戏",
+      "技术学练",
+      "运球接力",
+      "分层挑战",
+      "放松拉伸",
+    ]);
     expect(plan.evaluation.map((item) => item.level)).toEqual(["三颗星", "二颗星", "一颗星"]);
     expect(plan.loadEstimate.chartPoints.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps flowSummary concise when flow content contains verbose teaching steps", () => {
+    const protocol = completeProtocol.replace(
+      "content=课堂常规、热身跑、球性练习",
+      "content=课堂常规：集合整队，宣布本课内容与安全要求。2. 球性游戏：“听数抱团”运球游戏，学生运球移动，听教师报数后迅速与相应人数抱成一团并保持运球。3. 专项热身：动态拉伸结合原地高低运球、体前变向等球性练习。",
+    );
+    const plan = parseLessonPlanProtocolToCompetitionLessonPlan(protocol);
+
+    expect(plan.flowSummary.slice(0, 3)).toEqual(["课堂常规", "球性游戏", "专项热身"]);
+    expect(plan.flowSummary.join(" → ")).toContain("课堂常规 → 球性游戏 → 专项热身");
+    expect(plan.periodPlan.rows[0]?.content[0]).toContain("听数抱团");
   });
 
   it("accepts Chinese key separators, body lines, repeated fields, unknown blocks, and shuffled blocks", () => {
@@ -179,7 +204,10 @@ organization=集合
     expect(plan.title).toBe("足球脚内侧传接球");
     expect(plan.meta.studentCount).toBe("36人");
     expect(plan.venueEquipment.equipment).toEqual(["篮球20个", "标志桶8个"]);
-    expect(plan.periodPlan.rows[1]?.content).toEqual(["传接球练习"]);
+    expect(plan.periodPlan.rows[1]?.content).toEqual([
+      "传接球练习",
+      "技术学习、分组练习、教学比赛、体能练习",
+    ]);
     expect(plan.loadEstimate.averageHeartRate).toBe("140次/分钟");
   });
 

@@ -8,33 +8,25 @@ import {
   getStructuredArtifactPart,
 } from "@/lib/artifact-protocol";
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import { chatRequestBodySchema, lessonScreenPlanSchema, type SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import { chatRequestBodySchema, type SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 
 describe("artifact-protocol", () => {
-  it("会校验课堂大屏支持模块契约", () => {
-    const screenPlan = lessonScreenPlanSchema.parse({
-      sections: [
-        {
-          title: "战术学习",
-          durationSeconds: 480,
-          supportModule: "tacticalBoard",
-        },
-        {
-          title: "比赛展示",
-          supportModule: "scoreboard",
-        },
-      ],
-    });
-
-    expect(screenPlan.sections[0]?.supportModule).toBe("tacticalBoard");
+  it("chat 请求契约只保留课时计划相关输入，不再接收大屏分镜计划", () => {
     expect(
       chatRequestBodySchema.safeParse({
         messages: [],
         mode: "html",
         lessonPlan: "## 十、课时计划",
-        screenPlan,
       }).success,
     ).toBe(true);
+    expect(
+      chatRequestBodySchema.safeParse({
+        messages: [],
+        mode: "html",
+        lessonPlan: "## 十、课时计划",
+        screenPlan: { sections: [] },
+      }).success,
+    ).toBe(false);
   });
 
   it("能从带前置说明和后置围栏的文本中提取 HTML 文档", () => {

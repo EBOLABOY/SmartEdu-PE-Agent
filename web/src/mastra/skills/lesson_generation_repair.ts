@@ -81,6 +81,77 @@ function buildStandardsRepairHints(input: {
   ].join("\n");
 }
 
+function normalizeCitationText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function formatTextbookCitationForLesson(input: {
+  citation: string;
+  edition: string | null;
+  module: string;
+  publisher: string;
+  textbookName: string;
+}) {
+  const citation = normalizeCitationText(input.citation);
+  const edition = input.edition ? `，${input.edition}` : "";
+
+  return `${input.publisher}${edition}《${input.textbookName}》${input.module}：${citation}`;
+}
+
+function buildTextbookCitationLine(workflow: Parameters<typeof runLessonGenerationSkill>[0]["workflow"]) {
+  const references = workflow.textbook?.references ?? [];
+  const citations = [
+    ...new Set(
+      references
+        .filter((reference) => reference.sourceKind === "teacher-guide" || reference.sourceKind === "textbook-body")
+        .map((reference) =>
+          formatTextbookCitationForLesson({
+            citation: reference.citation,
+            edition: reference.edition,
+            module: reference.module,
+            publisher: reference.publisher,
+            textbookName: reference.textbookName,
+          }),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 3);
+
+  if (citations.length === 0) {
+    return undefined;
+  }
+
+  return `教材依据：${citations.join("；")}。`;
+}
+
+function hasTextbookCitationLine(lessonPlan: CompetitionLessonPlan) {
+  return lessonPlan.narrative.textbookAnalysis.some((line) => /^教材依据[:：]/.test(line.trim()));
+}
+
+export function appendTextbookCitationsToLessonPlan(
+  lessonPlan: CompetitionLessonPlan,
+  workflow: Parameters<typeof runLessonGenerationSkill>[0]["workflow"],
+) {
+  const citationLine = buildTextbookCitationLine(workflow);
+  const analysisWithoutUntrustedCitations = lessonPlan.narrative.textbookAnalysis.filter(
+    (line) => !/^教材依据[:：]/.test(line.trim()),
+  );
+
+  if (!citationLine && !hasTextbookCitationLine(lessonPlan)) {
+    return lessonPlan;
+  }
+
+  return competitionLessonPlanSchema.parse({
+    ...lessonPlan,
+    narrative: {
+      ...lessonPlan.narrative,
+      textbookAnalysis: citationLine
+        ? [...analysisWithoutUntrustedCitations, citationLine]
+        : analysisWithoutUntrustedCitations,
+    },
+  });
+}
+
 function buildRepairInstruction(input: {
   draft: CompetitionLessonPlan;
   issues: ReturnType<typeof performLessonBusinessValidation>["issues"];
@@ -99,6 +170,9 @@ function buildRepairInstruction(input: {
     formatLessonValidationIssues(input.issues),
     "",
     buildStandardsRepairHints({ workflow: input.workflow }) ?? "本轮未提供额外课程标准提示。",
+    "",
+    buildTextbookCitationLine(input.workflow) ??
+      "本轮未提供可引用的教材检索来源；不要虚构教材出处。",
     "",
     "待修复的当前课时计划 JSON：",
     JSON.stringify(input.draft, null, 2),
@@ -184,14 +258,18 @@ export async function runLessonGenerationWithRepair(
     const validation = performLessonBusinessValidation(draft);
 
     if (validation.isValid) {
+      const citedDraft = appendTextbookCitationsToLessonPlan(draft, input.workflow);
+
       input.onTrace?.(
         createRepairTraceEntry(
           "validate-lesson-output",
           "success",
-          "结构化课时计划已通过业务语义校验，无需自动修复。",
+          input.workflow.textbook?.references?.length
+            ? "结构化课时计划已通过业务语义校验，并已写入教材依据引用。"
+            : "结构化课时计划已通过业务语义校验，无需自动修复。",
         ),
       );
-      return draft;
+      return citedDraft;
     }
 
     input.onTrace?.(
@@ -226,14 +304,18 @@ export async function runLessonGenerationWithRepair(
         );
       }
 
+      const citedRepairedPlan = appendTextbookCitationsToLessonPlan(repairedPlan, input.workflow);
+
       input.onTrace?.(
         createRepairTraceEntry(
           "lesson-repair-finished",
           "success",
-          `已完成自动修复，共修正 ${validation.issues.length} 处业务语义问题。`,
+          input.workflow.textbook?.references?.length
+            ? `已完成自动修复，共修正 ${validation.issues.length} 处业务语义问题，并写入教材依据引用。`
+            : `已完成自动修复，共修正 ${validation.issues.length} 处业务语义问题。`,
         ),
       );
-      return repairedPlan;
+      return citedRepairedPlan;
     } catch (error) {
       const message = `结构化课时计划自动修复失败：${error instanceof Error ? error.message : "unknown-error"}`;
 

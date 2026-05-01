@@ -1,9 +1,9 @@
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   type GenerationMode,
-  type LessonScreenPlan,
   type PeTeacherContext,
 } from "@/lib/lesson-authoring-contract";
+import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 
 import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "../agents/guangdong_competition_lesson_format";
 import { formatLessonScreenPlanForPrompt } from "../agents/html_screen_planner";
@@ -12,7 +12,7 @@ import type { PromptSkill, PromptSkillWithInput } from "./types";
 type PeTeacherPromptOptions = {
   mode?: GenerationMode;
   lessonPlan?: string;
-  screenPlan?: LessonScreenPlan;
+  screenPlan?: HtmlScreenPlan;
 };
 
 const baseTeacherPersonaSkill: PromptSkill = {
@@ -111,16 +111,15 @@ const agenticToolUseSkill: PromptSkill = {
 `,
 };
 
-function renderScreenPlanPrompt(screenPlan?: LessonScreenPlan) {
+function renderScreenPlanPrompt(screenPlan?: HtmlScreenPlan) {
   const base = `
-课堂大屏结构化模块契约：
-1. 每个内容页都要在 \`<section class="slide lesson-slide"...>\` 上写入 \`data-support-module\`。
-2. support module 只能是 tacticalBoard、scoreboard、rotation、formation。
-3. tacticalBoard 用于战术、跑位、配合、阵型、传接球、突破、防守站位等页面。
-4. scoreboard 用于比赛、展示、计分、得分、积分等页面。
-5. rotation 用于站点轮换、循环练习、接力路线、分区换位等页面。
-6. formation 用于课堂常规、热身、放松总结或无特殊可视化需求的页面。
-7. 如果系统提供了“结构化大屏模块计划”，必须优先遵循其中的 supportModule，不要自行重猜。
+课堂大屏自由分镜契约：
+1. 服务端会先根据已确认课时计划规划首页和多个课堂内容页，再逐页生成 HTML 片段。
+2. 首页必须作为分镜计划的第 1 页，由 AI 生成内容片段；服务端只提供统一外壳、开始按钮兜底、导航和计时控制。
+3. 不使用固定组件枚举限制页面设计；应根据教学内容自由选择最有效的视觉表达。
+4. 所有页面必须共享同一个 visualSystem，不允许每页各自更换设计语言。
+5. 每个内容页必须服务真实课堂执行，而不是堆砌装饰或普通网页信息。
+6. 如果系统提供了“课堂大屏分镜计划”，必须优先遵循其中的 visualSystem、pagePrompt、时间、学生行动、安全提醒和评价观察。
 `;
 
   if (!screenPlan?.sections.length) {
@@ -129,7 +128,7 @@ function renderScreenPlanPrompt(screenPlan?: LessonScreenPlan) {
 
   return `${base}
 
-结构化大屏模块计划：
+课堂大屏分镜计划：
 ${formatLessonScreenPlanForPrompt(screenPlan)}`;
 }
 
@@ -162,16 +161,19 @@ html 阶段要求：
 
 HTML 设计与交互约束：
 1. 页面目标不是“像 PPT 一样讲解”，而是辅助真实上课，帮助学生知道当前环节、怎么做、还剩多久，以及安全边界。
-2. 必须先生成一个“课堂运行总览”封面页，展示环节时间轴、课堂收益、器材和安全提示，并提供醒目的“开始上课”按钮。
-3. 必须采用 16:9 全屏多页结构，不得生成单页长文或普通网页信息流。
-4. 必须按课时计划中的主要教学环节拆分页；至少覆盖课堂常规、热身、技能学习、分组练习、展示或总结等实际环节。
-5. 每个内容页都必须清晰展示“本环节怎么做”“学生三步行动”“安全提醒”“评价观察”“学生自助提示”。
-6. 必须提供“开始上课”“上一页”“下一页”“暂停/继续”“重新计时”控制能力，并在课时结束后自动进入下一页。
-7. 每页必须带与课时计划一致的倒计时；1 分钟 = 60 秒；时间缺失时按合理估算并标注“估算时间”。
-8. 若涉及战术、跑位、轮换、配合、阵型、路线、攻防站位等内容，必须使用 HTML/CSS/SVG 绘制动态战术板、路线图或轮换图。
-9. 最后一页必须是“放松总结”或“课堂小结”，保留倒计时。
-10. 视觉风格应像课堂投屏工具：大字号、高对比、卡片化、强层级、适合远距离观看。
-11. 所有可见文本必须是简体中文，不得出现英文控制台风格文案。
+2. 首页必须作为 AI 分镜的第 1 页生成，像简洁 PPT 首页：大标题居中，下方显示学校和教师姓名，并提供醒目的“开始上课”按钮视觉；服务端只负责按钮兜底和控制壳。
+3. 必须采用全屏自适应多页结构，自动适应屏幕大小，不再固定 16:9；不得生成单页长文或普通网页信息流。
+4. 必须先定义统一 visualSystem，并让首页、热身、学练、比赛、体能、放松等页面共享同一套色彩、字体层级、倒计时、按钮和图形语言。
+5. 视觉方向默认采用 Apple Inc. 顶级 UI 设计师视角，以 iOS 18 风格实现横板课堂大屏：毛玻璃效果、Gaussian blur/高斯模糊、动态渐变、细腻阴影、柔和高光、圆角层级和轻量动效，但必须服务体育教学清晰度。
+6. 最终 HTML 由服务端组合为包含完整 CSS 和 JavaScript 的单文件；单页分镜只生成 HTML 内容片段，不自行输出完整文档、style 或 script。
+7. 必须按课时计划中的主要教学环节拆分页，常见节奏可参考：热身、学练、比赛或展示、体能练习、放松拉伸。
+8. 学习页面和练习页面原则上合二为一，只展示学习内容、动作认知和练习任务，不拆成两个文字讲解页面。
+9. 学练页不能是文字板；若涉及战术、跑位、轮换、配合、阵型、路线、攻防站位等内容，必须使用 HTML/CSS/SVG 手搓有助于理解的图形或互动区域。
+10. 比赛、体能练习、放松拉伸、课堂总结等其他页面，默认采用居中的任务模块和醒目倒计时，文字只保留关键短句。
+11. 必须提供“开始上课”“上一页”“下一页”“暂停/继续”“重新计时”控制能力，并在课时结束后自动进入下一页。
+12. 每页必须带与课时计划一致的倒计时；1 分钟 = 60 秒；时间缺失时按合理估算并标注“估算时间”；首页不参与课堂环节倒计时。
+13. 视觉风格应简洁干练、沉浸、美观、有效：大字号、高对比、强层级、适合远距离观看，不花哨、不堆装饰。
+14. 所有可见文本必须是简体中文，不得出现英文控制台风格文案。
 
 ${renderScreenPlanPrompt(screenPlan)}
 
@@ -222,7 +224,7 @@ function renderCurrentArtifactPrompt(options?: PeTeacherPromptOptions) {
   if (options?.screenPlan?.sections.length) {
     parts.push(
       [
-        "当前已确认大屏分镜计划：",
+        "当前已确认课堂大屏分镜计划：",
         formatLessonScreenPlanForPrompt(options.screenPlan),
       ].join("\n"),
     );

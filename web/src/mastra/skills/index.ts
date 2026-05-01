@@ -7,9 +7,8 @@ export {
   runCompetitionLessonPatchSkill,
   type LessonPatchAgentRunner,
 } from "./competition_lesson_patch_skill";
-export { runHtmlScreenGenerationSkill } from "./html_screen_generation_skill";
 export {
-  buildFallbackHtmlScreenPlan,
+  runServerHtmlScreenPlanningSkill,
   runHtmlScreenPlanningSkill,
   type HtmlScreenPlanAgentRunner,
   type HtmlScreenPlanningResult,
@@ -28,10 +27,19 @@ export {
 } from "./lesson_intent_skill";
 export { runLessonGenerationSkill } from "./lesson_generation_skill";
 export {
+  enrichLessonPlanWithDiagramAssets,
+  type LessonDiagramGenerationResult,
+} from "./lesson_diagram_generation_skill";
+export {
+  enrichHtmlScreenPlanWithVisualAssets,
+  type HtmlScreenVisualAssetResult,
+} from "./html_screen_visual_asset_skill";
+export {
   runLessonGenerationWithRepair,
   type LessonRepairGenerateRunner,
 } from "./lesson_generation_repair";
 export { runStandardsRetrievalSkill } from "./standards_retrieval_skill";
+export { runTextbookRetrievalSkill } from "./textbook_retrieval_skill";
 export { runServerHtmlGenerationSkill } from "./server_html_generation_skill";
 export {
   createServerStandardsFallbackWorkflow,
@@ -41,6 +49,12 @@ export {
   type ServerStandardsEnrichmentResult,
   type ServerStandardsEnrichmentInput,
 } from "./server_standards_enrichment";
+export {
+  createServerTextbookFallbackWorkflow,
+  createServerTextbookPendingWorkflow,
+  resolveWorkflowWithServerTextbook,
+  type ServerTextbookEnrichmentResult,
+} from "./server_textbook_enrichment";
 export {
   createLessonClarificationStreamAdapter,
   createStructuredArtifactData,

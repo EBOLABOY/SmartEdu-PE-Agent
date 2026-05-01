@@ -212,7 +212,7 @@ function buildDetails(trace: WorkflowTraceData | undefined): AssistantWorkflowDe
 }
 
 function isSubmitToolPart(part: SmartEduUIMessage["parts"][number]) {
-  return part.type === "tool-submit_lesson_plan" || part.type === "tool-submit_html_screen";
+  return part.type === "tool-submit_lesson_plan";
 }
 
 function hasActionableWorkflowTrace(

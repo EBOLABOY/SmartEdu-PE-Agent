@@ -2,6 +2,8 @@ import type { S3RestConfig } from "./s3-rest-client";
 
 type ObjectStoragePurpose = "artifact" | "export" | "workspace";
 
+export const DEFAULT_S3_USER_AGENT = "S3 Browser";
+
 function getBucketForPurpose(purpose: ObjectStoragePurpose) {
   if (purpose === "artifact") {
     return process.env.S3_ARTIFACT_BUCKET ?? process.env.S3_BUCKET;
@@ -14,6 +16,10 @@ function getBucketForPurpose(purpose: ObjectStoragePurpose) {
   return process.env.S3_EXPORT_BUCKET ?? process.env.S3_BUCKET;
 }
 
+function getS3UserAgent() {
+  return process.env.S3_USER_AGENT?.trim() || DEFAULT_S3_USER_AGENT;
+}
+
 export function getS3ObjectStorageConfig(
   purpose: ObjectStoragePurpose,
 ): S3RestConfig | null {
@@ -22,7 +28,7 @@ export function getS3ObjectStorageConfig(
   const endpoint = process.env.S3_ENDPOINT;
   const region = process.env.S3_REGION;
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
-  const userAgent = process.env.S3_USER_AGENT;
+  const userAgent = getS3UserAgent();
 
   if (!accessKeyId || !bucket || !endpoint || !region || !secretAccessKey) {
     return null;
@@ -34,6 +40,6 @@ export function getS3ObjectStorageConfig(
     endpoint,
     region,
     secretAccessKey,
-    ...(userAgent ? { userAgent } : {}),
+    userAgent,
   };
 }
