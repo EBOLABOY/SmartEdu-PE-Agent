@@ -6,17 +6,14 @@ import type { HtmlScreenPlan, HtmlScreenSectionPlan } from "@/lib/html-screen-pl
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import { putS3Object } from "@/lib/s3/s3-rest-client";
 
-const DEFAULT_IMAGE_MODEL = "gpt-image-2";
-const DEFAULT_IMAGE_SIZE = "1024x1024";
+import {
+  getImageGenerationConfig,
+  IMAGE_GENERATION_REQUIRED_ENV_NAMES,
+  type ImageGenerationConfig,
+} from "./image_generation_config";
+
 const SCREEN_IMAGE_WIDTH = 1600;
 const SCREEN_IMAGE_HEIGHT = 900;
-
-type ScreenImageGenerationConfig = {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  size: string;
-};
 
 export type HtmlScreenVisualAssetResult = {
   generatedCount: number;
@@ -24,23 +21,6 @@ export type HtmlScreenVisualAssetResult = {
   skippedReason?: string;
   warnings: string[];
 };
-
-function resolveEnvReference(value?: string) {
-  return value?.replace(/\$\{([A-Z0-9_]+)\}/g, (_, name) => process.env[name] ?? "");
-}
-
-function getScreenImageGenerationConfig(): ScreenImageGenerationConfig | null {
-  const baseUrl = resolveEnvReference(process.env.AI_EMBEDDING_BASE_URL)?.replace(/\/+$/, "");
-  const apiKey = resolveEnvReference(process.env.AI_EMBEDDING_API_KEY);
-  const model = process.env.AI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL;
-  const size = process.env.AI_IMAGE_SIZE ?? DEFAULT_IMAGE_SIZE;
-
-  if (!baseUrl || !apiKey || !model) {
-    return null;
-  }
-
-  return { apiKey, baseUrl, model, size };
-}
 
 function buildPublicS3ObjectUrl(input: {
   bucket: string;
@@ -76,16 +56,18 @@ function buildScreenImagePrompt(section: HtmlScreenSectionPlan) {
 }
 
 async function callImageGenerationApi(input: {
-  config: ScreenImageGenerationConfig;
+  config: ImageGenerationConfig;
   prompt: string;
 }) {
+  const body = {
+    model: input.config.model,
+    n: 1,
+    prompt: input.prompt,
+    ...(input.config.size ? { size: input.config.size } : {}),
+  };
+
   const response = await fetch(`${input.config.baseUrl}/images/generations`, {
-    body: JSON.stringify({
-      model: input.config.model,
-      n: 1,
-      prompt: input.prompt,
-      size: input.config.size,
-    }),
+    body: JSON.stringify(body),
     headers: {
       Authorization: `Bearer ${input.config.apiKey}`,
       "Content-Type": "application/json",
@@ -185,7 +167,7 @@ async function storeScreenVisualAsset(input: {
 }
 
 async function generateSectionVisualAsset(input: {
-  config: ScreenImageGenerationConfig;
+  config: ImageGenerationConfig;
   projectId: string;
   requestId: string;
   section: HtmlScreenSectionPlan;
@@ -236,13 +218,13 @@ export async function enrichHtmlScreenPlanWithVisualAssets(input: {
     };
   }
 
-  const config = getScreenImageGenerationConfig();
+  const config = getImageGenerationConfig();
 
   if (!config) {
     return {
       generatedCount: 0,
       screenPlan: input.screenPlan,
-      skippedReason: "缺少 AI_EMBEDDING_BASE_URL、AI_EMBEDDING_API_KEY 或 AI_IMAGE_MODEL，已跳过互动大屏辅助图生成。",
+      skippedReason: `缺少 ${IMAGE_GENERATION_REQUIRED_ENV_NAMES}，已跳过互动大屏辅助图生成。`,
       warnings: [],
     };
   }

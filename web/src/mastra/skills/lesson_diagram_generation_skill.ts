@@ -11,17 +11,15 @@ import {
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import { putS3Object } from "@/lib/s3/s3-rest-client";
 
+import {
+  getImageGenerationConfig,
+  IMAGE_GENERATION_REQUIRED_ENV_NAMES,
+  type ImageGenerationConfig,
+} from "./image_generation_config";
+
 const DIAGRAM_GRID_COLUMNS = 3;
 const DIAGRAM_GRID_ROWS = 3;
 const DIAGRAM_PANEL_COUNT = DIAGRAM_GRID_COLUMNS * DIAGRAM_GRID_ROWS;
-const DEFAULT_IMAGE_MODEL = "gpt-image-2";
-const DEFAULT_IMAGE_SIZE = "1024x1024";
-
-type DiagramGenerationConfig = {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-};
 
 type DiagramPanelPlan = {
   alt: string;
@@ -45,22 +43,6 @@ export type LessonDiagramGenerationResult = {
   skippedReason?: string;
   storageMode?: "data-url" | "s3-compatible";
 };
-
-function resolveEnvReference(value?: string) {
-  return value?.replace(/\$\{([A-Z0-9_]+)\}/g, (_, name) => process.env[name] ?? "");
-}
-
-function getDiagramGenerationConfig(): DiagramGenerationConfig | null {
-  const baseUrl = resolveEnvReference(process.env.AI_EMBEDDING_BASE_URL)?.replace(/\/+$/, "");
-  const apiKey = resolveEnvReference(process.env.AI_EMBEDDING_API_KEY);
-  const model = process.env.AI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL;
-
-  if (!baseUrl || !apiKey || !model) {
-    return null;
-  }
-
-  return { apiKey, baseUrl, model };
-}
 
 function compactLines(lines: string[]) {
   return lines.map((line) => line.trim()).filter(Boolean).join("；");
@@ -153,16 +135,18 @@ function buildNineGridPrompt(input: {
 }
 
 async function callImageGenerationApi(input: {
-  config: DiagramGenerationConfig;
+  config: ImageGenerationConfig;
   prompt: string;
 }) {
+  const body = {
+    model: input.config.model,
+    n: 1,
+    prompt: input.prompt,
+    ...(input.config.size ? { size: input.config.size } : {}),
+  };
+
   const response = await fetch(`${input.config.baseUrl}/images/generations`, {
-    body: JSON.stringify({
-      model: input.config.model,
-      n: 1,
-      prompt: input.prompt,
-      size: DEFAULT_IMAGE_SIZE,
-    }),
+    body: JSON.stringify(body),
     headers: {
       Authorization: `Bearer ${input.config.apiKey}`,
       "Content-Type": "application/json",
@@ -337,13 +321,13 @@ export async function enrichLessonPlanWithDiagramAssets(input: {
   projectId?: string;
   requestId: string;
 }): Promise<LessonDiagramGenerationResult> {
-  const config = getDiagramGenerationConfig();
+  const config = getImageGenerationConfig();
 
   if (!config) {
     return {
       generatedCount: 0,
       lessonPlan: input.lessonPlan,
-      skippedReason: "缺少 AI_EMBEDDING_BASE_URL、AI_EMBEDDING_API_KEY 或 AI_IMAGE_MODEL，已跳过教学站位图生成。",
+      skippedReason: `缺少 ${IMAGE_GENERATION_REQUIRED_ENV_NAMES}，已跳过教学站位图生成。`,
     };
   }
 

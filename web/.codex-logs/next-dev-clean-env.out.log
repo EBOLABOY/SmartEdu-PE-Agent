@@ -85,3 +85,16 @@
  GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1326ms (next.js: 5ms, application-code: 1320ms)
 AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false.
  POST /api/chat 200 in 55s (next.js: 18ms, application-code: 55s)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 955ms (next.js: 4ms, application-code: 950ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 905ms (next.js: 4ms, application-code: 901ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 8.3s (next.js: 7.1s, application-code: 1220ms)
+✓ Compiled in 188ms
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 985ms (next.js: 5ms, application-code: 980ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 1916ms (next.js: 677ms, application-code: 1239ms)
+ GET /?projectId=6a1513f3-5077-453b-9ebf-41f88ef560dc 200 in 914ms (next.js: 6ms, application-code: 908ms)
+  Reload env: .env
+✓ Compiled in 1072ms
+  Reload env: .env
+  Reload env: .env
+✓ Compiled in 202ms
+  Reload env: .env
