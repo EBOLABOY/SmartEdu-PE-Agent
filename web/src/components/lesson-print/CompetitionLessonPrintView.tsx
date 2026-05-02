@@ -40,6 +40,86 @@ function CompactLines({ lines }: { lines: string[] }) {
   );
 }
 
+type TeachingContentSegment =
+  | {
+      body: string;
+      heading?: undefined;
+    }
+  | {
+      body: string;
+      heading: string;
+    };
+
+const TEACHING_CONTENT_HEADING_PATTERN =
+  /(^|[。；;]\s*)([0-9一二三四五六七八九十]+[.．、]\s*)?(\*\*)?([^：:。；;\n*]{1,12})(\*\*)?[：:]/g;
+
+function normalizeTeachingContentHeading(indexText: string | undefined, title: string) {
+  return `${indexText ?? ""}${title}`.replace(/\s+/g, " ").trim();
+}
+
+function stripTeachingContentMarkup(value: string) {
+  return value.replace(/\*\*/g, "").replace(/^[0-9一二三四五六七八九十、.．\s]+/, "");
+}
+
+function splitTeachingContentLine(line: string): TeachingContentSegment[] {
+  const segments: TeachingContentSegment[] = [];
+  const matches = Array.from(line.matchAll(TEACHING_CONTENT_HEADING_PATTERN));
+
+  if (matches.length === 0) {
+    return [{ body: line.trim() }];
+  }
+
+  const firstMatch = matches[0];
+  const firstDelimiter = firstMatch?.[1] ?? "";
+  const firstHeadingStart = (firstMatch?.index ?? 0) + firstDelimiter.length;
+  const prefix = line.slice(0, firstHeadingStart).trim();
+
+  if (prefix) {
+    segments.push({ body: prefix.replace(/[。；;]$/, "") });
+  }
+
+  matches.forEach((match, index) => {
+    const indexText = match[2];
+    const title = match[4] ?? "";
+    const bodyStart = (match.index ?? 0) + match[0].length;
+    const nextMatch = matches[index + 1];
+    const bodyEnd = nextMatch ? nextMatch.index ?? line.length : line.length;
+    const body = line.slice(bodyStart, bodyEnd).trim().replace(/^[。；;]\s*/, "");
+    const heading = normalizeTeachingContentHeading(indexText, title);
+
+    segments.push({
+      body,
+      heading,
+    });
+  });
+
+  return segments.filter((segment) => segment.body || segment.heading);
+}
+
+function TeachingContentLines({ lines }: { lines: string[] }) {
+  return (
+    <>
+      {lines.map((line, lineIndex) =>
+        splitTeachingContentLine(line).map((segment, segmentIndex) => (
+          <p
+            className="competition-print-compact-line competition-print-teaching-content-line"
+            key={`${line}-${lineIndex}-${segmentIndex}`}
+          >
+            {segment.heading ? (
+              <>
+                <strong className="competition-print-teaching-content-heading">{segment.heading}</strong>
+                {segment.body ? <span>{segment.body}</span> : null}
+              </>
+            ) : (
+              segment.body
+            )}
+          </p>
+        )),
+      )}
+    </>
+  );
+}
+
 function Section({
   title,
   children,
@@ -181,26 +261,7 @@ function FieldDiagram({
   );
 }
 
-function OrganizationDiagram({ row, index }: { row: CompetitionLessonPlanRow; index: number }) {
-  const primaryDiagram = row.diagramAssets?.[0];
-
-  if (primaryDiagram) {
-    return (
-      <div className="competition-print-ai-diagram">
-        <img
-          alt={primaryDiagram.alt}
-          className="competition-print-ai-diagram-image"
-          height={primaryDiagram.height}
-          src={primaryDiagram.imageUrl}
-          width={primaryDiagram.width}
-        />
-        <p className="competition-print-ai-diagram-caption">
-          {primaryDiagram.caption ?? row.organization[0] ?? `第 ${index + 1} 环节组织图`}
-        </p>
-      </div>
-    );
-  }
-
+function OrganizationDiagramFallback({ row, index }: { row: CompetitionLessonPlanRow; index: number }) {
   if (row.structure === "准备部分") {
     return (
       <>
@@ -221,11 +282,46 @@ function OrganizationDiagram({ row, index }: { row: CompetitionLessonPlanRow; in
         <FieldDiagram
           height={50}
           key={`${row.structure}-${index}-${contentIndex}`}
-          title={item.replace(/^[0-9一二三四五六七八九十、.．\s]+/, "")}
+          title={stripTeachingContentMarkup(item)}
         />
       ))}
     </>
   );
+}
+
+function OrganizationDiagram({ row, index }: { row: CompetitionLessonPlanRow; index: number }) {
+  const diagrams = row.diagramAssets?.filter(Boolean) ?? [];
+
+  if (diagrams.length > 0) {
+    return (
+      <>
+        {diagrams.map((diagram, diagramIndex) => {
+          const caption = diagram.caption ?? row.organization[0] ?? `第 ${index + 1} 环节组织图`;
+
+          return (
+            <div className="competition-print-ai-diagram" key={`${diagram.imageUrl}-${diagramIndex}`}>
+              <object
+                aria-label={diagram.alt}
+                className="competition-print-ai-diagram-image"
+                data={diagram.imageUrl}
+                height={diagram.height}
+                type="image/png"
+                width={diagram.width}
+              >
+                <div className="competition-print-ai-diagram-fallback">
+                  <p className="competition-print-ai-diagram-fallback-title">图片暂不可用，已切换为文本生成示意图</p>
+                  <OrganizationDiagramFallback index={index} row={row} />
+                </div>
+              </object>
+              <p className="competition-print-ai-diagram-caption">{caption}</p>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  return <OrganizationDiagramFallback index={index} row={row} />;
 }
 
 function PeriodPlanRow({
@@ -241,7 +337,7 @@ function PeriodPlanRow({
         <VerticalText text={row.structure} />
       </td>
       <td>
-        <CompactLines lines={row.content} />
+        <TeachingContentLines lines={row.content} />
       </td>
       <td colSpan={2}>
         <p className="competition-print-method-label">教师：</p>

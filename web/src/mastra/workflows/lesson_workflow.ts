@@ -567,6 +567,7 @@ const constructPromptStep = createStep({
       buildPeTeacherSystemPrompt(inputData.context, {
         mode: resolvedMode,
         lessonPlan: inputData.lessonPlan,
+        responseStage: resolvedMode === "lesson" ? "generation" : "tool-use",
       }),
       ...buildMemoryPromptParts(inputData.memory),
       "课程标准检索策略：正式 lesson 生成由服务端在生成前检索并注入课标依据；Agent 只在普通咨询或显式课标问答时使用 searchStandards。",

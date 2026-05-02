@@ -2,7 +2,7 @@ import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { runLessonGenerationWithRepair } from "@/mastra/skills";
+import type { runLessonGenerationWithPostProcess } from "@/mastra/skills";
 
 const mocks = vi.hoisted(() => {
   const createChunkStream = (chunks: UIMessageChunk[]) =>
@@ -116,7 +116,7 @@ const mocks = vi.hoisted(() => {
       stream: agentStream,
     })),
     getWorkflow: vi.fn(),
-    runLessonGenerationWithRepair: vi.fn(async () => ({
+    runLessonGenerationWithPostProcess: vi.fn(async () => ({
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
       partialOutputStream: undefined,
       stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
@@ -179,7 +179,7 @@ vi.mock("@/mastra/skills", () => ({
   createStructuredAuthoringStreamAdapter: mocks.createStructuredAuthoringStreamAdapter,
   resolveWorkflowWithServerStandards: mocks.resolveWorkflowWithServerStandards,
   resolveWorkflowWithServerTextbook: mocks.resolveWorkflowWithServerTextbook,
-  runLessonGenerationWithRepair: mocks.runLessonGenerationWithRepair,
+  runLessonGenerationWithPostProcess: mocks.runLessonGenerationWithPostProcess,
   runServerHtmlScreenPlanningSkill: mocks.runServerHtmlScreenPlanningSkill,
   runServerHtmlGenerationSkill: mocks.runServerHtmlGenerationSkill,
 }));
@@ -290,7 +290,7 @@ describe("lesson authoring service", () => {
         ],
       },
     }));
-    mocks.runLessonGenerationWithRepair.mockResolvedValue({
+    mocks.runLessonGenerationWithPostProcess.mockResolvedValue({
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
       partialOutputStream: undefined,
       stream: mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
@@ -396,7 +396,7 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
+    expect(mocks.runLessonGenerationWithPostProcess).toHaveBeenCalledWith(
       expect.objectContaining({
         serverSide: true,
         workflow: expect.objectContaining({
@@ -533,7 +533,7 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
+    expect(mocks.runLessonGenerationWithPostProcess).toHaveBeenCalledWith(
       expect.objectContaining({
         workflow: expect.objectContaining({
           standards: expect.objectContaining({
@@ -604,7 +604,7 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(mocks.runLessonGenerationWithRepair).toHaveBeenCalledWith(
+    expect(mocks.runLessonGenerationWithPostProcess).toHaveBeenCalledWith(
       expect.objectContaining({
         workflow: expect.objectContaining({
           system: expect.stringContaining("textbook vector rpc unavailable"),
@@ -841,7 +841,9 @@ describe("lesson authoring service", () => {
     await readChunks(result.stream);
 
     const generationCall = (
-      mocks.runLessonGenerationWithRepair as unknown as ReturnType<typeof vi.fn<typeof runLessonGenerationWithRepair>>
+      mocks.runLessonGenerationWithPostProcess as unknown as ReturnType<
+        typeof vi.fn<typeof runLessonGenerationWithPostProcess>
+      >
     ).mock.calls.at(-1)?.[0];
     const serializedMessages = JSON.stringify(generationCall?.messages);
 
@@ -894,7 +896,9 @@ describe("lesson authoring service", () => {
     await readChunks(result.stream);
 
     const generationCall = (
-      mocks.runLessonGenerationWithRepair as unknown as ReturnType<typeof vi.fn<typeof runLessonGenerationWithRepair>>
+      mocks.runLessonGenerationWithPostProcess as unknown as ReturnType<
+        typeof vi.fn<typeof runLessonGenerationWithPostProcess>
+      >
     ).mock.calls.at(-1)?.[0];
     const serializedMessages = JSON.stringify(generationCall?.messages);
 

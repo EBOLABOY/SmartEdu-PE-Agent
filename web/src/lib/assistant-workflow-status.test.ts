@@ -156,7 +156,7 @@ describe("assistant-workflow-status", () => {
     expect(state.warnings).toEqual(["持久化失败"]);
   });
 
-  it("会把 Repair Pass 的步骤映射为可读中文标题", () => {
+  it("会把历史 Repair Pass 的运行步骤并入“检查教案内容”", () => {
     const message = {
       id: "assistant-4",
       role: "assistant",
@@ -192,7 +192,53 @@ describe("assistant-workflow-status", () => {
     expect(state.details).toEqual([
       expect.objectContaining({
         status: "active",
-        title: "完善教案内容",
+        title: "检查教案内容",
+        description: "正在检查教案是否完整、可用。",
+        debugStep: "validate-lesson-output",
+      }),
+    ]);
+  });
+
+  it("会把历史 Repair Pass 的失败步骤并入“检查教案内容”失败态", () => {
+    const message = {
+      id: "assistant-legacy-repair-failed",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-legacy-repair-failed",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-legacy-repair-failed",
+            mode: "lesson",
+            phase: "failed",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: [],
+            uiHints: [],
+            updatedAt: "2026-04-26T00:00:00.000Z",
+            trace: [
+              {
+                step: "lesson-repair-failed",
+                status: "failed",
+                detail: "结构化课时计划自动修复失败：legacy-error",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+
+    expect(state.status).toBe("failed");
+    expect(state.details).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        title: "检查教案内容",
+        description: "教案内容检查未通过，请调整后重试。",
+        debugStep: "validate-lesson-output",
       }),
     ]);
   });
@@ -264,6 +310,49 @@ describe("assistant-workflow-status", () => {
     ]);
   });
 
+  it("生成互动大屏时不会把服务端生成入口误显示为准备生成教案", () => {
+    const message = {
+      id: "assistant-server-html-pipeline",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-trace",
+          id: "trace-server-html-pipeline",
+          data: {
+            protocolVersion: "structured-v1",
+            requestId: "request-server-html-pipeline",
+            mode: "html",
+            phase: "generation",
+            responseTransport: "structured-data-part",
+            requestedMarket: "cn-compulsory-2022",
+            resolvedMarket: "cn-compulsory-2022",
+            warnings: [],
+            uiHints: [],
+            updatedAt: "2026-04-30T00:00:00.000Z",
+            trace: [
+              {
+                step: "server-deterministic-entry",
+                status: "success",
+                detail: "已进入服务端 HTML 流式生成管线，不再通过 Agent 工具提交 HTML。",
+              },
+            ],
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const state = buildAssistantWorkflowState(message);
+
+    expect(state.details).toEqual([
+      expect.objectContaining({
+        title: "准备生成互动大屏",
+        description: "正在根据已确认的教案制作互动大屏。",
+        status: "complete",
+        debugStep: "server-deterministic-entry",
+      }),
+    ]);
+  });
+
   it("课标检索为空时不向老师展示 embedding 等技术词", () => {
     const message = {
       id: "assistant-empty-standards",
@@ -297,7 +386,7 @@ describe("assistant-workflow-status", () => {
               {
                 step: "validate-lesson-output",
                 status: "success",
-                detail: "结构化课时计划已通过最终 schema 与业务校验。",
+                detail: "结构化课时计划已通过最终 schema 检查。",
               },
               {
                 step: "generation-finished",

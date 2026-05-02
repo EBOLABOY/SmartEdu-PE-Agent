@@ -3,6 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 
 import type { HtmlScreenPlan, HtmlScreenSectionPlan } from "@/lib/html-screen-plan-contract";
+import {
+  buildArtifactImageObjectKey,
+  buildArtifactImageProxyUrl,
+} from "@/lib/s3/artifact-image-url";
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import { putS3Object } from "@/lib/s3/s3-rest-client";
 
@@ -21,17 +25,6 @@ export type HtmlScreenVisualAssetResult = {
   skippedReason?: string;
   warnings: string[];
 };
-
-function buildPublicS3ObjectUrl(input: {
-  bucket: string;
-  endpoint: string;
-  key: string;
-}) {
-  const endpoint = input.endpoint.replace(/\/+$/, "");
-  const path = [input.bucket, ...input.key.split("/")].map(encodeURIComponent).join("/");
-
-  return `${endpoint}/${path}`;
-}
 
 function shouldGenerateVisualAsset(section: HtmlScreenSectionPlan) {
   return (
@@ -144,13 +137,13 @@ async function storeScreenVisualAsset(input: {
     throw new Error("S3 artifact storage is not configured.");
   }
 
-  const key = [
-    "projects",
-    input.projectId,
-    "html-screen-visuals",
-    input.requestId,
-    `${String(input.sectionIndex + 1).padStart(2, "0")}-${input.contentHash.slice(0, 12)}.png`,
-  ].join("/");
+  const filename = `${String(input.sectionIndex + 1).padStart(2, "0")}-${input.contentHash.slice(0, 12)}.png`;
+  const key = buildArtifactImageObjectKey({
+    filename,
+    kind: "html-screen-visuals",
+    projectId: input.projectId,
+    requestId: input.requestId,
+  });
 
   await putS3Object({
     body: input.buffer,
@@ -159,10 +152,11 @@ async function storeScreenVisualAsset(input: {
     key,
   });
 
-  return buildPublicS3ObjectUrl({
-    bucket: config.bucket,
-    endpoint: config.endpoint,
-    key,
+  return buildArtifactImageProxyUrl({
+    filename,
+    kind: "html-screen-visuals",
+    projectId: input.projectId,
+    requestId: input.requestId,
   });
 }
 

@@ -201,7 +201,7 @@ export const competitionLessonPlanRowSchema = z
             .strict(),
         ),
         organization: competitionLessonTextBlockSchema,
-        diagramAssets: z.array(competitionLessonDiagramAssetSchema).max(3).optional(),
+        diagramAssets: z.array(competitionLessonDiagramAssetSchema).max(9).optional(),
         time: lessonTimeString,
         intensity: nonEmptyString,
       })
@@ -279,6 +279,30 @@ export const competitionLessonPlanSchema = z
   })
   .strict();
 
+export const competitionLessonHeaderSchema = competitionLessonPlanSchema.pick({
+  meta: true,
+  subtitle: true,
+  teacher: true,
+  title: true,
+});
+
+export const competitionLessonTeachingDesignSchema = competitionLessonPlanSchema.pick({
+  flowSummary: true,
+  keyDifficultPoints: true,
+  learningObjectives: true,
+  narrative: true,
+});
+
+export const competitionLessonAssessmentLoadSchema = competitionLessonPlanSchema.pick({
+  evaluation: true,
+  loadEstimate: true,
+});
+
+export const competitionLessonExecutionSchema = competitionLessonPlanSchema.pick({
+  periodPlan: true,
+  venueEquipment: true,
+});
+
 export const agentLessonGenerationSchema = z
   .object({
     _thinking_process: z
@@ -293,6 +317,10 @@ export const agentLessonGenerationSchema = z
   .strict();
 
 export type CompetitionLessonPlan = z.infer<typeof competitionLessonPlanSchema>;
+export type CompetitionLessonHeader = z.infer<typeof competitionLessonHeaderSchema>;
+export type CompetitionLessonTeachingDesign = z.infer<typeof competitionLessonTeachingDesignSchema>;
+export type CompetitionLessonAssessmentLoad = z.infer<typeof competitionLessonAssessmentLoadSchema>;
+export type CompetitionLessonExecution = z.infer<typeof competitionLessonExecutionSchema>;
 export type AgentLessonGenerationResult = z.infer<typeof agentLessonGenerationSchema>;
 export type CompetitionLessonPlanRow = z.infer<typeof competitionLessonPlanRowSchema>;
 export type CompetitionLessonLoadEstimate = z.infer<typeof competitionLessonLoadEstimateSchema>;

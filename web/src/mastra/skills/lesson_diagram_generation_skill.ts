@@ -8,6 +8,10 @@ import {
   type CompetitionLessonPlan,
   type CompetitionLessonPlanRow,
 } from "@/lib/competition-lesson-contract";
+import {
+  buildArtifactImageObjectKey,
+  buildArtifactImageProxyUrl,
+} from "@/lib/s3/artifact-image-url";
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import { putS3Object } from "@/lib/s3/s3-rest-client";
 
@@ -24,6 +28,7 @@ const DIAGRAM_PANEL_COUNT = DIAGRAM_GRID_COLUMNS * DIAGRAM_GRID_ROWS;
 type DiagramPanelPlan = {
   alt: string;
   caption: string;
+  contentIndex?: number;
   index: number;
   prompt: string;
   row: CompetitionLessonPlanRow;
@@ -71,19 +76,18 @@ function inferDiagramKind(row: CompetitionLessonPlanRow): CompetitionLessonDiagr
   return "formation";
 }
 
-function selectDiagramRows(lessonPlan: CompetitionLessonPlan) {
-  return lessonPlan.periodPlan.rows.slice(0, DIAGRAM_PANEL_COUNT);
-}
-
 function buildPanelPrompt(input: {
+  focusContent?: string;
   lessonPlan: CompetitionLessonPlan;
   row: CompetitionLessonPlanRow;
   rowIndex: number;
 }) {
-  const title = input.row.content[0] ?? input.row.structure;
+  const title = input.focusContent ?? input.row.content[0] ?? input.row.structure;
   const prompt = [
     `第 ${input.rowIndex + 1} 阶段：${title}`,
     `课堂结构：${input.row.structure}`,
+    input.focusContent ? `本图重点内容：${input.focusContent}` : null,
+    input.focusContent ? `本阶段完整内容：${compactLines(input.row.content)}` : null,
     `时间与强度：${input.row.time}，${input.row.intensity}`,
     `教师活动：${compactLines(input.row.methods.teacher)}`,
     `学生活动：${compactLines(input.row.methods.students)}`,
@@ -92,22 +96,48 @@ function buildPanelPrompt(input: {
       ...input.lessonPlan.venueEquipment.venue,
       ...input.lessonPlan.venueEquipment.equipment,
     ])}`,
-  ].join("\n");
+    input.focusContent ? "请只表现本图重点内容对应的组织队形、移动路线和安全边界，不要把本阶段全部内容挤在同一张图里。" : null,
+  ].filter(Boolean).join("\n");
 
   return prompt;
 }
 
 function buildDiagramPanelPlans(lessonPlan: CompetitionLessonPlan): DiagramPanelPlan[] {
-  return selectDiagramRows(lessonPlan).map((row, index) => {
-    const caption = row.content[0] ?? `${row.structure} ${index + 1}`;
+  const panels: Omit<DiagramPanelPlan, "index">[] = [];
 
+  lessonPlan.periodPlan.rows.forEach((row, rowIndex) => {
+    if (panels.length >= DIAGRAM_PANEL_COUNT) {
+      return;
+    }
+
+    const contentItems =
+      row.structure === "基本部分" && row.content.length > 1
+        ? row.content.slice(0, DIAGRAM_PANEL_COUNT - panels.length)
+        : [row.content[0] ?? `${row.structure} ${rowIndex + 1}`];
+
+    contentItems.forEach((content, contentIndex) => {
+      if (panels.length >= DIAGRAM_PANEL_COUNT) {
+        return;
+      }
+
+      const caption = content || `${row.structure} ${rowIndex + 1}`;
+      const focusContent = row.structure === "基本部分" ? caption : undefined;
+
+      panels.push({
+        alt: `第 ${rowIndex + 1} 阶段教学组织站位图：${caption}`,
+        caption,
+        contentIndex: row.structure === "基本部分" ? contentIndex : undefined,
+        prompt: buildPanelPrompt({ focusContent, lessonPlan, row, rowIndex }),
+        row,
+        rowIndex,
+      });
+    });
+  });
+
+  return panels.map((panel, index) => {
     return {
-      alt: `第 ${index + 1} 阶段教学组织站位图：${caption}`,
-      caption,
+      ...panel,
       index: index + 1,
-      prompt: buildPanelPrompt({ lessonPlan, row, rowIndex: index }),
-      row,
-      rowIndex: index,
     };
   });
 }
@@ -239,17 +269,6 @@ async function splitNineGridImage(image: GeneratedGridImage) {
   };
 }
 
-function buildPublicS3ObjectUrl(input: {
-  bucket: string;
-  endpoint: string;
-  key: string;
-}) {
-  const endpoint = input.endpoint.replace(/\/+$/, "");
-  const path = [input.bucket, ...input.key.split("/")].map(encodeURIComponent).join("/");
-
-  return `${endpoint}/${path}`;
-}
-
 async function storeDiagramPanelImage(input: {
   buffer: Buffer;
   contentHash: string;
@@ -263,13 +282,13 @@ async function storeDiagramPanelImage(input: {
     throw new Error("S3 artifact storage is not configured.");
   }
 
-  const key = [
-    "projects",
-    input.projectId,
-    "lesson-diagrams",
-    input.requestId,
-    `${String(input.panelIndex).padStart(2, "0")}-${input.contentHash.slice(0, 12)}.png`,
-  ].join("/");
+  const filename = `${String(input.panelIndex).padStart(2, "0")}-${input.contentHash.slice(0, 12)}.png`;
+  const key = buildArtifactImageObjectKey({
+    filename,
+    kind: "lesson-diagrams",
+    projectId: input.projectId,
+    requestId: input.requestId,
+  });
 
   await putS3Object({
     body: input.buffer,
@@ -279,10 +298,11 @@ async function storeDiagramPanelImage(input: {
   });
 
   return {
-    imageUrl: buildPublicS3ObjectUrl({
-      bucket: config.bucket,
-      endpoint: config.endpoint,
-      key,
+    imageUrl: buildArtifactImageProxyUrl({
+      filename,
+      kind: "lesson-diagrams",
+      projectId: input.projectId,
+      requestId: input.requestId,
     }),
     storageMode: "s3-compatible" as const,
   };
@@ -294,16 +314,18 @@ function createLessonWithDiagramAssets(input: {
   panels: DiagramPanelPlan[];
 }) {
   const rows = input.lessonPlan.periodPlan.rows.map((row, rowIndex) => {
-    const panelIndex = input.panels.findIndex((panel) => panel.rowIndex === rowIndex);
-    const asset = panelIndex >= 0 ? input.assets[panelIndex] : undefined;
+    const rowAssets = input.panels
+      .map((panel, panelIndex) => (panel.rowIndex === rowIndex ? input.assets[panelIndex] : undefined))
+      .filter((asset): asset is CompetitionLessonDiagramAsset => Boolean(asset))
+      .slice(0, DIAGRAM_PANEL_COUNT);
 
-    if (!asset) {
+    if (rowAssets.length === 0) {
       return row;
     }
 
     return {
       ...row,
-      diagramAssets: [asset],
+      diagramAssets: rowAssets,
     };
   });
 

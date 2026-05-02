@@ -34,7 +34,7 @@ export type AssistantWorkflowState = {
   warnings: string[];
 };
 
-const STEP_TITLES: Record<string, string> = {
+const CURRENT_STEP_TITLES: Record<string, string> = {
   "retrieve-standards-context": "查找课程标准",
   "resolve-standards-market": "确认课程标准",
   "collect-lesson-requirements": "收集上课信息",
@@ -49,9 +49,6 @@ const STEP_TITLES: Record<string, string> = {
   "agent-stream-started": "开始生成内容",
   "stream-lesson-draft": "生成教案初稿",
   "validate-lesson-output": "检查教案内容",
-  "lesson-repair-started": "完善教案内容",
-  "lesson-repair-finished": "完成教案完善",
-  "lesson-repair-failed": "教案完善失败",
   "convert-lesson-json-artifact": "整理教案预览",
   "extract-html-document": "整理大屏页面",
   "persist-artifact-version": "保存版本",
@@ -60,6 +57,16 @@ const STEP_TITLES: Record<string, string> = {
   "generation-stream-exception": "生成异常",
   "agent-stream-error": "生成异常",
   "agent-stream-abort": "生成已中断",
+};
+
+const STEP_TITLES: Record<string, string> = CURRENT_STEP_TITLES;
+
+// 仅兼容历史 trace 回放。当前生成链路已不再写入 lesson-repair-* 步骤；
+// 旧步骤统一并入“检查教案内容”，避免 UI 再出现已废弃的 repair 环节。
+const LEGACY_TRACE_STEP_ALIASES: Record<string, string> = {
+  "lesson-repair-started": "validate-lesson-output",
+  "lesson-repair-finished": "validate-lesson-output",
+  "lesson-repair-failed": "validate-lesson-output",
 };
 
 const TRACE_STEPS_OWNED_BY_AI_SDK_PARTS = new Set([
@@ -104,8 +111,12 @@ function toDetailStatus(status: WorkflowTraceEntry["status"]): AssistantWorkflow
   return "complete";
 }
 
-function toDetailTitle(step: string) {
-  return STEP_TITLES[step] ?? step.replaceAll("-", " ");
+function toDetailTitle(entry: WorkflowTraceEntry) {
+  if (entry.step === "server-deterministic-entry") {
+    return entry.detail.includes("HTML") ? "准备生成互动大屏" : "准备生成教案";
+  }
+
+  return STEP_TITLES[entry.step] ?? entry.step.replaceAll("-", " ");
 }
 
 function getCountFromDetail(detail: string) {
@@ -167,13 +178,19 @@ export function formatWorkflowTraceDetailForTeacher(entry: WorkflowTraceEntry) {
         ? "右侧正在同步教案初稿。"
         : "教案初稿已同步完成。";
     case "validate-lesson-output":
-      return entry.status === "running"
-        ? "正在检查教案是否完整、可用。"
-        : "教案内容已检查通过。";
-    case "lesson-repair-started":
-      return "正在补齐教案里不完整的地方。";
-    case "lesson-repair-finished":
-      return "教案内容已补齐。";
+      if (entry.status === "running") {
+        return "正在检查教案是否完整、可用。";
+      }
+
+      if (entry.status === "failed") {
+        return "教案内容检查未通过，请调整后重试。";
+      }
+
+      if (entry.status === "blocked") {
+        return "教案内容检查暂未完成，请稍后再试。";
+      }
+
+      return "教案内容已检查通过。";
     case "convert-lesson-json-artifact":
       return "正在整理右侧教案预览。";
     case "extract-html-document":
@@ -197,18 +214,44 @@ export function formatWorkflowTraceDetailForTeacher(entry: WorkflowTraceEntry) {
   }
 }
 
+function normalizeWorkflowTraceEntry(entry: WorkflowTraceEntry): WorkflowTraceEntry {
+  const aliasedStep = LEGACY_TRACE_STEP_ALIASES[entry.step];
+
+  if (!aliasedStep) {
+    return entry;
+  }
+
+  return {
+    ...entry,
+    step: aliasedStep,
+  };
+}
+
+function getDisplayTraceEntries(trace: WorkflowTraceData | undefined) {
+  if (!trace) {
+    return [];
+  }
+
+  const dedupedEntries = new Map<string, WorkflowTraceEntry>();
+
+  trace.trace
+    .filter((entry) => !TRACE_STEPS_OWNED_BY_AI_SDK_PARTS.has(entry.step))
+    .map(normalizeWorkflowTraceEntry)
+    .forEach((entry) => {
+      dedupedEntries.set(entry.step, entry);
+    });
+
+  return Array.from(dedupedEntries.values());
+}
+
 function buildDetails(trace: WorkflowTraceData | undefined): AssistantWorkflowDetail[] {
-  return (
-    trace?.trace
-      .filter((entry) => !TRACE_STEPS_OWNED_BY_AI_SDK_PARTS.has(entry.step))
-      .map((entry, index) => ({
-        id: `${entry.step}-${entry.timestamp ?? index}`,
-        status: toDetailStatus(entry.status),
-        title: toDetailTitle(entry.step),
-        description: formatWorkflowTraceDetailForTeacher(entry),
-        debugStep: entry.step,
-      })) ?? []
-  );
+  return getDisplayTraceEntries(trace).map((entry, index) => ({
+    id: `${entry.step}-${entry.timestamp ?? index}`,
+    status: toDetailStatus(entry.status),
+    title: toDetailTitle(entry),
+    description: formatWorkflowTraceDetailForTeacher(entry),
+    debugStep: entry.step,
+  }));
 }
 
 function isSubmitToolPart(part: SmartEduUIMessage["parts"][number]) {

@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+import { isArtifactImageProxyUrl } from "@/lib/s3/artifact-image-url";
+
+const imageResourceUrlSchema = z
+  .string()
+  .trim()
+  .refine((value) => z.string().url().safeParse(value).success || isArtifactImageProxyUrl(value), {
+    message: "图片资源必须是标准 URL 或受控 artifact 图片代理路径。",
+  });
+
 export const htmlScreenSectionPlanSchema = z
   .object({
     title: z.string().trim().min(1).max(160),
@@ -22,7 +31,7 @@ export const htmlScreenSectionPlanSchema = z
         aspectRatio: z.literal("16:9").optional(),
         caption: z.string().trim().min(1).max(500).optional(),
         height: z.number().int().positive().optional(),
-        imageUrl: z.string().trim().url(),
+        imageUrl: imageResourceUrlSchema,
         prompt: z.string().trim().min(1).max(2000).optional(),
         source: z.enum(["ai-generated", "uploaded"]),
         width: z.number().int().positive().optional(),

@@ -4,6 +4,10 @@ import {
   type PeTeacherContext,
 } from "@/lib/lesson-authoring-contract";
 import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
+import {
+  HTML_SCREEN_DESIGN_DIRECTION,
+  HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
+} from "@/lib/html-screen-visual-language";
 
 import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "../agents/guangdong_competition_lesson_format";
 import { formatLessonScreenPlanForPrompt } from "../agents/html_screen_planner";
@@ -12,6 +16,7 @@ import type { PromptSkill, PromptSkillWithInput } from "./types";
 type PeTeacherPromptOptions = {
   mode?: GenerationMode;
   lessonPlan?: string;
+  responseStage?: "tool-use" | "generation";
   screenPlan?: HtmlScreenPlan;
 };
 
@@ -55,17 +60,29 @@ const lessonInputDefaultsSkill: PromptSkill = {
 3. 不要因为用户未说明器材而先追问；应根据课程内容、场地和人数自动补齐 3-4 项高频核心器材。
 4. 场地优先来自用户输入或教师上下文；仍缺失时，只选择一个最匹配的核心教学场地，不要同时写多个场地。
 5. 自动补全的人数、课时、场地、器材不得与用户明确输入冲突。
-`,
+  `,
 };
 
-const competitionLessonFormatSkill: PromptSkill = {
-  id: "competition-lesson-format",
-  description: "注入广东省比赛体育课时计划格式和 JSON 结构约束。",
-  render: () => `
+function renderCompetitionLessonFormatPrompt(responseStage: "tool-use" | "generation") {
+  if (responseStage === "generation") {
+    return `
 ${GUANGDONG_COMPETITION_LESSON_FORMAT}
 
-CompetitionLessonPlan JSON 约束：
-1. JSON 键名必须使用 schema 中的英文键名，不得输出中文键名。
+正式生成（Generation）阶段输出约束：
+1. 当前任务是服务端正式生成，不是聊天回复，也不是工具参数拼装。
+2. 你必须只输出“自定义教案行协议”纯文本，不要输出 JSON、Markdown 表格、HTML、XML、代码围栏或 artifact 标签。
+3. 协议正文必须围绕最终 CompetitionLessonPlan 的业务字段生成：指导思想、教材分析、学情分析、三维目标、教学重难点、教学流程、评价、运动负荷、场地器材、课后作业和教学反思。
+4. 基本部分允许连续输出多个 @flow 块；每个 @flow 只承载一个自然教学活动，便于打印版和互动大屏完整复用。
+5. @load 块除负荷等级、心率区间、平均心率、练习密度和依据外，可额外通过 chartPoints 键值对提供心率曲线点。
+6. 教学重难点、课后作业和教学反思应优先按具体项目、学段和课堂设计直接生成，不要回退到固定占位模板。
+`;
+  }
+
+  return `
+${GUANGDONG_COMPETITION_LESSON_FORMAT}
+
+工具调用（Tool Use）阶段结构化约束：
+1. 当且仅当系统明确要求输出 CompetitionLessonPlan JSON 或工具参数时，JSON 键名必须使用 schema 中的英文键名，不得输出中文键名。
 2. lessonPlan 只能包含 title、subtitle、teacher、meta、narrative、learningObjectives、keyDifficultPoints、flowSummary、evaluation、loadEstimate、venueEquipment、periodPlan。
 3. teacher 必须包含 school 和 name；若用户未提供，填写“未提供学校”“未提供教师”。
 4. meta 必须包含 topic、lessonNo、studentCount；可包含 grade、level。
@@ -78,8 +95,16 @@ CompetitionLessonPlan JSON 约束：
 11. periodPlan 必须包含 mainContent、safety、rows、homework、reflection。
 12. periodPlan.rows 至少包含准备部分、基本部分、结束部分，并且每行只能包含 structure、content、methods、organization、time、intensity。
 13. periodPlan.rows 的 time 必须统一使用“X分钟”或“X-Y分钟”，不要使用 \`'\`、\`min\` 或纯数字。
-14. 只允许输出合法 JSON 对象，不要输出 Markdown 表格、HTML、XML 或 artifact 标签。
-`,
+14. 基本部分 row.content 应使用字符串数组表达本课需要的若干自然小标题或活动名，名称和数量由课题、学情和课堂设计决定，不要套固定模板。
+15. periodPlan.rows 的教学内容、组织方式和课堂节奏由模型依据课题自由设计，但不得违反 schema、课标和安全要求。
+16. 只允许输出合法 JSON 对象，不要输出 Markdown 表格、HTML、XML 或 artifact 标签。
+`;
+}
+
+const competitionLessonFormatSkill: PromptSkill = {
+  id: "competition-lesson-format",
+  description: "注入广东省比赛体育课时计划格式，并按阶段切换正式生成或工具调用约束。",
+  render: () => renderCompetitionLessonFormatPrompt("tool-use"),
 };
 
 const agenticToolUseSkill: PromptSkill = {
@@ -164,7 +189,7 @@ HTML 设计与交互约束：
 2. 首页必须作为 AI 分镜的第 1 页生成，像简洁 PPT 首页：大标题居中，下方显示学校和教师姓名，并提供醒目的“开始上课”按钮视觉；服务端只负责按钮兜底和控制壳。
 3. 必须采用全屏自适应多页结构，自动适应屏幕大小，不再固定 16:9；不得生成单页长文或普通网页信息流。
 4. 必须先定义统一 visualSystem，并让首页、热身、学练、比赛、体能、放松等页面共享同一套色彩、字体层级、倒计时、按钮和图形语言。
-5. 视觉方向默认采用 Apple Inc. 顶级 UI 设计师视角，以 iOS 18 风格实现横板课堂大屏：毛玻璃效果、Gaussian blur/高斯模糊、动态渐变、细腻阴影、柔和高光、圆角层级和轻量动效，但必须服务体育教学清晰度。
+5. ${HTML_SCREEN_DESIGN_DIRECTION}
 6. 最终 HTML 由服务端组合为包含完整 CSS 和 JavaScript 的单文件；单页分镜只生成 HTML 内容片段，不自行输出完整文档、style 或 script。
 7. 必须按课时计划中的主要教学环节拆分页，常见节奏可参考：热身、学练、比赛或展示、体能练习、放松拉伸。
 8. 学习页面和练习页面原则上合二为一，只展示学习内容、动作认知和练习任务，不拆成两个文字讲解页面。
@@ -174,6 +199,7 @@ HTML 设计与交互约束：
 12. 每页必须带与课时计划一致的倒计时；1 分钟 = 60 秒；时间缺失时按合理估算并标注“估算时间”；首页不参与课堂环节倒计时。
 13. 视觉风格应简洁干练、沉浸、美观、有效：大字号、高对比、强层级、适合远距离观看，不花哨、不堆装饰。
 14. 所有可见文本必须是简体中文，不得出现英文控制台风格文案。
+15. ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
 
 ${renderScreenPlanPrompt(screenPlan)}
 
@@ -182,7 +208,10 @@ ${lessonPlan ?? "未提供已确认课时计划，请要求用户先确认课时
 `,
 };
 
-function renderContextPrompt(context?: PeTeacherContext) {
+function renderContextPrompt(
+  context: PeTeacherContext | undefined,
+  responseStage: "tool-use" | "generation",
+) {
   if (!context || Object.keys(context).length === 0) {
     return "";
   }
@@ -199,14 +228,23 @@ function renderContextPrompt(context?: PeTeacherContext) {
     context.equipment?.length ? `- 器材：${context.equipment.join("、")}` : null,
   ].filter(Boolean);
 
+  const teacherFieldInstruction =
+    responseStage === "generation"
+      ? "若提供了学校名称和教师姓名，正式生成协议的 @lesson teacher_school 和 teacher_name 必须同步填写。"
+      : "若提供了学校名称和教师姓名，JSON 的 teacher.school 和 teacher.name 必须同步填写。";
+  const contextUsageInstruction =
+    responseStage === "generation"
+      ? "正式生成时，用户资料只作为系统上下文使用，不要改写成教师本轮原话，也不要额外编造成 request 内容。"
+      : "调用生成工具时，用户资料应放入 context 对象或直接依赖系统上下文，不要拼接到 request 字段里。";
+
   return `当前用户资料上下文（可用于填写教师信息和默认年级；这不是教师本轮原话，不要改写成 request）：
 ${contextLines.join("\n")}
 
 用户资料补充要求：
-1. 若提供了学校名称和教师姓名，JSON 的 teacher.school 和 teacher.name 必须同步填写。
+1. ${teacherFieldInstruction}
 2. 若提供了水平和任教年级，副标题应采用“——水平X·X年级”格式，基础信息也要同步填写。
 3. 若当前用户资料上下文与本轮用户明确输入冲突，以本轮用户明确输入为准，但保留可复用的教师与学校信息。
-4. 调用生成工具时，用户资料应放入 context 对象或直接依赖系统上下文，不要拼接到 request 字段里。`;
+4. ${contextUsageInstruction}`;
 }
 
 function renderCurrentArtifactPrompt(options?: PeTeacherPromptOptions) {
@@ -233,15 +271,20 @@ function renderCurrentArtifactPrompt(options?: PeTeacherPromptOptions) {
   return parts.join("\n\n");
 }
 
-export const PE_TEACHER_SYSTEM_PROMPT = [
-  baseTeacherPersonaSkill.render(),
-  agenticToolUseSkill.render(),
-  lessonInputDefaultsSkill.render(),
-  competitionLessonFormatSkill.render(),
-].join("\n\n");
+function buildPeTeacherCoreSystemPrompt(responseStage: "tool-use" | "generation") {
+  return [
+    baseTeacherPersonaSkill.render(),
+    agenticToolUseSkill.render(),
+    lessonInputDefaultsSkill.render(),
+    renderCompetitionLessonFormatPrompt(responseStage),
+  ].join("\n\n");
+}
+
+export const PE_TEACHER_SYSTEM_PROMPT = buildPeTeacherCoreSystemPrompt("tool-use");
 
 export function buildPeTeacherSystemPrompt(context?: PeTeacherContext, options?: PeTeacherPromptOptions) {
   const mode = options?.mode ?? "lesson";
+  const responseStage = options?.responseStage ?? "tool-use";
   const modePrompt =
     mode === "html"
       ? htmlScreenSkill.render({
@@ -249,10 +292,12 @@ export function buildPeTeacherSystemPrompt(context?: PeTeacherContext, options?:
         screenPlan: options?.screenPlan,
       })
       : lessonAuthoringSkill.render();
-  const contextPrompt = renderContextPrompt(context);
+  const contextPrompt = renderContextPrompt(context, responseStage);
   const currentArtifactPrompt = renderCurrentArtifactPrompt(options);
 
-  return [PE_TEACHER_SYSTEM_PROMPT, contextPrompt, currentArtifactPrompt, modePrompt].filter(Boolean).join("\n\n");
+  return [buildPeTeacherCoreSystemPrompt(responseStage), contextPrompt, currentArtifactPrompt, modePrompt]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export const peTeacherPromptSkills = {

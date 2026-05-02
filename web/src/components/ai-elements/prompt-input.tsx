@@ -40,7 +40,6 @@ import {
   SquareIcon,
   XIcon,
 } from "lucide-react";
-import { nanoid } from "nanoid";
 import type {
   ChangeEvent,
   ChangeEventHandler,
@@ -64,6 +63,10 @@ import {
   useRef,
   useState,
 } from "react";
+
+function createLocalId() {
+  return globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 // ============================================================================
 // Provider Context & Types
@@ -162,7 +165,7 @@ export const PromptInputProvider = ({
       ...prev,
       ...incoming.map((file) => ({
         filename: file.name,
-        id: nanoid(),
+        id: createLocalId(),
         mediaType: file.type,
         type: "file" as const,
         url: URL.createObjectURL(file),
@@ -456,7 +459,7 @@ export const PromptInput = ({
         for (const file of capped) {
           next.push({
             filename: file.name,
-            id: nanoid(),
+            id: createLocalId(),
             mediaType: file.type,
             type: "file",
             url: URL.createObjectURL(file),
@@ -663,7 +666,7 @@ export const PromptInput = ({
         const array = Array.isArray(incoming) ? incoming : [incoming];
         setReferencedSources((prev) => [
           ...prev,
-          ...array.map((s) => ({ ...s, id: nanoid() })),
+          ...array.map((s) => ({ ...s, id: createLocalId() })),
         ]);
       },
       clear: clearReferencedSources,

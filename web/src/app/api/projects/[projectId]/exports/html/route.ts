@@ -166,7 +166,9 @@ export async function POST(
     await requireProjectWriteAccess(supabase, parsedProjectId.data);
 
     const filename = sanitizeFilename(parsedBody.data.filename);
-    const securedHtml = injectBrowserSandboxCsp(parsedBody.data.html);
+    const securedHtml = injectBrowserSandboxCsp(parsedBody.data.html, {
+      imageSourceOrigin: new URL(request.url).origin,
+    });
     const htmlBuffer = Buffer.from(securedHtml, "utf8");
     const checksum = createHash("sha256").update(htmlBuffer).digest("hex");
     const objectKey = buildObjectKey(parsedProjectId.data, filename);

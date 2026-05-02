@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   deleteS3Object,
+  getS3Object,
   getS3ObjectText,
   putS3Object,
   S3ObjectError,
@@ -32,6 +33,8 @@ function getFetchCall(index = 0) {
 }
 
 function createResponse(input: {
+  body?: Buffer | string;
+  headers?: Record<string, string>;
   ok: boolean;
   status?: number;
   statusText?: string;
@@ -41,6 +44,12 @@ function createResponse(input: {
     ok: input.ok,
     status: input.status ?? (input.ok ? 200 : 500),
     statusText: input.statusText ?? (input.ok ? "OK" : "Error"),
+    arrayBuffer: vi.fn(async () => {
+      const body = input.body ?? input.text ?? "";
+      const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+      return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    }),
+    headers: new Headers(input.headers),
     text: vi.fn(async () => input.text ?? ""),
   } as unknown as Response;
 }
@@ -107,6 +116,38 @@ describe("S3 REST client", () => {
     );
     expect(init.method).toBe("GET");
     expect(init.body).toBeUndefined();
+    expect(headers.get("authorization")).toContain(
+      "SignedHeaders=host;x-amz-content-sha256;x-amz-date",
+    );
+  });
+
+  it("signs GET requests and returns binary object metadata", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      createResponse({
+        body: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        headers: {
+          "content-length": "4",
+          "content-type": "image/png",
+        },
+        ok: true,
+      }),
+    );
+
+    const object = await getS3Object({
+      config: CONFIG,
+      key: "projects/p1/lesson-diagrams/request-1/01-image.png",
+    });
+
+    const { init, url } = getFetchCall();
+    const headers = init.headers as Headers;
+
+    expect(object.body).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    expect(object.contentLength).toBe("4");
+    expect(object.contentType).toBe("image/png");
+    expect(url.toString()).toBe(
+      "https://s3.example.com/artifact-bucket/projects/p1/lesson-diagrams/request-1/01-image.png",
+    );
+    expect(init.method).toBe("GET");
     expect(headers.get("authorization")).toContain(
       "SignedHeaders=host;x-amz-content-sha256;x-amz-date",
     );

@@ -11,9 +11,11 @@ import {
 import {
   buildSandboxFrameStyle,
   calculateSandboxScale,
+  resolveSandboxViewportPreset,
   SANDBOX_DESIGN_HEIGHT,
   SANDBOX_DESIGN_WIDTH,
 } from "@/lib/sandbox-viewport";
+import { isArtifactImageProxyUrl } from "@/lib/s3/artifact-image-url";
 
 interface IframeSandboxProps {
   htmlContent: string;
@@ -21,6 +23,12 @@ interface IframeSandboxProps {
 
 type SandboxRenderState = SandboxSecurityReport & {
   sandboxedHtml: string;
+};
+
+type ResolvedSandboxHtml = {
+  html: string;
+  objectUrls: string[];
+  warnings: string[];
 };
 
 function useSandboxViewport() {
@@ -36,9 +44,10 @@ function useSandboxViewport() {
     const updateViewport = () => {
       const { width, height } = containerElement.getBoundingClientRect();
       const fullscreen = document.fullscreenElement === containerElement;
+      const viewportPreset = resolveSandboxViewportPreset(fullscreen);
 
       setIsFullscreen(fullscreen);
-      setScale(calculateSandboxScale({ width, height }, fullscreen ? "cover" : "contain"));
+      setScale(calculateSandboxScale({ width, height }, viewportPreset.fitMode));
     };
 
     updateViewport();
@@ -67,7 +76,9 @@ function useSandboxViewport() {
 
   return [
     setContainerElement,
-    buildSandboxFrameStyle(scale),
+    buildSandboxFrameStyle(scale, undefined, {
+      verticalAlign: resolveSandboxViewportPreset(isFullscreen).verticalAlign,
+    }),
     isFullscreen,
     toggleFullscreen,
   ] as const;
@@ -97,13 +108,70 @@ function BlockedSandboxState({ blockedReasons }: { blockedReasons: string[] }) {
 function SandboxFrame({ frameStyle, htmlContent }: { frameStyle: CSSProperties; htmlContent: string }) {
   return (
     <iframe
-      className="absolute left-1/2 top-0 border-none bg-white"
+      className="absolute border-none bg-white"
       sandbox="allow-scripts"
       srcDoc={htmlContent}
       style={frameStyle}
       title="互动大屏预览"
     />
   );
+}
+
+async function resolveArtifactImagesForSandboxPreview(
+  htmlContent: string,
+  signal: AbortSignal,
+): Promise<ResolvedSandboxHtml> {
+  const document = new DOMParser().parseFromString(htmlContent, "text/html");
+  const objectUrls: string[] = [];
+  const warnings: string[] = [];
+  const imageElements = Array.from(document.querySelectorAll<HTMLImageElement>("img[src]"));
+
+  await Promise.all(
+    imageElements.map(async (imageElement) => {
+      const source = imageElement.getAttribute("src");
+
+      if (!source || !isArtifactImageProxyUrl(source)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(source, {
+          credentials: "include",
+          signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+
+        const contentType = response.headers.get("content-type") ?? "";
+
+        if (!contentType.startsWith("image/")) {
+          throw new Error(`unexpected content-type: ${contentType || "unknown"}`);
+        }
+
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+
+        objectUrls.push(objectUrl);
+        imageElement.setAttribute("src", objectUrl);
+      } catch (error) {
+        if (signal.aborted) {
+          return;
+        }
+
+        warnings.push(
+          `受控图片资源加载失败：${source}（${error instanceof Error ? error.message : "unknown-error"}）`,
+        );
+      }
+    }),
+  );
+
+  return {
+    html: `<!DOCTYPE html>\n${document.documentElement.outerHTML}`,
+    objectUrls,
+    warnings,
+  };
 }
 
 function FullscreenButton({
@@ -148,7 +216,7 @@ function SandboxChrome({
   }
 
   return (
-    <div className="pointer-events-none absolute left-1/2 top-0 z-10" style={frameStyle}>
+    <div className="pointer-events-none absolute z-10" style={frameStyle}>
       <div className="absolute right-4 top-4">
         <FullscreenButton isFullscreen={isFullscreen} onToggleFullscreen={onToggleFullscreen} />
       </div>
@@ -174,16 +242,37 @@ function useSandboxSecurity(htmlContent: string) {
     }
 
     let cancelled = false;
+    const abortController = new AbortController();
+    let objectUrls: string[] = [];
     const securityReport = analyzeBrowserSandboxHtml(htmlContent);
-    const nextReport = {
-      ...securityReport,
-      sandboxedHtml:
-        securityReport.blockedReasons.length === 0
-          ? injectBrowserSandboxCsp(htmlContent)
-          : "",
+
+    const prepareSandboxHtml = async () => {
+      if (securityReport.blockedReasons.length > 0) {
+        return {
+          ...securityReport,
+          sandboxedHtml: "",
+        };
+      }
+
+      const resolved = await resolveArtifactImagesForSandboxPreview(
+        htmlContent,
+        abortController.signal,
+      );
+      objectUrls = resolved.objectUrls;
+
+      return {
+        ...securityReport,
+        warnings: [...securityReport.warnings, ...resolved.warnings],
+        sandboxedHtml: injectBrowserSandboxCsp(resolved.html),
+      };
     };
 
-    queueMicrotask(() => {
+    void prepareSandboxHtml().then((nextReport) => {
+      if (cancelled) {
+        objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
+        return;
+      }
+
       if (!cancelled) {
         setReport(nextReport);
       }
@@ -191,6 +280,8 @@ function useSandboxSecurity(htmlContent: string) {
 
     return () => {
       cancelled = true;
+      abortController.abort();
+      objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
     };
   }, [htmlContent]);
 

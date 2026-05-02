@@ -400,7 +400,7 @@ function AppContent({
 
   const deletePersistentProject = async (targetProjectId: string) => {
     const payload = unwrapWorkspaceActionResult(await deleteProjectAction(targetProjectId));
-    setProjects(payload.projects);
+    return payload.projects;
   };
 
   const submitPrompt = async (submission: PromptSubmission, explicitProjectId = projectId) => {
@@ -572,12 +572,17 @@ function AppContent({
       return;
     }
 
+    const previousProjects = projects;
+
     void (async () => {
       setDeletingProjectId(project.id);
-      setIsProjectDirectoryLoading(true);
+      setProjects((currentProjects) =>
+        currentProjects.filter((currentProject) => currentProject.id !== project.id),
+      );
 
       try {
-        await deletePersistentProject(project.id);
+        const refreshedProjects = await deletePersistentProject(project.id);
+        setProjects(refreshedProjects);
 
         if (project.id === projectId) {
           handleResetWorkspace();
@@ -587,11 +592,11 @@ function AppContent({
           description: `“${project.title}”已从历史列表中隐藏。`,
         });
       } catch (deleteError) {
+        setProjects(previousProjects);
         toast.error("项目删除失败", {
           description: deleteError instanceof Error ? deleteError.message : "请稍后重试。",
         });
       } finally {
-        setIsProjectDirectoryLoading(false);
         setDeletingProjectId(null);
       }
     })();

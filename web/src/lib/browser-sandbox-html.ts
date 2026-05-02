@@ -1,3 +1,5 @@
+import { isArtifactImageProxyUrl } from "@/lib/s3/artifact-image-url";
+
 export type SandboxSecurityReport = {
   blockedReasons: string[];
   warnings: string[];
@@ -25,19 +27,38 @@ const ACTIVE_CAPABILITY_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bwindow\.open\s*\(/i, reason: "检测到新窗口打开行为，已阻止预览。" },
 ];
 
-const CSP_CONTENT = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "img-src data: blob:",
-  "font-src data:",
-  "connect-src 'none'",
-  "frame-ancestors 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join("; ");
+function resolveAppOrigin(explicitOrigin?: string) {
+  if (explicitOrigin) {
+    return explicitOrigin.replace(/\/+$/, "");
+  }
 
-const CSP_META_TAG = `<meta http-equiv="Content-Security-Policy" content="${CSP_CONTENT}">`;
+  if (typeof globalThis.location?.origin === "string") {
+    return globalThis.location.origin.replace(/\/+$/, "");
+  }
+
+  return undefined;
+}
+
+function buildCspContent(options?: { imageSourceOrigin?: string }) {
+  const appOrigin = resolveAppOrigin(options?.imageSourceOrigin);
+  const imageSources = ["data:", "blob:", ...(appOrigin ? [`${appOrigin}/api/projects/`] : [])];
+
+  return [
+    "default-src 'none'",
+    "script-src 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    `img-src ${imageSources.join(" ")}`,
+    "font-src data:",
+    "connect-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join("; ");
+}
+
+function buildCspMetaTag(options?: { imageSourceOrigin?: string }) {
+  return `<meta http-equiv="Content-Security-Policy" content="${buildCspContent(options)}">`;
+}
 
 function parseBrowserHtmlDocument(htmlContent: string) {
   return new DOMParser().parseFromString(htmlContent, "text/html");
@@ -50,26 +71,40 @@ function stripExistingCspMetaTags(htmlContent: string) {
   );
 }
 
-function injectBrowserSandboxCspWithoutDomParser(htmlContent: string) {
+function injectBrowserSandboxCspWithoutDomParser(
+  htmlContent: string,
+  options?: { imageSourceOrigin?: string },
+) {
   const withoutExistingCsp = stripExistingCspMetaTags(htmlContent);
+  const cspMetaTag = buildCspMetaTag(options);
 
   if (/<head\b[^>]*>/i.test(withoutExistingCsp)) {
-    return withoutExistingCsp.replace(/<head\b[^>]*>/i, (headTag) => `${headTag}\n${CSP_META_TAG}`);
+    return withoutExistingCsp.replace(/<head\b[^>]*>/i, (headTag) => `${headTag}\n${cspMetaTag}`);
   }
 
   if (/<html\b[^>]*>/i.test(withoutExistingCsp)) {
-    return withoutExistingCsp.replace(/<html\b[^>]*>/i, (htmlTag) => `${htmlTag}\n<head>${CSP_META_TAG}</head>`);
+    return withoutExistingCsp.replace(/<html\b[^>]*>/i, (htmlTag) => `${htmlTag}\n<head>${cspMetaTag}</head>`);
   }
 
-  return `<!DOCTYPE html>\n<html><head>${CSP_META_TAG}</head><body>${withoutExistingCsp}</body></html>`;
+  return `<!DOCTYPE html>\n<html><head>${cspMetaTag}</head><body>${withoutExistingCsp}</body></html>`;
 }
 
-function normalizeUrlLikeValue(value: string | null) {
+function normalizeUrlLikeValue(value: string | null | undefined) {
   return (value ?? "").replace(/[\u0000-\u001F\u007F\s]+/g, "").trim();
 }
 
-function isExternalHttpUrl(value: string | null) {
-  return /^(?:https?:)?\/\//i.test(normalizeUrlLikeValue(value));
+export function isSandboxAllowedMediaResourceUrl(value: string | null | undefined) {
+  const normalized = normalizeUrlLikeValue(value);
+
+  if (!normalized || /^(?:data|blob):/i.test(normalized)) {
+    return true;
+  }
+
+  return isArtifactImageProxyUrl(normalized);
+}
+
+function isBlockedExternalResourceUrl(value: string | null) {
+  return !isSandboxAllowedMediaResourceUrl(value);
 }
 
 function hasJavascriptUrl(value: string | null) {
@@ -92,7 +127,7 @@ export function analyzeBrowserSandboxHtml(htmlContent: string): SandboxSecurityR
 
   for (const { selector, attr, reason } of EXTERNAL_RESOURCE_RULES) {
     for (const element of document.querySelectorAll<HTMLElement>(selector)) {
-      if (isExternalHttpUrl(element.getAttribute(attr))) {
+      if (isBlockedExternalResourceUrl(element.getAttribute(attr))) {
         blockedReasons.add(reason);
       }
     }
@@ -130,9 +165,12 @@ export function analyzeBrowserSandboxHtml(htmlContent: string): SandboxSecurityR
   };
 }
 
-export function injectBrowserSandboxCsp(htmlContent: string) {
+export function injectBrowserSandboxCsp(
+  htmlContent: string,
+  options?: { imageSourceOrigin?: string },
+) {
   if (typeof DOMParser === "undefined") {
-    return injectBrowserSandboxCspWithoutDomParser(htmlContent);
+    return injectBrowserSandboxCspWithoutDomParser(htmlContent, options);
   }
 
   const document = parseBrowserHtmlDocument(htmlContent);
@@ -144,7 +182,7 @@ export function injectBrowserSandboxCsp(htmlContent: string) {
   const metaElement = document.createElement("meta");
 
   metaElement.httpEquiv = "Content-Security-Policy";
-  metaElement.content = CSP_CONTENT;
+  metaElement.content = buildCspContent(options);
   document.head.prepend(metaElement);
 
   return `<!DOCTYPE html>\n${document.documentElement.outerHTML}`;

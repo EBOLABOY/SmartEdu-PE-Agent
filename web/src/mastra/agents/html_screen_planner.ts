@@ -2,6 +2,11 @@ import { Agent } from "@mastra/core/agent";
 import type { AgentConfig } from "@mastra/core/agent";
 
 import type { HtmlScreenPlan, HtmlScreenSectionPlan } from "@/lib/html-screen-plan-contract";
+import {
+  HTML_SCREEN_DESIGN_DIRECTION,
+  HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
+  HTML_SCREEN_VISUAL_SYSTEM_REFERENCE,
+} from "@/lib/html-screen-visual-language";
 
 const SECTION_FIELD_LABELS: Array<keyof HtmlScreenSectionPlan> = [
   "objective",
@@ -65,7 +70,7 @@ export const HTML_SCREEN_PLANNER_SYSTEM_PROMPT = `
 2. 最终分镜必须由你根据真实教案自主规划；允许调整标题、拆分过长页面、合并极短页面、补充首页、重写视觉意图和页面提示词。
 3. 首页必须属于 sections，且必须是 sections[0]，pageRole 必须为 cover。首页应像简洁 PPT 首页：大标题居中，下方显示学校和教师姓名，并有“开始上课”按钮的视觉位置；服务端只提供稳定控制壳，不固定首页设计。
 4. HtmlScreenPlan 必须包含 visualSystem，用它定义整套大屏的统一视觉系统：色彩、字体层级、按钮、倒计时、图形线条、空间节奏、动效语气和安全提示样式。所有 section 的 visualIntent 和 pagePrompt 必须继承这个 visualSystem，不得每页一套风格。
-5. 视觉方向默认采用 Apple Inc. 顶级 UI 设计师视角，以 iOS 18 风格组织横板课堂页面：毛玻璃层、Gaussian blur、高斯模糊、动态渐变、细腻阴影、柔和高光、圆角层级和轻量动效；但必须服务体育教学清晰度，不得牺牲远距离可读性和安全提示。
+5. ${HTML_SCREEN_DESIGN_DIRECTION}
 6. 最终交付物会由服务端组合成包含完整 CSS 和 JavaScript 的单文件 HTML；你负责在 visualSystem 和 pagePrompt 中描述统一风格和页面片段需求，不要让单页片段输出完整 HTML 文档、style 或 script。
 7. 体育课常见课堂节奏可优先识别为：热身、学练、比赛或展示、体能练习、放松拉伸。不同项目可调整，但必须服从真实教案，不要强行套模板。
 8. “学习页面”和“练习页面”原则上合并为一个学练页；该页只展示最关键的学习内容、动作认知和练习任务，不拆成文字讲解页与练习页两个泛化页面。
@@ -79,13 +84,14 @@ export const HTML_SCREEN_PLANNER_SYSTEM_PROMPT = `
 16. durationSeconds 必须来自课时计划时间；“3-5分钟”取中间值，1 分钟等于 60 秒；合并学练页时把相关课时行时间相加或按教学权重分配。首页不参与课堂环节倒计时，可不写 durationSeconds。
 17. 所有页面必须统一为简洁、干练、沉浸、美观、有效的课堂投屏风格；不要花哨、不要复杂装饰、不要堆叠大量文字。
 18. 输出要适合后续“逐页独立生成 HTML 片段”：每个 section 的 pagePrompt 必须是一段可直接交给 HTML 片段生成模型的页面提示词，且必须自足，不依赖其他页面解释。
-19. 不要输出 HTML、Markdown、解释文字或代码围栏；只通过结构化输出返回 HtmlScreenPlan。`;
+19. 不要输出 HTML、Markdown、解释文字或代码围栏；按调用方指定的结构化对象或行协议返回 HtmlScreenPlan 所需字段。`;
 
 export function buildHtmlScreenPlanningSystemPrompt() {
   return `${HTML_SCREEN_PLANNER_SYSTEM_PROMPT}
 
 字段要求：
-- visualSystem：整套课堂大屏的统一视觉系统，必须让首页和所有教学环节页保持同一种设计语言，而不是每页各自发挥。默认写成 Apple Inc. 顶级 UI 设计师视角的 iOS 18 横板课堂大屏风格，包含毛玻璃效果、Gaussian blur/高斯模糊、动态渐变、细腻阴影、柔和高光、圆角层级、清晰大字号和适合投屏的高对比。
+- visualSystem：整套课堂大屏的统一视觉系统，必须让首页和所有教学环节页保持同一种设计语言，而不是每页各自发挥。默认应体现以下方向：
+${HTML_SCREEN_VISUAL_SYSTEM_REFERENCE}
 - title：课堂页面标题，来自具体教学内容。
 - pageRole：页面角色，首页为 cover；学练合一页为 learnPractice；其他可用 warmup、competition、fitness、cooldown、summary 或 other。
 - sourceRowIndex：对应 periodPlan.rows 的 0 基索引；拆分同一行时可复用同一个索引。
@@ -98,7 +104,7 @@ export function buildHtmlScreenPlanningSystemPrompt() {
 - visualMode：本页媒介选择。html 表示只用 HTML/CSS/SVG 生成课堂图形，适合战术跑位、路线、队形、轮换、规则和计分；image 表示服务端调用生图生成 16:9 辅助讲解图，适合五步拳、武术套路、体操姿态、跳跃腾空、投掷发力等动作形态；hybrid 表示先生成 16:9 教学图，再用 HTML 叠加任务、安全和评价提示。首页一般用 html。
 - imagePrompt：仅当 visualMode 为 image 或 hybrid 时填写。必须描述 16:9 横板体育课堂辅助讲解图，要求清晰动作分解或关键姿态、适合投屏、留出局部空白给 HTML 提示层、不要真实人脸、不要照片化杂乱背景、不要大段文字。visualMode=html 时不要填写。
 - visualAsset：由服务端生成后回填，规划阶段不要填写。
-- pagePrompt：交给后续页面生成模型的独立提示词。必须包含本页标题、时间段、页面类型（首页、热身、学练、比赛、体能、放松或其他）、必须遵循 visualSystem 的要求、必须出现的核心任务、建议绘制或呈现的视觉元素、学生行动、安全提醒、评价观察、禁止输出完整 HTML 文档的约束。首页必须要求大标题居中、学校和教师姓名在标题下方、出现开始上课按钮视觉；学练页必须强调“少文字、重可视化”；比赛、体能、放松等页面必须强调“中心模块倒计时”；所有页面都应说明这是横板课堂大屏片段，完整 CSS 和 JavaScript 由服务端最终 HTML 外壳统一提供。
+- pagePrompt：交给后续页面生成模型的独立提示词。必须包含本页标题、时间段、页面类型（首页、热身、学练、比赛、体能、放松或其他）、必须遵循 visualSystem 的要求、必须出现的核心任务、建议绘制或呈现的视觉元素、学生行动、安全提醒、评价观察、禁止输出完整 HTML 文档的约束。首页必须要求大标题居中、学校和教师姓名在标题下方、出现开始上课按钮视觉；学练页必须强调“少文字、重可视化”；比赛、体能、放松等页面必须强调“中心模块倒计时”；所有页面都应说明这是横板课堂大屏片段，完整 CSS 和 JavaScript 由服务端最终 HTML 外壳统一提供。 ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
 - reason：说明为什么这样拆页和设计本页，必须关联课时计划行和课堂组织需求。`;
 }
 

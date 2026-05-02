@@ -285,12 +285,10 @@ export default function SmartEduArtifact({
                     <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/75 bg-background/35 px-3 py-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <h2 className="shrink-0 text-sm font-semibold text-foreground">
-                          {lessonDisplay.isStreamActive ? "课时计划 JSON 流" : "课时计划预览"}
+                          {lessonDisplay.panelTitle}
                         </h2>
                         <span className="hidden truncate text-xs text-muted-foreground lg:inline">
-                          {lessonDisplay.isStreamActive
-                            ? "正在流式生成 CompetitionLessonPlan JSON，校验通过后自动切换正式打印版。"
-                            : "固定 A4 模板，修改请在左侧对话提出。"}
+                          {lessonDisplay.panelDescription}
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -306,12 +304,8 @@ export default function SmartEduArtifact({
                       {!competitionLessonPlan || !lessonDisplay.shouldShowPrintFrame ? (
                         <ArtifactTextViewer
                           content={lifecycle.lessonContent}
-                          emptyDescription={
-                            lessonDisplay.isStreamActive
-                              ? "请求已提交，右侧保持在课时计划 JSON 流视图；收到模型第一段内容后会直接追加到这里。"
-                              : undefined
-                          }
-                          emptyTitle={lessonDisplay.isStreamActive ? "等待 JSON 首包" : undefined}
+                          emptyDescription={lessonDisplay.viewerEmptyDescription}
+                          emptyTitle={lessonDisplay.viewerEmptyTitle}
                           isStreaming={lessonDisplay.isStreamActive}
                         />
                       ) : (

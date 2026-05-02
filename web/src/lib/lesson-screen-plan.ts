@@ -1,12 +1,11 @@
 import type { CompetitionLessonPlan, CompetitionLessonPlanRow } from "@/lib/competition-lesson-contract";
 import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
+import {
+  HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
+  HTML_SCREEN_VISUAL_SYSTEM_REFERENCE,
+} from "@/lib/html-screen-visual-language";
 
-const REFERENCE_VISUAL_SYSTEM = [
-  "统一视觉系统参考：以 Apple Inc. 顶级 UI 设计师视角组织 iOS 18 风格横板课堂大屏，采用毛玻璃效果、Gaussian blur/高斯模糊、动态渐变、细腻阴影、柔和高光和圆角层级。",
-  "页面必须全屏自适应横向投屏，保留大字号中文层级、高对比信息区和清晰安全提示，不因视觉质感牺牲体育课堂可读性。",
-  "首页、学练页、比赛页、体能页和放松页必须共享同一套色彩、按钮、倒计时、图形线条和空间节奏；最终完整 CSS 和 JavaScript 由服务端 HTML 外壳统一提供。",
-  "学练页优先使用 HTML/CSS/SVG 绘制路线、队形、动作结构或器材路径；非学练页优先采用居中的任务模块和醒目倒计时。",
-].join("\n");
+const REFERENCE_VISUAL_SYSTEM = HTML_SCREEN_VISUAL_SYSTEM_REFERENCE;
 
 type VisualMode = NonNullable<HtmlScreenPlan["sections"][number]["visualMode"]>;
 
@@ -118,6 +117,8 @@ function buildPagePrompt(row: CompetitionLessonPlanRow) {
     `学生行动：${studentActions.length ? studentActions.join("；") : "看清任务；保持距离；听口令切换"}`,
     `安全提醒：${buildSafetyCue(row)}`,
     `评价观察：${buildEvaluationCue(row)}`,
+    HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
+    "风格要求：页面像体育馆里的教师课堂控制台，不要空洞海报，不要大面积玻璃装饰，不要让标题孤立漂浮在画面中央。",
     "页面必须适合体育馆远距离投屏，使用大字号、强层级、清晰图形和简体中文。",
   ].join("\n");
 }

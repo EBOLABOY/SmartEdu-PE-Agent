@@ -23,7 +23,7 @@ describe("pe_teacher", () => {
     ]);
   });
 
-  it("课时计划 Agent 只暴露检索和需求诊断工具，不暴露产物搬运工具", async () => {
+  it("课时计划 Agent 只暴露检索和需求诊断工具，全局工具表不再暴露旧兼容产物工具", async () => {
     const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
     const globalTools = mastra.listTools();
 
@@ -42,12 +42,12 @@ describe("pe_teacher", () => {
       ]),
     );
     expect(globalTools).toHaveProperty("analyze_requirements");
-    expect(globalTools).toHaveProperty("apply_lesson_patch");
-    expect(globalTools).toHaveProperty("generate_structured_lesson");
     expect(globalTools).toHaveProperty("searchStandards");
-    expect(globalTools).toHaveProperty("submit_lesson_plan");
     expect(globalTools).not.toHaveProperty("submit_html_screen");
-    expect(globalTools).toHaveProperty("write_lesson_plan");
+    expect(globalTools).not.toHaveProperty("apply_lesson_patch");
+    expect(globalTools).not.toHaveProperty("generate_structured_lesson");
+    expect(globalTools).not.toHaveProperty("submit_lesson_plan");
+    expect(globalTools).not.toHaveProperty("write_lesson_plan");
   });
 
   it("lesson 阶段按需检索或诊断，正式课时计划由服务端管线提交", () => {
@@ -70,6 +70,18 @@ describe("pe_teacher", () => {
     expect(prompt).not.toContain("AgentLessonGeneration JSON");
     expect(prompt).not.toContain("信息模糊时先调用 `analyze_requirements`");
     expect(prompt).not.toContain("<artifact>");
+  });
+
+  it("lesson 正式生成阶段切换为协议文本约束，不再混入 JSON 输出要求", () => {
+    const prompt = buildPeTeacherSystemPrompt(undefined, {
+      mode: "lesson",
+      responseStage: "generation",
+    });
+
+    expect(prompt).toContain("正式生成（Generation）阶段输出约束");
+    expect(prompt).toContain("只输出“自定义教案行协议”纯文本");
+    expect(prompt).toContain("多个 @flow");
+    expect(prompt).not.toContain("只允许输出合法 JSON 对象");
   });
 
   it("会把用户资料注入课时计划教师和学段字段", () => {
@@ -107,17 +119,18 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("开始上课");
     expect(prompt).toContain("全屏自适应多页结构");
     expect(prompt).toContain("统一 visualSystem");
-    expect(prompt).toContain("Apple Inc.");
-    expect(prompt).toContain("iOS 18");
-    expect(prompt).toContain("毛玻璃效果");
-    expect(prompt).toContain("高斯模糊");
+    expect(prompt).toContain("Gym Command Desk");
+    expect(prompt).toContain("深色球场基底");
+    expect(prompt).toContain("实体高对比信息面板");
     expect(prompt).toContain("完整 CSS 和 JavaScript");
     expect(prompt).toContain("学习页面和练习页面原则上合二为一");
     expect(prompt).toContain("学练页不能是文字板");
     expect(prompt).toContain("不使用固定组件枚举限制页面设计");
+    expect(prompt).toContain("cover-stage");
     expect(prompt).toContain("自由分镜契约");
     expect(prompt).toContain("上一页");
     expect(prompt).toContain("下一页");
+    expect(prompt).not.toContain("iOS 18");
   });
 
   it("html 阶段会注入自由大屏分镜计划", () => {

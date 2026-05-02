@@ -199,6 +199,17 @@ const COMPETITION_LESSON_PRINT_CSS = `
     text-indent: 0;
   }
 
+  .competition-print-teaching-content-line {
+    margin-bottom: 8px;
+  }
+
+  .competition-print-teaching-content-heading {
+    display: block;
+    margin-bottom: 2px;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+
   .competition-print-method-label {
     margin: 0 0 4px;
     font-weight: 700;
@@ -238,11 +249,38 @@ const COMPETITION_LESSON_PRINT_CSS = `
   .competition-print-ai-diagram-image {
     display: block;
     width: 100%;
+    min-height: 96px;
     max-height: 130px;
     object-fit: contain;
     border: 1px solid #d4d4d4;
     border-radius: 4px;
     background: #fff;
+  }
+
+  .competition-print-ai-diagram-fallback {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 96px;
+    padding: 6px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .competition-print-ai-diagram-fallback .competition-print-diagram-box {
+    margin-bottom: 6px;
+  }
+
+  .competition-print-ai-diagram-fallback .competition-print-field-box {
+    height: 52px !important;
+  }
+
+  .competition-print-ai-diagram-fallback-title {
+    margin: 0 0 5px;
+    color: #666;
+    font-size: 10px;
+    line-height: 1.2;
+    text-align: center;
+    text-indent: 0;
   }
 
   .competition-print-ai-diagram-caption {

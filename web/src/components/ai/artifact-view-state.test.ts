@@ -72,8 +72,12 @@ describe("artifact-view-state", () => {
       isJsonStream: false,
       isPendingStream: true,
       isStreamActive: true,
+      panelDescription: "正在等待结构化课时计划首包。",
+      panelTitle: "课时计划生成中",
       shouldShowPrintFrame: false,
       shouldShowWorkspace: true,
+      viewerEmptyDescription: "请求已提交，右侧会在收到首段结构化内容后开始展示。",
+      viewerEmptyTitle: "等待结构化首包",
     });
   });
 
@@ -98,8 +102,12 @@ describe("artifact-view-state", () => {
       isJsonStream: false,
       isPendingStream: true,
       isStreamActive: true,
+      panelDescription: "正在等待结构化课时计划首包。",
+      panelTitle: "课时计划生成中",
       shouldShowPrintFrame: false,
       shouldShowWorkspace: true,
+      viewerEmptyDescription: "请求已提交，右侧会在收到首段结构化内容后开始展示。",
+      viewerEmptyTitle: "等待结构化首包",
     });
   });
 
@@ -110,6 +118,8 @@ describe("artifact-view-state", () => {
     expect(displayState).toMatchObject({
       hasLesson: true,
       isStreamActive: false,
+      panelDescription: "固定 A4 模板，修改请在左侧对话提出。",
+      panelTitle: "课时计划预览",
       shouldShowPrintFrame: true,
       shouldShowWorkspace: true,
     });
@@ -146,6 +156,8 @@ describe("artifact-view-state", () => {
     expect(displayState).toMatchObject({
       hasLesson: true,
       isStreamActive: true,
+      panelDescription: "正在持续补全结构化课时计划，右侧预览会随内容同步刷新。",
+      panelTitle: "课时计划预览",
       shouldShowPrintFrame: true,
       shouldShowWorkspace: true,
     });
@@ -158,6 +170,8 @@ describe("artifact-view-state", () => {
     expect(displayState).toMatchObject({
       hasLesson: false,
       isStreamActive: false,
+      panelDescription: "固定 A4 模板，修改请在左侧对话提出。",
+      panelTitle: "课时计划预览",
       shouldShowPrintFrame: false,
       shouldShowWorkspace: false,
     });

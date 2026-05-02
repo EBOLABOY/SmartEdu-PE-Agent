@@ -14,7 +14,8 @@ import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 import {
   runHtmlScreenPlanningSkill,
   runLessonGenerationSkill,
-  runLessonGenerationWithRepair,
+  runLessonGenerationWithPostProcess,
+  runServerHtmlScreenPlanningSkill,
 } from "./index";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
@@ -45,9 +46,30 @@ const workflow = {
 const concreteLessonPlan = JSON.parse(
   JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "lesson"),
 );
-concreteLessonPlan.periodPlan.rows[1].content = ["技术学习、分组练习、教学比赛、体能练习"];
-concreteLessonPlan.periodPlan.rows[1].methods.teacher = ["组织学生完成学、练、赛、体能练习四个环节。"];
-concreteLessonPlan.periodPlan.rows[1].methods.students = ["依次参与技术学习、分组练习、教学比赛和体能练习。"];
+const concreteLessonHeader = {
+  meta: concreteLessonPlan.meta,
+  subtitle: concreteLessonPlan.subtitle,
+  teacher: concreteLessonPlan.teacher,
+  title: concreteLessonPlan.title,
+};
+const concreteLessonTeachingDesign = {
+  flowSummary: concreteLessonPlan.flowSummary,
+  keyDifficultPoints: concreteLessonPlan.keyDifficultPoints,
+  learningObjectives: concreteLessonPlan.learningObjectives,
+  narrative: concreteLessonPlan.narrative,
+};
+const concreteLessonExecution = {
+  periodPlan: concreteLessonPlan.periodPlan,
+  venueEquipment: concreteLessonPlan.venueEquipment,
+};
+const concreteLessonAssessmentLoad = {
+  evaluation: concreteLessonPlan.evaluation,
+  loadEstimate: concreteLessonPlan.loadEstimate,
+};
+concreteLessonPlan.periodPlan.rows[0].content = ["体能唤醒和移动热身"];
+concreteLessonPlan.periodPlan.rows[1].content = ["慢速护球练习、变向接力、星级闯关"];
+concreteLessonPlan.periodPlan.rows[1].methods.teacher = ["示范低重心控球与变向保护，按学生表现调整闯关难度。"];
+concreteLessonPlan.periodPlan.rows[1].methods.students = ["在穿梭、接力和闯关中完成观察、尝试、合作与展示。"];
 const placeholderLessonPlan = JSON.parse(
   JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "待补充"),
 );
@@ -73,7 +95,7 @@ lesson_no=第1课时
 @flow
 part=准备部分
 time=8分钟
-content=热身跑和球性练习
+content=体能唤醒和移动热身
 teacher=组织热身并提示安全距离
 students=按队形完成热身
 organization=四列横队
@@ -135,15 +157,152 @@ async function readAll(stream: ReadableStream<UIMessageChunk>) {
   }
 }
 
+async function readNextWithTimeout(
+  reader: ReadableStreamDefaultReader<UIMessageChunk>,
+  timeoutMs = 500,
+) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("stream read timed out")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 describe("generation skills", () => {
   beforeEach(() => {
+    vi.mocked(generateText).mockReset();
     vi.mocked(streamText).mockReset();
+    vi.unstubAllEnvs();
   });
 
-  it("server-side lesson generation uses the custom line protocol instead of schema-bound object output", async () => {
+  it("server-side lesson generation uses structured block schemas when structured outputs are enabled", async () => {
+    vi.stubEnv("AI_BASE_URL", "http://proxy.example.test/v1");
+    vi.stubEnv("AI_SUPPORTS_STRUCTURED_OUTPUTS", "true");
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        output: concreteLessonHeader,
+      } as Awaited<ReturnType<typeof generateText>>)
+      .mockResolvedValueOnce({
+        output: concreteLessonTeachingDesign,
+      } as Awaited<ReturnType<typeof generateText>>)
+      .mockResolvedValueOnce({
+        output: concreteLessonExecution,
+      } as Awaited<ReturnType<typeof generateText>>)
+      .mockResolvedValueOnce({
+        output: concreteLessonAssessmentLoad,
+      } as Awaited<ReturnType<typeof generateText>>);
+    const messages = [
+      {
+        id: "user-structured-blocks",
+        role: "user",
+        parts: [{ type: "text", text: "生成三年级篮球行进间运球课" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationSkill({
+      messages,
+      modelId: "gpt-5.5",
+      requestId: "request-structured-blocks",
+      serverSide: true,
+      workflow,
+    });
+    const chunks = await readAll(result.stream);
+    const partials = [];
+
+    await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
+      meta: concreteLessonPlan.meta,
+      title: concreteLessonPlan.title,
+    });
+    for await (const partial of result.partialOutputStream ?? []) {
+      partials.push(partial);
+    }
+
+    expect(partials).toHaveLength(4);
+    expect(partials[0]).toMatchObject({ title: concreteLessonPlan.title });
+    expect(partials[1]).toMatchObject({ learningObjectives: concreteLessonPlan.learningObjectives });
+    expect(partials[2]).toMatchObject({ periodPlan: concreteLessonPlan.periodPlan });
+    expect(partials[3]).toMatchObject({ evaluation: concreteLessonPlan.evaluation });
+    expect(generateText).toHaveBeenCalledTimes(4);
+    expect(streamText).not.toHaveBeenCalled();
+    const generateTextCalls = vi.mocked(generateText).mock.calls;
+    expect(generateTextCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        model: expect.anything(),
+        system: expect.stringContaining("标题与元数据子块"),
+      }),
+    );
+    expect(JSON.stringify(generateTextCalls[0]?.[0].messages)).toContain("现在只生成“课时计划标题与元数据子块”");
+    expect(generateTextCalls[3]?.[0]).toEqual(
+      expect.objectContaining({
+        system: expect.stringContaining("评价与运动负荷子块"),
+      }),
+    );
+    expect(JSON.stringify(generateTextCalls[3]?.[0].messages)).toContain("已确定的前置结构数据如下");
+    expect(chunks).toEqual([expect.objectContaining({ type: "finish", finishReason: "stop" })]);
+  });
+
+  it("server-side lesson generation falls back to the custom line protocol when structured block generation fails", async () => {
+    vi.stubEnv("AI_BASE_URL", "http://proxy.example.test/v1");
+    vi.stubEnv("AI_SUPPORTS_STRUCTURED_OUTPUTS", "true");
+    vi.mocked(generateText).mockRejectedValueOnce(new Error("schema block failed"));
     vi.mocked(streamText).mockReturnValueOnce({
       text: Promise.resolve(lessonProtocolText),
     } as unknown as ReturnType<typeof streamText>);
+    const messages = [
+      {
+        id: "user-structured-fallback",
+        role: "user",
+        parts: [{ type: "text", text: "生成三年级篮球行进间运球课" }],
+      },
+    ] as SmartEduUIMessage[];
+
+    const result = await runLessonGenerationSkill({
+      messages,
+      modelId: "gpt-5.5",
+      requestId: "request-structured-fallback",
+      serverSide: true,
+      workflow,
+    });
+    await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
+      meta: {
+        topic: "篮球行进间运球",
+      },
+      title: "篮球行进间运球",
+    });
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(streamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ modelId: "gpt-5.5" }),
+        system: expect.stringContaining("@lesson"),
+      }),
+    );
+  });
+
+  it("server-side lesson generation uses structured block streaming even when structured outputs are disabled", async () => {
+    vi.stubEnv("AI_BASE_URL", "http://proxy.example.test/v1");
+    vi.stubEnv("AI_SUPPORTS_STRUCTURED_OUTPUTS", "false");
+    vi.mocked(generateText)
+      .mockResolvedValueOnce({
+        text: `说明\n${JSON.stringify(concreteLessonHeader)}\n结束`,
+      } as Awaited<ReturnType<typeof generateText>>)
+      .mockResolvedValueOnce({
+        text: `\`\`\`json\n${JSON.stringify(concreteLessonTeachingDesign)}\n\`\`\``,
+      } as Awaited<ReturnType<typeof generateText>>)
+      .mockResolvedValueOnce({
+        text: JSON.stringify(concreteLessonExecution),
+      } as Awaited<ReturnType<typeof generateText>>)
+      .mockResolvedValueOnce({
+        text: JSON.stringify(concreteLessonAssessmentLoad),
+      } as Awaited<ReturnType<typeof generateText>>);
     const messages = [
       {
         id: "user-protocol",
@@ -160,24 +319,20 @@ describe("generation skills", () => {
       workflow,
     });
     const chunks = await readAll(result.stream);
+    const partials = [];
 
     await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
-      meta: {
-        topic: "篮球行进间运球",
-      },
-      title: "篮球行进间运球",
+      meta: concreteLessonPlan.meta,
+      title: concreteLessonPlan.title,
     });
-    expect(streamText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: expect.objectContaining({ modelId: "mimo-v2.5-pro" }),
-        system: expect.stringContaining("@lesson"),
-      }),
-    );
-    expect(streamText).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        output: expect.anything(),
-      }),
-    );
+    for await (const partial of result.partialOutputStream ?? []) {
+      partials.push(partial);
+    }
+
+    expect(partials).toHaveLength(4);
+    expect(generateText).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(generateText).mock.calls.every(([options]) => !("output" in options))).toBe(true);
+    expect(streamText).not.toHaveBeenCalled();
     expect(chunks).toEqual([expect.objectContaining({ type: "finish", finishReason: "stop" })]);
   });
 
@@ -474,7 +629,7 @@ describe("generation skills", () => {
     expect(partials).toEqual([{ title: "羽毛球草稿" }]);
   });
 
-  it("repair pass skips the second round when the first draft already passes business validation", async () => {
+  it("post-processing keeps successful drafts and emits validate trace", async () => {
     const convertedStream = new ReadableStream<UIMessageChunk>({
       start(controller) {
         controller.enqueue({ type: "finish", finishReason: "stop" });
@@ -487,7 +642,6 @@ describe("generation skills", () => {
         lessonPlan: concreteLessonPlan,
       }),
     } as Partial<MastraModelOutput<AgentLessonGenerationResult>>);
-    const repairGenerate = vi.fn();
     const onTrace = vi.fn();
     const messages = [
       {
@@ -497,18 +651,16 @@ describe("generation skills", () => {
       },
     ] as SmartEduUIMessage[];
 
-    const result = await runLessonGenerationWithRepair({
+    const result = await runLessonGenerationWithPostProcess({
       agentStream,
       messages,
       onTrace,
-      repairGenerate,
       requestId: "request-repair-skip",
       toUIMessageStream: () => convertedStream,
       workflow,
     });
 
     await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
-    expect(repairGenerate).not.toHaveBeenCalled();
     expect(onTrace).toHaveBeenCalledWith(
       expect.objectContaining({
         step: "validate-lesson-output",
@@ -545,7 +697,7 @@ describe("generation skills", () => {
       },
     } as LessonWorkflowOutput;
 
-    const result = await runLessonGenerationWithRepair({
+    const result = await runLessonGenerationWithPostProcess({
       messages: [
         {
           id: "user-textbook-citation",
@@ -567,7 +719,7 @@ describe("generation skills", () => {
     });
   });
 
-  it("repair pass runs exactly one repair round when the first draft still contains placeholders", async () => {
+  it("business validation issues no longer trigger a second repair round when the first draft still contains placeholders", async () => {
     const convertedStream = new ReadableStream<UIMessageChunk>({
       start(controller) {
         controller.enqueue({ type: "finish", finishReason: "stop" });
@@ -580,7 +732,6 @@ describe("generation skills", () => {
         lessonPlan: placeholderLessonPlan,
       }),
     } as Partial<MastraModelOutput<AgentLessonGenerationResult>>);
-    const repairGenerate = vi.fn().mockResolvedValue(fullOutput(concreteLessonPlan));
     const onTrace = vi.fn();
     const messages = [
       {
@@ -590,37 +741,33 @@ describe("generation skills", () => {
       },
     ] as SmartEduUIMessage[];
 
-    const result = await runLessonGenerationWithRepair({
+    const result = await runLessonGenerationWithPostProcess({
       agentStream,
       messages,
       onTrace,
-      repairGenerate,
       requestId: "request-repair-once",
       toUIMessageStream: () => convertedStream,
       workflow,
     });
 
-    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
-    expect(repairGenerate).toHaveBeenCalledTimes(1);
+    await expect(result.finalLessonPlanPromise).resolves.toEqual(placeholderLessonPlan);
     expect(onTrace).toHaveBeenCalledWith(
       expect.objectContaining({
-        step: "lesson-repair-started",
-        status: "running",
+        step: "validate-lesson-output",
+        status: "success",
       }),
     );
-    expect(onTrace).toHaveBeenCalledWith(
+    expect(onTrace).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        step: "lesson-repair-finished",
-        status: "success",
+        step: "lesson-repair-started",
       }),
     );
   });
 
-  it("repair pass still repairs business issues after protocol-based server generation", async () => {
+  it("protocol-based server generation no longer enters repair flow after business validation issues", async () => {
     vi.mocked(streamText).mockReturnValueOnce({
       text: Promise.resolve(lessonProtocolText.replace("篮球行进间运球", "待补充")),
     } as unknown as ReturnType<typeof streamText>);
-    const repairGenerate = vi.fn().mockResolvedValue(fullOutput(concreteLessonPlan));
     const onTrace = vi.fn();
     const messages = [
       {
@@ -630,21 +777,26 @@ describe("generation skills", () => {
       },
     ] as SmartEduUIMessage[];
 
-    const result = await runLessonGenerationWithRepair({
+    const result = await runLessonGenerationWithPostProcess({
       messages,
       onTrace,
-      repairGenerate,
       requestId: "request-protocol-repair",
       serverSide: true,
       workflow,
     });
 
-    await expect(result.finalLessonPlanPromise).resolves.toEqual(concreteLessonPlan);
-    expect(repairGenerate).toHaveBeenCalledTimes(1);
+    await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
+      title: "待补充",
+    });
     expect(onTrace).toHaveBeenCalledWith(
       expect.objectContaining({
+        step: "validate-lesson-output",
+        status: "success",
+      }),
+    );
+    expect(onTrace).not.toHaveBeenCalledWith(
+      expect.objectContaining({
         step: "lesson-repair-started",
-        status: "running",
       }),
     );
   });
@@ -687,11 +839,11 @@ describe("generation skills", () => {
       title: "篮球行进间运球",
     });
     expect(result.plan.sections[1]).toMatchObject({
-      objective: expect.stringContaining("lesson"),
+      objective: expect.stringContaining("体能唤醒和移动热身"),
       sourceRowIndex: 0,
-      title: "lesson-0",
+      title: "体能唤醒和移动热身-0",
       visualMode: "html",
-      pagePrompt: "为 lesson 生成页面片段。",
+      pagePrompt: "为 体能唤醒和移动热身 生成页面片段。",
     });
     expect(agentGenerate).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ role: "user" })]),
@@ -701,6 +853,67 @@ describe("generation skills", () => {
         structuredOutput: expect.objectContaining({
           schema: expect.any(Object),
         }),
+      }),
+    );
+  });
+
+  it("server html screen planning parses the custom line protocol without schema-bound output", async () => {
+    const sectionProtocol = concreteLessonPlan.periodPlan.rows
+      .map((row: { content: string[]; time: string }, index: number) =>
+        [
+          "@section",
+          `title=${row.content[0]}-${index}`,
+          "page_role=learnPractice",
+          `source_row_index=${index}`,
+          "duration_seconds=120",
+          `objective=组织学生完成 ${row.content[0]}。`,
+          "student_actions=看清任务；保持距离；听口令切换",
+          "safety_cue=前后左右保持安全距离，听到停止口令立即停球。",
+          "evaluation_cue=观察控球稳定性和规则执行情况。",
+          "visual_intent=使用清晰路线和任务模块帮助学生理解练习顺序。",
+          "visual_mode=html",
+          `page_prompt=为 ${row.content[0]} 生成页面片段。`,
+          "reason=Agent 根据课堂环节重新规划页面。",
+        ].join("\n"),
+      )
+      .join("\n\n");
+    vi.mocked(generateText).mockResolvedValueOnce({
+      text: [
+        "@visual_system",
+        "统一清爽的体育课堂投屏系统，首页和教学页共享同一套色彩、按钮、倒计时和图形语言。",
+        "",
+        "@section",
+        "title=篮球行进间运球",
+        "page_role=cover",
+        "visual_mode=html",
+        "page_prompt=生成首页封面，大标题居中，学校和教师姓名位于标题下方，并呈现开始上课按钮视觉。",
+        "reason=首页作为课堂启动页。",
+        "",
+        sectionProtocol,
+      ].join("\n"),
+    } as Awaited<ReturnType<typeof generateText>>);
+
+    const result = await runServerHtmlScreenPlanningSkill({
+      additionalInstructions: "优先突出比赛展示。",
+      lessonPlan: JSON.stringify(concreteLessonPlan),
+      maxSteps: 2,
+      modelId: "mimo-v2.5-pro",
+      requestId: "request-plan-server",
+    });
+
+    expect(result.plan.sections[0]).toMatchObject({
+      pageRole: "cover",
+      title: "篮球行进间运球",
+    });
+    expect(generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ modelId: "mimo-v2.5-pro" }),
+        system: expect.stringContaining("你必须只输出“自定义 HTML 分镜行协议”文本"),
+      }),
+    );
+    expect(generateText).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        output: expect.anything(),
       }),
     );
   });
@@ -770,6 +983,9 @@ describe("generation skills", () => {
     expect(JSON.stringify(vi.mocked(generateText).mock.calls[0]?.[0].messages)).toContain(
       "生成首页封面",
     );
+    expect(JSON.stringify(vi.mocked(generateText).mock.calls[0]?.[0].messages)).toContain(
+      "cover-content",
+    );
     expect(JSON.stringify(vi.mocked(generateText).mock.calls[1]?.[0].messages)).toContain(
       "生成热身页面片段",
     );
@@ -781,10 +997,119 @@ describe("generation skills", () => {
     expect(html).toContain("片段A");
     expect(html).toContain("片段B");
     expect(html).toContain("data-start");
-    expect(html).toContain("backdrop-filter");
-    expect(html).toContain("@keyframes ambientShift");
+    expect(html).toContain("color-scheme: dark");
+    expect(html).toContain("cover-shell");
+    expect(html).toContain("cover-stage");
+    expect(html).toContain("justify-self: center");
+    expect(html).toContain('controls.style.display = index === 0 ? "none" : "flex";');
     expect(html).toContain("glass-panel");
+    expect(html).not.toContain("backdrop-filter");
+    expect(html).not.toContain("@keyframes ambientShift");
     expect(html).not.toContain("data-support-module=");
+  });
+
+  it("server html generation streams tool calls and preview artifact before section HTML completes", async () => {
+    vi.mocked(generateText).mockReset();
+    let resolveSection: ((value: Awaited<ReturnType<typeof generateText>>) => void) | undefined;
+    vi.mocked(generateText).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSection = resolve as (value: Awaited<ReturnType<typeof generateText>>) => void;
+        }) as ReturnType<typeof generateText>,
+    );
+    const { runServerHtmlGenerationSkill } = await import("./server_html_generation_skill");
+    const screenPlan: HtmlScreenPlan = {
+      visualSystem: "统一清爽的体育课堂投屏系统。",
+      sections: [
+        {
+          title: "课堂首页",
+          pageRole: "cover",
+          pagePrompt: "生成首页封面。",
+        },
+      ],
+    };
+
+    const stream = await runServerHtmlGenerationSkill({
+      lessonPlan: JSON.stringify(concreteLessonPlan),
+      messages: [
+        {
+          id: "user-html-streaming",
+          role: "user",
+          parts: [{ type: "text", text: "生成互动大屏" }],
+        },
+      ] as SmartEduUIMessage[],
+      requestId: "request-html-streaming",
+      screenPlan,
+      workflow,
+    });
+    const reader = stream.getReader();
+    const earlyChunks: UIMessageChunk[] = [];
+
+    while (
+      !earlyChunks.some((chunk) => chunk.type === "data-artifact") ||
+      !earlyChunks.some(
+        (chunk) => chunk.type === "tool-input-start" && chunk.toolName === "generateHtmlScreenSection",
+      )
+    ) {
+      const { done, value } = await readNextWithTimeout(reader);
+
+      if (done) {
+        throw new Error("HTML stream ended before early tool and artifact chunks were emitted.");
+      }
+
+      earlyChunks.push(value);
+    }
+
+    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(earlyChunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool-input-start",
+          toolName: "generateHtmlScreenVisualAssets",
+        }),
+        expect.objectContaining({
+          type: "tool-input-start",
+          toolName: "generateHtmlScreenSection",
+        }),
+        expect.objectContaining({
+          type: "data-artifact",
+          data: expect.objectContaining({
+            contentType: "html",
+            isComplete: false,
+            status: "streaming",
+          }),
+        }),
+      ]),
+    );
+
+    resolveSection?.({ text: "<div>首页片段</div>" } as Awaited<ReturnType<typeof generateText>>);
+
+    const remainingChunks: UIMessageChunk[] = [];
+    while (true) {
+      const { done, value } = await readNextWithTimeout(reader);
+
+      if (done) {
+        break;
+      }
+
+      remainingChunks.push(value);
+    }
+
+    const allChunks = [...earlyChunks, ...remainingChunks];
+    const html = allChunks
+      .filter((chunk): chunk is Extract<UIMessageChunk, { type: "text-delta" }> => chunk.type === "text-delta")
+      .map((chunk) => chunk.delta)
+      .join("");
+
+    expect(allChunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool-output-available",
+          toolCallId: "request-html-streaming-html-section-1",
+        }),
+      ]),
+    );
+    expect(html).toContain("首页片段");
   });
 
   it("server html generation limits concurrent section calls", async () => {
@@ -866,7 +1191,8 @@ describe("generation skills", () => {
             aspectRatio: "16:9",
             caption: "五步拳动作学习",
             height: 900,
-            imageUrl: "https://assets.example.com/projects/demo/html-screen-visuals/01-demo.png",
+            imageUrl:
+              "/api/projects/33333333-3333-3333-3333-333333333333/artifact-images/html-screen-visuals/request-html-image-section/01-demo.png",
             source: "ai-generated",
             width: 1600,
           },
@@ -897,7 +1223,9 @@ describe("generation skills", () => {
 
     expect(generateText).toHaveBeenCalledTimes(1);
     expect(html).toContain("teaching-image-layout");
-    expect(html).toContain("https://assets.example.com/projects/demo/html-screen-visuals/01-demo.png");
+    expect(html).toContain(
+      "/api/projects/33333333-3333-3333-3333-333333333333/artifact-images/html-screen-visuals/request-html-image-section/01-demo.png",
+    );
     expect(html).toContain("看图理解五步拳动作结构");
     expect(html).toContain("data-duration=\"600\"");
   });

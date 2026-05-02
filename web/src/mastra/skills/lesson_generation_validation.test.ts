@@ -22,10 +22,10 @@ topic=篮球行进间运球
 能遵守规则。
 @flow
 part=准备部分
-content=课堂常规、专项热身
+content=课堂常规、体能唤醒、速度折返
 @flow
 part=基本部分
-content=技术学习、分组练习、教学比赛、体能练习
+content=观察示范、伙伴练习、闯关挑战
 @flow
 part=结束部分
 content=放松拉伸
@@ -48,28 +48,29 @@ rationale=基本部分保持适宜强度。
 `;
 
 describe("lesson_generation_validation", () => {
-  it("requires learning, practice, competition, and fitness segments in the basic part", () => {
+  it("requires learning, practice, competition, and fitness segments across the whole lesson", () => {
     const plan = parseLessonPlanProtocolToCompetitionLessonPlan(protocol);
     const incomplete = structuredClone(plan);
 
-    incomplete.periodPlan.rows[1]!.content = ["技术学习、分组练习"];
+    incomplete.periodPlan.rows[0]!.content = ["课堂常规、专项热身"];
+    incomplete.periodPlan.rows[1]!.content = ["观察示范、伙伴练习"];
 
     const validation = performLessonBusinessValidation(incomplete);
 
     expect(validation.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: "basic-part-segments",
-          message: expect.stringContaining("赛、体能练习"),
+          code: "lesson-core-segments",
+          message: expect.stringContaining("竞赛或展示、体能发展活动"),
         }),
       ]),
     );
   });
 
-  it("accepts a basic part that includes all four required segments", () => {
+  it("accepts a lesson that distributes the four required segments across lesson rows", () => {
     const plan = parseLessonPlanProtocolToCompetitionLessonPlan(protocol);
     const validation = performLessonBusinessValidation(plan);
 
-    expect(validation.issues.map((issue) => issue.code)).not.toContain("basic-part-segments");
+    expect(validation.issues.map((issue) => issue.code)).not.toContain("lesson-core-segments");
   });
 });

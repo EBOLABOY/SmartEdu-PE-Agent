@@ -1,8 +1,12 @@
 import type { MastraModelOutput } from "@mastra/core/stream";
 import {
   convertToModelMessages,
+  extractJsonMiddleware,
+  generateText,
+  Output,
   stepCountIs,
   streamText,
+  wrapLanguageModel,
   type DeepPartial,
   type UIMessageChunk,
 } from "ai";
@@ -11,14 +15,23 @@ import { z } from "zod";
 import {
   agentLessonGenerationSchema,
   type AgentLessonGenerationResult,
+  competitionLessonAssessmentLoadSchema,
   competitionLessonPlanSchema,
+  competitionLessonExecutionSchema,
+  competitionLessonHeaderSchema,
+  competitionLessonTeachingDesignSchema,
+  type CompetitionLessonAssessmentLoad,
   type CompetitionLessonPlan,
+  type CompetitionLessonExecution,
+  type CompetitionLessonHeader,
+  type CompetitionLessonTeachingDesign,
   unwrapAgentLessonGenerationResult,
 } from "@/lib/competition-lesson-contract";
 import {
   formatLessonPlanProtocolDiagnostics,
   parseLessonPlanProtocolToCompetitionLessonPlan,
 } from "@/lib/competition-lesson-protocol";
+import { extractJsonObjectText } from "@/lib/artifact-protocol";
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
 import { createChatModel } from "@/mastra/models";
@@ -27,6 +40,8 @@ import {
   parseSubmitLessonPlanToolInput,
 } from "@/mastra/tools/output_tools";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
+
+import type { LessonBlockGenerationEvent, LessonBlockId } from "./artifact_stream_events";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
 
@@ -83,6 +98,97 @@ export type LessonGenerationStreams = {
 const DEFAULT_LESSON_MODEL_ID = process.env.AI_LESSON_MODEL ?? process.env.AI_MODEL ?? "gpt-4.1-mini";
 const MAX_MODEL_OPERATION_ATTEMPTS = 5;
 const STRUCTURED_OUTPUT_MAX_RETRIES = 3;
+
+type LessonStructuredBlockKey = "header" | "teaching" | "execution" | "assessmentLoad";
+
+type LessonStructuredBlockContext = {
+  execution?: CompetitionLessonExecution;
+  header?: CompetitionLessonHeader;
+  teaching?: CompetitionLessonTeachingDesign;
+};
+
+type LessonStructuredBlockResults = {
+  assessmentLoad: CompetitionLessonAssessmentLoad;
+  execution: CompetitionLessonExecution;
+  header: CompetitionLessonHeader;
+  teaching: CompetitionLessonTeachingDesign;
+};
+
+type LessonStructuredBlockPartial =
+  | CompetitionLessonAssessmentLoad
+  | CompetitionLessonExecution
+  | CompetitionLessonHeader
+  | CompetitionLessonTeachingDesign;
+
+type LessonStructuredBlockGenerationResult = {
+  finalLessonPlanPromise: Promise<CompetitionLessonPlan>;
+  partialOutputStream: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
+};
+
+type LessonStructuredBlockDefinition = {
+  blockId: LessonBlockId;
+  description: string;
+  instructions: string[];
+  key: LessonStructuredBlockKey;
+  name: string;
+  schema: z.ZodTypeAny;
+};
+
+const STRUCTURED_LESSON_BLOCK_MAX_STEPS = 3;
+
+const LESSON_STRUCTURED_BLOCKS: LessonStructuredBlockDefinition[] = [
+  {
+    blockId: "basic",
+    key: "header",
+    name: "CompetitionLessonHeaderBlock",
+    description: "课时计划标题与元数据子块",
+    schema: competitionLessonHeaderSchema,
+    instructions: [
+      "对象只能包含 title、subtitle、teacher、meta 四个顶层字段。",
+      "teacher.school、teacher.name 必须填写；若用户未明确提供教师信息，可使用“未提供学校”“未提供教师”。",
+      "meta 必须包含 topic、lessonNo、studentCount，并尽量补全年级和水平。",
+    ],
+  },
+  {
+    blockId: "objectives",
+    key: "teaching",
+    name: "CompetitionLessonTeachingDesignBlock",
+    description: "课时计划教学设计子块",
+    schema: competitionLessonTeachingDesignSchema,
+    instructions: [
+      "对象只能包含 narrative、learningObjectives、keyDifficultPoints、flowSummary 四个顶层字段。",
+      "所有字段都必须是非空字符串数组。",
+      "三维目标、重难点和流程摘要要与已确定的课题、年级和水平保持一致。",
+    ],
+  },
+  {
+    blockId: "periodPlan",
+    key: "execution",
+    name: "CompetitionLessonExecutionBlock",
+    description: "课时计划场地器材与课堂执行子块",
+    schema: competitionLessonExecutionSchema,
+    instructions: [
+      "对象只能包含 venueEquipment 与 periodPlan 两个顶层字段。",
+      "venueEquipment.venue 只写 1 项核心教学场地；equipment 写 3-4 项直接支撑教学的核心器材。",
+      "periodPlan 必须包含 mainContent、safety、rows、homework、reflection。",
+      "periodPlan.rows 必须覆盖准备部分、基本部分、结束部分。",
+      "整节课必须在真实活动中体现动作方法学习、有效练习、竞赛或展示、体能发展活动。",
+    ],
+  },
+  {
+    blockId: "evaluationLoad",
+    key: "assessmentLoad",
+    name: "CompetitionLessonAssessmentLoadBlock",
+    description: "课时计划评价与运动负荷子块",
+    schema: competitionLessonAssessmentLoadSchema,
+    instructions: [
+      "对象只能包含 evaluation 与 loadEstimate 两个顶层字段。",
+      "evaluation 必须正好 3 项，level 依次为三颗星、二颗星、一颗星，description 要有区分度。",
+      "loadEstimate 必须包含 loadLevel、targetHeartRateRange、averageHeartRate、groupDensity、individualDensity、chartPoints、rationale。",
+      "chartPoints 至少给出 6 个时间点，并与 40 分钟课节节奏匹配。",
+    ],
+  },
+];
 
 export const lessonGenerationEnvelopeSchema = z
   .object({
@@ -170,17 +276,357 @@ function normalizeLessonGenerationStreams(
   return output instanceof ReadableStream ? { stream: output } : output;
 }
 
+function shouldUseStructuredServerSideLessonGeneration() {
+  return process.env.AI_SUPPORTS_STRUCTURED_OUTPUTS === "true" || !process.env.AI_BASE_URL?.trim();
+}
+
+function createStructuredLessonModel(modelId: string) {
+  if (shouldUseStructuredServerSideLessonGeneration()) {
+    return createChatModel(modelId);
+  }
+
+  return wrapLanguageModel({
+    model: createChatModel(modelId),
+    middleware: extractJsonMiddleware(),
+  });
+}
+
+function buildStructuredLessonBlockSystemPrompt(system: string, definition: LessonStructuredBlockDefinition) {
+  return [
+    system,
+    "你正在执行服务端确定性课时计划分块结构化生成任务，不是工具调用或聊天回复。",
+    `当前只输出“${definition.description}”对应的结构化对象。`,
+    "你必须只输出合法 JSON 对象本身，不要输出 Markdown、HTML、XML、代码围栏、解释文字或额外字段。",
+    "所有可见文案必须使用 UTF-8 中文，且直接可用于正式课时计划。",
+    ...definition.instructions,
+  ].join("\n\n");
+}
+
+function buildStructuredLessonBlockMessages(input: {
+  context: LessonStructuredBlockContext;
+  definition: LessonStructuredBlockDefinition;
+  messages: AgentModelMessages;
+}) {
+  const contextMessage =
+    Object.keys(input.context).length > 0
+      ? [
+          "已确定的前置结构数据如下，当前子块必须与其保持一致，不得冲突：",
+          JSON.stringify(input.context, null, 2),
+        ].join("\n")
+      : "当前是本轮第一个结构化子块，无前置结构数据。";
+
+  const taskMessage = [
+    `现在只生成“${input.definition.description}”。`,
+    ...input.definition.instructions,
+    contextMessage,
+  ].join("\n");
+
+  return [
+    ...input.messages,
+    {
+      role: "user" as const,
+      content: taskMessage,
+    },
+  ] as AgentModelMessages;
+}
+
+function parseStructuredLessonBlockText(input: {
+  definition: LessonStructuredBlockDefinition;
+  text: string;
+}) {
+  try {
+    return input.definition.schema.parse(JSON.parse(extractJsonObjectText(input.text)));
+  } catch (error) {
+    throw new Error(
+      `${input.definition.description} JSON 解析失败：${error instanceof Error ? error.message : "unknown-error"}`,
+    );
+  }
+}
+
+async function generateStructuredLessonBlock(input: {
+  context: LessonStructuredBlockContext;
+  definition: LessonStructuredBlockDefinition;
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}) {
+  const baseOptions = {
+    model: createStructuredLessonModel(input.modelId),
+    system: buildStructuredLessonBlockSystemPrompt(input.system, input.definition),
+    messages: buildStructuredLessonBlockMessages({
+      context: input.context,
+      definition: input.definition,
+      messages: input.messages,
+    }),
+    stopWhen: stepCountIs(Math.max(1, Math.min(input.maxSteps, STRUCTURED_LESSON_BLOCK_MAX_STEPS))),
+    temperature: 0,
+  } satisfies Parameters<typeof generateText>[0];
+
+  if (!shouldUseStructuredServerSideLessonGeneration()) {
+    const result = await generateText(baseOptions);
+
+    return parseStructuredLessonBlockText({
+      definition: input.definition,
+      text: result.text,
+    });
+  }
+
+  const result = await generateText({
+    ...baseOptions,
+    output: Output.object({
+      schema: input.definition.schema,
+      name: input.definition.name,
+      description: input.definition.description,
+    }),
+  });
+
+  return input.definition.schema.parse(result.output);
+}
+
+function createLessonPartialFromStructuredBlock(input: {
+  definition: LessonStructuredBlockDefinition;
+  output: LessonStructuredBlockPartial;
+}): DeepPartial<CompetitionLessonPlan> {
+  return input.output as DeepPartial<CompetitionLessonPlan>;
+}
+
+function createLessonStructuredBlockCompletionEvent(input: {
+  definition: LessonStructuredBlockDefinition;
+  output: LessonStructuredBlockPartial;
+  sequence: number;
+}): LessonBlockGenerationEvent {
+  return {
+    blockId: input.definition.blockId,
+    partial: createLessonPartialFromStructuredBlock({
+      definition: input.definition,
+      output: input.output,
+    }),
+    sequence: input.sequence,
+  };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return { promise, reject, resolve };
+}
+
+function createAsyncQueue<T>() {
+  const values: T[] = [];
+  const readers: Array<(result: IteratorResult<T>) => void> = [];
+  let closed = false;
+  let error: unknown;
+
+  const settleNextReader = () => {
+    const reader = readers.shift();
+
+    if (!reader) {
+      return;
+    }
+
+    if (error !== undefined) {
+      reader(Promise.reject(error) as unknown as IteratorResult<T>);
+      return;
+    }
+
+    const value = values.shift();
+
+    if (value !== undefined) {
+      reader({ done: false, value });
+      return;
+    }
+
+    if (closed) {
+      reader({ done: true, value: undefined });
+      return;
+    }
+
+    readers.unshift(reader);
+  };
+
+  return {
+    close() {
+      closed = true;
+      while (readers.length) {
+        settleNextReader();
+      }
+    },
+    error(nextError: unknown) {
+      error = nextError;
+      while (readers.length) {
+        settleNextReader();
+      }
+    },
+    push(value: T) {
+      if (closed || error !== undefined) {
+        return;
+      }
+
+      values.push(value);
+      settleNextReader();
+    },
+    stream: {
+      [Symbol.asyncIterator]() {
+        return {
+          next() {
+            if (error !== undefined) {
+              return Promise.reject(error);
+            }
+
+            const value = values.shift();
+
+            if (value !== undefined) {
+              return Promise.resolve({ done: false as const, value });
+            }
+
+            if (closed) {
+              return Promise.resolve({ done: true as const, value: undefined });
+            }
+
+            return new Promise<IteratorResult<T>>((resolve) => {
+              readers.push(resolve);
+            });
+          },
+        };
+      },
+    } satisfies AsyncIterable<T>,
+  };
+}
+
+function createStructuredBlockPartialStream(input: {
+  blockGenerationPromise: Promise<LessonStructuredBlockResults>;
+  events: AsyncIterable<LessonBlockGenerationEvent>;
+}): AsyncIterable<DeepPartial<CompetitionLessonPlan>> {
+  return (async function* partialOutputStream() {
+    try {
+      for await (const event of input.events) {
+        yield event.partial as DeepPartial<CompetitionLessonPlan>;
+      }
+    } finally {
+      await input.blockGenerationPromise.catch(() => undefined);
+    }
+  })();
+}
+
+function startCompetitionLessonPlanStructuredBlockGeneration(input: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}): LessonStructuredBlockGenerationResult {
+  const eventQueue = createAsyncQueue<LessonBlockGenerationEvent>();
+  const blockGeneration = createDeferred<LessonStructuredBlockResults>();
+
+  const generationTask = (async () => {
+    try {
+      const emitBlock = async (sequence: number, definition: LessonStructuredBlockDefinition, output: LessonStructuredBlockPartial) => {
+        eventQueue.push(createLessonStructuredBlockCompletionEvent({
+          definition,
+          output,
+          sequence,
+        }));
+      };
+      const headerDefinition = LESSON_STRUCTURED_BLOCKS[0]!;
+      const teachingDefinition = LESSON_STRUCTURED_BLOCKS[1]!;
+      const executionDefinition = LESSON_STRUCTURED_BLOCKS[2]!;
+      const assessmentLoadDefinition = LESSON_STRUCTURED_BLOCKS[3]!;
+      const header = competitionLessonHeaderSchema.parse(
+        await generateStructuredLessonBlock({
+          context: {},
+          definition: headerDefinition,
+          maxSteps: input.maxSteps,
+          messages: input.messages,
+          modelId: input.modelId,
+          system: input.system,
+        }),
+      );
+      await emitBlock(1, headerDefinition, header);
+      const teaching = competitionLessonTeachingDesignSchema.parse(
+        await generateStructuredLessonBlock({
+          context: { header },
+          definition: teachingDefinition,
+          maxSteps: input.maxSteps,
+          messages: input.messages,
+          modelId: input.modelId,
+          system: input.system,
+        }),
+      );
+      await emitBlock(2, teachingDefinition, teaching);
+      const execution = competitionLessonExecutionSchema.parse(
+        await generateStructuredLessonBlock({
+          context: { header, teaching },
+          definition: executionDefinition,
+          maxSteps: input.maxSteps,
+          messages: input.messages,
+          modelId: input.modelId,
+          system: input.system,
+        }),
+      );
+      await emitBlock(3, executionDefinition, execution);
+      const assessmentLoad = competitionLessonAssessmentLoadSchema.parse(
+        await generateStructuredLessonBlock({
+          context: { execution, header, teaching },
+          definition: assessmentLoadDefinition,
+          maxSteps: input.maxSteps,
+          messages: input.messages,
+          modelId: input.modelId,
+          system: input.system,
+        }),
+      );
+      await emitBlock(4, assessmentLoadDefinition, assessmentLoad);
+
+      const results = { assessmentLoad, execution, header, teaching };
+      blockGeneration.resolve(results);
+      eventQueue.close();
+
+      return results;
+    } catch (error) {
+      blockGeneration.reject(error);
+      eventQueue.error(error);
+      throw error;
+    }
+  })();
+  const finalLessonPlanPromise = generationTask.then(({ assessmentLoad, execution, header, teaching }) =>
+    competitionLessonPlanSchema.parse({
+      ...header,
+      ...teaching,
+      ...execution,
+      ...assessmentLoad,
+    }),
+  );
+
+  void blockGeneration.promise.catch(() => undefined);
+  void generationTask.catch(() => undefined);
+  void finalLessonPlanPromise.catch(() => undefined);
+
+  return {
+    finalLessonPlanPromise,
+    partialOutputStream: createStructuredBlockPartialStream({
+      blockGenerationPromise: blockGeneration.promise,
+      events: eventQueue.stream,
+    }),
+  };
+}
+
 function createServerLessonProtocolSystemPrompt(system: string) {
   return [
     system,
     "你正在执行服务端确定性课时计划生成任务，不是工具调用或聊天回复。",
     "你必须只输出“自定义教案行协议”文本。不要输出 JSON、Markdown 标题、HTML、XML、代码围栏或解释文字。",
     "所有字段必须使用 UTF-8 中文内容。普通字段用 key=value；@section、@safety、@load 块内可以直接写正文行。",
-    "必须包含：@lesson、三个 narrative @section、三个 objectives @section、三个 @flow、三个 @evaluation、@equipment、@safety、@load。",
-    "三个 @flow 必须分别覆盖 part=准备部分、part=基本部分、part=结束部分。",
+    "必须包含：@lesson、三个 narrative @section、三个 objectives @section、六个 key_difficult_points/period_plan 扩展 @section、至少三个 @flow、三个 @evaluation、@equipment、@safety、@load。",
+    "至少三个 @flow 必须覆盖 part=准备部分、part=基本部分、part=结束部分；基本部分应优先拆分为多个 @flow，每个 @flow 聚焦一个自然学练、比赛或体能活动。",
     "三个 @evaluation 必须分别覆盖 level=三颗星、level=二颗星、level=一颗星。",
     "@flow 的 content 只写本段课堂环节短语，不写时间和步骤细节；教师行为、学生行为、组织形式和安全要求分别写入对应字段。",
-    "基本部分必须体现“学、练、赛、体能练习”四个环节；具体内容、项目任务和组织方式由你自主设计。",
+    "不要把整个基本部分压缩进单个 @flow 的多行 content；应优先使用多个 @flow 来表达动作学习、分组练习、比赛挑战、专项体能等真实活动。",
+    "整节课需在真实活动中自然体现动作方法学习、有效练习、竞赛或展示、体能发展活动；不要把这些课标要求写成单字小标题或固定栏目标签。",
+    "若能判断具体项目特点，应主动补充 key_difficult_points.*、period_plan.homework、period_plan.reflection，并在 @load 中给出 chartPoints。",
     "下面只是协议骨架，不是内容模板；具体教学内容由你根据用户需求、课标依据和教材上下文自主生成，不要照抄骨架说明：",
     "@lesson",
     "title=",
@@ -205,6 +651,18 @@ function createServerLessonProtocolSystemPrompt(system: string) {
     "",
     "@section objectives.sport_morality",
     "",
+    "@section key_difficult_points.student_learning",
+    "",
+    "@section key_difficult_points.teaching_content",
+    "",
+    "@section key_difficult_points.teaching_organization",
+    "",
+    "@section key_difficult_points.teaching_method",
+    "",
+    "@section period_plan.homework",
+    "",
+    "@section period_plan.reflection",
+    "",
     "@flow",
     "part=准备部分",
     "time=",
@@ -218,7 +676,16 @@ function createServerLessonProtocolSystemPrompt(system: string) {
     "part=基本部分",
     "time=",
     "intensity=",
-    "content=",
+    "content=（当前活动的小标题或活动名）",
+    "teacher=",
+    "students=",
+    "organization=",
+    "",
+    "@flow",
+    "part=基本部分",
+    "time=",
+    "intensity=",
+    "content=（下一个基本部分活动的小标题或活动名，可按课堂需要继续追加）",
     "teacher=",
     "students=",
     "organization=",
@@ -256,6 +723,7 @@ function createServerLessonProtocolSystemPrompt(system: string) {
     "average_heart_rate=",
     "group_density=",
     "individual_density=",
+    "chartPoints=0'=90，8'=120，18'=145，28'=155，35'=140，40'=100",
     "rationale=",
   ].join("\n");
 }
@@ -269,7 +737,7 @@ function createEmptyUiStream(): ReadableStream<UIMessageChunk> {
   });
 }
 
-async function streamCompetitionLessonPlanServerSide({
+async function streamCompetitionLessonPlanServerSideWithProtocol({
   maxSteps,
   messages,
   modelId,
@@ -306,6 +774,91 @@ async function streamCompetitionLessonPlanServerSide({
     finalLessonPlanPromise,
     stream: createEmptyUiStream(),
   };
+}
+
+async function streamCompetitionLessonPlanServerSideWithStructuredBlocks({
+  maxSteps,
+  messages,
+  modelId,
+  system,
+}: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}): Promise<LessonGenerationStreams> {
+  const generation = startCompetitionLessonPlanStructuredBlockGeneration({
+    maxSteps,
+    messages,
+    modelId,
+    system,
+  });
+
+  return {
+    finalLessonPlanPromise: generation.finalLessonPlanPromise,
+    partialOutputStream: generation.partialOutputStream,
+    stream: createEmptyUiStream(),
+  };
+}
+
+async function streamCompetitionLessonPlanServerSide({
+  maxSteps,
+  messages,
+  modelId,
+  system,
+}: {
+  maxSteps: number;
+  messages: AgentModelMessages;
+  modelId: string;
+  system: string;
+}): Promise<LessonGenerationStreams> {
+  try {
+    const structuredStreams = await streamCompetitionLessonPlanServerSideWithStructuredBlocks({
+      maxSteps,
+      messages,
+      modelId,
+      system,
+    });
+    const finalLessonPlanPromise = structuredStreams.finalLessonPlanPromise?.catch(async (error) => {
+      console.warn("[lesson-authoring] structured-lesson-generation-fallback", {
+        modelId,
+        structuredOutputsEnabled: shouldUseStructuredServerSideLessonGeneration(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      const fallback = await streamCompetitionLessonPlanServerSideWithProtocol({
+        maxSteps,
+        messages,
+        modelId,
+        system,
+      });
+
+      if (!fallback.finalLessonPlanPromise) {
+        throw error;
+      }
+
+      return fallback.finalLessonPlanPromise;
+    });
+
+    void finalLessonPlanPromise?.catch(() => undefined);
+
+    return {
+      ...structuredStreams,
+      finalLessonPlanPromise,
+    };
+  } catch (error) {
+    console.warn("[lesson-authoring] structured-lesson-generation-fallback", {
+      modelId,
+      structuredOutputsEnabled: shouldUseStructuredServerSideLessonGeneration(),
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return streamCompetitionLessonPlanServerSideWithProtocol({
+      maxSteps,
+      messages,
+      modelId,
+      system,
+    });
+  }
 }
 
 function readToolInputPart(part: UIMessageChunk) {

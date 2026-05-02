@@ -35,9 +35,8 @@ export {
   type HtmlScreenVisualAssetResult,
 } from "./html_screen_visual_asset_skill";
 export {
-  runLessonGenerationWithRepair,
-  type LessonRepairGenerateRunner,
-} from "./lesson_generation_repair";
+  runLessonGenerationWithPostProcess,
+} from "./lesson_generation_postprocess";
 export { runStandardsRetrievalSkill } from "./standards_retrieval_skill";
 export { runTextbookRetrievalSkill } from "./textbook_retrieval_skill";
 export { runServerHtmlGenerationSkill } from "./server_html_generation_skill";
@@ -62,5 +61,11 @@ export {
   createWorkflowTraceData,
   createWorkflowTraceStep,
 } from "./structured_authoring_stream_adapter";
+export type {
+  ArtifactSnapshotBuilder,
+  ArtifactStreamEvent,
+  LessonBlockGenerationEvent,
+  LessonBlockId,
+} from "./artifact_stream_events";
 export type { AgentStreamRunner } from "./lesson_generation_skill";
 export type { PromptSkill, PromptSkillWithInput } from "./types";

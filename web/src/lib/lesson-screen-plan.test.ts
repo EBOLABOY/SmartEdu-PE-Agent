@@ -73,6 +73,7 @@ describe("lesson-screen-plan", () => {
     const plan = buildLessonScreenPlanFromLessonPlan(LESSON_PLAN);
 
     expect(plan.visualSystem).toContain("统一视觉系统");
+    expect(plan.visualSystem).toContain("Gym Command Desk");
     expect(plan.sections).toHaveLength(5);
     expect(plan.sections[0]).toMatchObject({
       title: "课堂常规",

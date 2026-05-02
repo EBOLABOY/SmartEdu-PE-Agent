@@ -1,7 +1,7 @@
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
 
 export type LessonBusinessValidationIssue = {
-  code: "basic-part-segments" | "empty-text" | "placeholder" | "section-missing" | "evaluation-levels";
+  code: "lesson-core-segments" | "empty-text" | "placeholder" | "section-missing" | "evaluation-levels";
   message: string;
   path?: string;
 };
@@ -13,22 +13,22 @@ export type LessonBusinessValidationResult = {
 
 const REQUIRED_PERIOD_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const REQUIRED_EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
-const REQUIRED_BASIC_PART_SEGMENTS = [
+const REQUIRED_LESSON_CORE_SEGMENTS = [
   {
-    label: "学",
+    label: "动作方法学习",
     pattern: /学|学习|学练|讲解|示范|认知|动作方法|技术学习|技能学习/,
   },
   {
-    label: "练",
+    label: "有效练习",
     pattern: /练|练习|分组练习|巩固|重复|轮换/,
   },
   {
-    label: "赛",
-    pattern: /赛|比赛|竞赛|对抗|展示|教学比赛|小组比赛/,
+    label: "竞赛或展示",
+    pattern: /赛|比赛|竞赛|对抗|展示|挑战|游戏|教学比赛|小组比赛/,
   },
   {
-    label: "体能练习",
-    pattern: /体能|素质|力量|灵敏|速度|耐力|协调|体能练习/,
+    label: "体能发展活动",
+    pattern: /体能|素质|力量|灵敏|速度|耐力|协调|体能练习|专项体能/,
   },
 ] as const;
 
@@ -128,19 +128,18 @@ export function performLessonBusinessValidation(
     });
   }
 
-  const basicRows = plan.periodPlan.rows.filter((row) => row.structure === "基本部分");
-  const basicPartText = basicRows
+  const lessonCoreText = plan.periodPlan.rows
     .flatMap((row) => [row.content, row.methods.teacher, row.methods.students, row.organization])
     .flat()
     .join(" ");
-  const missingBasicPartSegments = REQUIRED_BASIC_PART_SEGMENTS.filter(
-    (segment) => !segment.pattern.test(basicPartText),
+  const missingLessonCoreSegments = REQUIRED_LESSON_CORE_SEGMENTS.filter(
+    (segment) => !segment.pattern.test(lessonCoreText),
   ).map((segment) => segment.label);
 
-  if (missingBasicPartSegments.length > 0) {
+  if (missingLessonCoreSegments.length > 0) {
     issues.push({
-      code: "basic-part-segments",
-      message: `基本部分必须体现“学、练、赛、体能练习”四个环节，当前缺少：${missingBasicPartSegments.join("、")}。`,
+      code: "lesson-core-segments",
+      message: `整节课必须在真实活动中体现动作方法学习、有效练习、竞赛或展示、体能发展活动，当前缺少：${missingLessonCoreSegments.join("、")}。`,
       path: "lessonPlan.periodPlan.rows",
     });
   }

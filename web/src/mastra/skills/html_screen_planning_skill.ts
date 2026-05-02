@@ -1,11 +1,8 @@
 import type { FullOutput } from "@mastra/core/stream";
 import {
   convertToModelMessages,
-  extractJsonMiddleware,
   generateText,
-  Output,
   stepCountIs,
-  wrapLanguageModel,
 } from "ai";
 
 import {
@@ -16,6 +13,10 @@ import {
   htmlScreenPlanSchema,
   type HtmlScreenPlan,
 } from "@/lib/html-screen-plan-contract";
+import {
+  formatHtmlScreenPlanProtocolDiagnostics,
+  parseHtmlScreenPlanProtocolToHtmlScreenPlan,
+} from "@/lib/html-screen-plan-protocol";
 import {
   type GenerationMode,
 } from "@/lib/lesson-authoring-contract";
@@ -192,6 +193,46 @@ function normalizeAgentPlan(agentPlan: HtmlScreenPlan, seedPlan: HtmlScreenPlan)
   });
 }
 
+function buildProtocolPlanningSystemPrompt(options: HtmlScreenPlanGenerateOptions) {
+  return [
+    options.system,
+    "你正在执行服务端确定性 HTML 大屏分镜规划任务，不是工具调用或聊天回复。",
+    "你必须只输出“自定义 HTML 分镜行协议”文本。不要输出 JSON、Markdown 标题、HTML、XML、代码围栏或解释文字。",
+    "所有字段必须使用 UTF-8 中文内容。普通字段用 key=value；@visual_system 块内可以直接写正文行。",
+    "必须包含：@visual_system、至少一个首页 @section、覆盖全部课时计划行的教学页 @section。",
+    "第一个 @section 必须是 page_role=cover，首页不写 source_row_index，也不参与倒计时。",
+    "非首页 @section 必须写 title、page_role、source_row_index 或 source_row_indexes、duration_seconds、objective、student_actions、safety_cue、evaluation_cue、visual_intent、visual_mode、page_prompt、reason。",
+    "合并多个课时计划行时写 source_row_indexes=0,1；拆分同一行时可复用 source_row_index。",
+    "student_actions 使用分号分隔 1-3 条动作；visual_mode 只能写 html、image 或 hybrid。",
+    "visual_mode=image 或 hybrid 时必须写 image_prompt；visual_mode=html 时不要写 image_prompt。",
+    "page_prompt 必须是一行完整提示词，交给后续 HTML 片段生成模型使用；不要在协议中输出真正 HTML。",
+    "下面只是协议骨架，不是内容模板；具体分镜、视觉意图和页面提示词由你根据课时计划自主生成，不要照抄骨架说明：",
+    "@visual_system",
+    "整套课堂大屏的统一视觉系统描述。",
+    "",
+    "@section",
+    "title=",
+    "page_role=cover",
+    "visual_mode=html",
+    "page_prompt=",
+    "reason=",
+    "",
+    "@section",
+    "title=",
+    "page_role=learnPractice",
+    "source_row_index=0",
+    "duration_seconds=",
+    "objective=",
+    "student_actions=",
+    "safety_cue=",
+    "evaluation_cue=",
+    "visual_intent=",
+    "visual_mode=html",
+    "page_prompt=",
+    "reason=",
+  ].join("\n\n");
+}
+
 export async function runHtmlScreenPlanningSkill(input: {
   additionalInstructions?: string;
   agentGenerate: HtmlScreenPlanAgentRunner;
@@ -250,13 +291,6 @@ export async function runHtmlScreenPlanningSkill(input: {
   }
 }
 
-function createStructuredPlannerModel(modelId: string) {
-  return wrapLanguageModel({
-    model: createChatModel(modelId),
-    middleware: extractJsonMiddleware(),
-  });
-}
-
 export async function runServerHtmlScreenPlanningSkill(input: {
   additionalInstructions?: string;
   lessonPlan?: string;
@@ -265,23 +299,32 @@ export async function runServerHtmlScreenPlanningSkill(input: {
   requestId: string;
   seedPlan?: HtmlScreenPlan;
 }) {
-  const model = createStructuredPlannerModel(input.modelId ?? DEFAULT_HTML_PLANNER_MODEL_ID);
+  const model = createChatModel(input.modelId ?? DEFAULT_HTML_PLANNER_MODEL_ID);
   const agentGenerate: HtmlScreenPlanAgentRunner = async (messages, options) => {
     const result = await generateText({
       model,
-      system: options.system,
+      system: buildProtocolPlanningSystemPrompt(options),
       messages,
       stopWhen: stepCountIs(options.maxSteps),
       temperature: 0,
-      output: Output.object({
-        schema: htmlScreenPlanSchema,
-        name: "HtmlScreenPlan",
-        description: options.structuredOutput.instructions,
-      }),
     });
 
+    let object: HtmlScreenPlan;
+
+    try {
+      object = parseHtmlScreenPlanProtocolToHtmlScreenPlan(result.text);
+    } catch (error) {
+      throw new Error(
+        error && typeof error === "object" && "diagnostics" in error
+          ? `HTML 分镜行协议生成失败：\n${formatHtmlScreenPlanProtocolDiagnostics(
+              error as Parameters<typeof formatHtmlScreenPlanProtocolDiagnostics>[0],
+            )}`
+          : `HTML 分镜行协议生成失败：${error instanceof Error ? error.message : "unknown-error"}`,
+      );
+    }
+
     return {
-      object: result.output,
+      object,
       toolResults: [],
       steps: [],
     } as unknown as FullOutput<HtmlScreenPlan>;

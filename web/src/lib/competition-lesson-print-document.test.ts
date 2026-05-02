@@ -29,6 +29,31 @@ describe("competition-lesson-print-document", () => {
     expect(html).not.toContain("<p class=\"competition-print-paragraph\">健康第一</p>");
   });
 
+  it("会把课时计划具体教学内容中的小标题加粗并单独换行", () => {
+    const html = buildCompetitionLessonPrintHtml({
+      ...DEFAULT_COMPETITION_LESSON_PLAN,
+      periodPlan: {
+        ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan,
+        rows: DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows.map((row, index) =>
+          index === 1
+            ? {
+                ...row,
+                content: [
+                  "1. **找准甜点区**：观察示范，明确脚内侧触球部位。2. **两人连线**：两人一组完成定点传接球。3. 小队通关：开展连续传球挑战。",
+                ],
+              }
+            : row,
+        ),
+      },
+    });
+
+    expect(html).toContain("competition-print-teaching-content-heading");
+    expect(html).toContain("<strong class=\"competition-print-teaching-content-heading\">1. 找准甜点区</strong>");
+    expect(html).toContain("<strong class=\"competition-print-teaching-content-heading\">2. 两人连线</strong>");
+    expect(html).toContain("<strong class=\"competition-print-teaching-content-heading\">3. 小队通关</strong>");
+    expect(html).not.toContain("**找准甜点区**");
+  });
+
   it("会优先渲染课时计划行内的 AI 教学站位图", () => {
     const html = buildCompetitionLessonPrintHtml({
       ...DEFAULT_COMPETITION_LESSON_PLAN,
@@ -56,7 +81,82 @@ describe("competition-lesson-print-document", () => {
     });
 
     expect(html).toContain("competition-print-ai-diagram-image");
+    expect(html).toContain("<object");
+    expect(html).toContain("data=\"data:image/png;base64,diagram\"");
     expect(html).toContain("准备部分站位图");
     expect(html).toContain("data:image/png;base64,diagram");
+  });
+
+  it("会渲染同一课时计划行内的多张 AI 教学站位图", () => {
+    const html = buildCompetitionLessonPrintHtml({
+      ...DEFAULT_COMPETITION_LESSON_PLAN,
+      periodPlan: {
+        ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan,
+        rows: DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows.map((row, index) =>
+          index === 1
+            ? {
+                ...row,
+                diagramAssets: [
+                  {
+                    alt: "基本部分图一",
+                    caption: "找准甜点区",
+                    height: 320,
+                    imageUrl: "data:image/png;base64,basic-a",
+                    kind: "movement",
+                    source: "ai-generated",
+                    width: 320,
+                  },
+                  {
+                    alt: "基本部分图二",
+                    caption: "两人连线",
+                    height: 320,
+                    imageUrl: "data:image/png;base64,basic-b",
+                    kind: "station-rotation",
+                    source: "ai-generated",
+                    width: 320,
+                  },
+                ],
+              }
+            : row,
+        ),
+      },
+    });
+
+    expect(html).toContain("data=\"data:image/png;base64,basic-a\"");
+    expect(html).toContain("data=\"data:image/png;base64,basic-b\"");
+    expect(html).toContain("找准甜点区");
+    expect(html).toContain("两人连线");
+  });
+
+  it("会为 AI 教学站位图内置代码示意图兜底，避免外链失效时出现破图", () => {
+    const html = buildCompetitionLessonPrintHtml({
+      ...DEFAULT_COMPETITION_LESSON_PLAN,
+      periodPlan: {
+        ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan,
+        rows: DEFAULT_COMPETITION_LESSON_PLAN.periodPlan.rows.map((row, index) =>
+          index === 1
+            ? {
+                ...row,
+                diagramAssets: [
+                  {
+                    alt: "基本部分站位图",
+                    caption: "基本部分队形",
+                    height: 320,
+                    imageUrl: "https://private-storage.example/expired.png",
+                    kind: "movement",
+                    source: "ai-generated",
+                    width: 320,
+                  },
+                ],
+              }
+            : row,
+        ),
+      },
+    });
+
+    expect(html).toContain("图片暂不可用，已切换为文本生成示意图");
+    expect(html).toContain("competition-print-ai-diagram-fallback");
+    expect(html).toContain("competition-print-field-box");
+    expect(html).toContain("https://private-storage.example/expired.png");
   });
 });

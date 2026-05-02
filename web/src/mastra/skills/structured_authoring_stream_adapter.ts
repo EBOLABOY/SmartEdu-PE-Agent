@@ -29,10 +29,6 @@ import {
 } from "@/mastra/tools/output_tools";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
-import {
-  formatLessonValidationIssues,
-  performLessonBusinessValidation,
-} from "./lesson_generation_validation";
 import { enrichLessonPlanWithDiagramAssets } from "./lesson_diagram_generation_skill";
 
 const DRAFT_TRACE_UPDATE_INTERVAL = 20;
@@ -197,11 +193,6 @@ function readToolInputPart(part: UIMessageChunk) {
 function buildLessonJsonArtifactContent(structuredOutput: unknown) {
   try {
     const parsed = unwrapAgentLessonGenerationResult(structuredOutput);
-    const validation = performLessonBusinessValidation(parsed);
-
-    if (!validation.isValid) {
-      throw new Error(formatLessonValidationIssues(validation.issues));
-    }
 
     return {
       content: JSON.stringify(parsed),
@@ -263,36 +254,29 @@ function shouldForwardUiChunk(
   return true;
 }
 
-function createForwardedUiChunkStream(
-  stream: ReadableStream<UIMessageChunk>,
-  options: {
-    forwardAssistantText: boolean;
-  },
-) {
-  return new ReadableStream<InferUIMessageChunk<SmartEduUIMessage>>({
-    async start(controller) {
-      const reader = stream.getReader();
+function readArtifactDataPart(part: UIMessageChunk): StructuredArtifactData | undefined {
+  if (part.type !== "data-artifact") {
+    return undefined;
+  }
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
+  const data = (part as { data?: unknown }).data;
 
-          if (done) {
-            controller.close();
-            return;
-          }
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
 
-          if (shouldForwardUiChunk(value, options)) {
-            controller.enqueue(value as InferUIMessageChunk<SmartEduUIMessage>);
-          }
-        }
-      } catch {
-        controller.close();
-      } finally {
-        reader.releaseLock();
-      }
-    },
-  });
+  const artifact = data as Partial<StructuredArtifactData>;
+
+  if (
+    artifact.protocolVersion !== STRUCTURED_ARTIFACT_PROTOCOL_VERSION ||
+    artifact.source !== "data-part" ||
+    typeof artifact.content !== "string" ||
+    typeof artifact.isComplete !== "boolean"
+  ) {
+    return undefined;
+  }
+
+  return artifact as StructuredArtifactData;
 }
 
 export function createStructuredAuthoringStreamAdapter({
@@ -333,9 +317,9 @@ export function createStructuredAuthoringStreamAdapter({
       let structuredLessonOutput: unknown;
       let hasStructuredActivity = false;
       let lessonDraftChunkCount = 0;
+      let latestUpstreamHtmlArtifact: StructuredArtifactData | undefined;
       const forwardAssistantText = allowTextOnlyResponse || shouldForwardAssistantText(mode, workflow);
-      const [inspectionStream, passthroughStream] = stream.tee();
-      const reader = inspectionStream.getReader();
+      const reader = stream.getReader();
 
       const ensureAgentStreamStarted = () => {
         if (runtimeTrace.some((entry) => entry.step === "agent-stream-started")) {
@@ -405,7 +389,7 @@ export function createStructuredAuthoringStreamAdapter({
             pushOrReplaceTraceEntry(
               "validate-lesson-output",
               "success",
-              "结构化课时计划已通过最终 schema 与业务校验。",
+              "结构化课时计划已通过最终 schema 检查。",
             );
           }
         }
@@ -448,6 +432,14 @@ export function createStructuredAuthoringStreamAdapter({
           id: `lesson-authoring-artifact-${artifact.contentType}`,
           data: artifact,
         });
+      };
+
+      const forwardUiChunk = (part: UIMessageChunk) => {
+        if (!shouldForwardUiChunk(part, { forwardAssistantText })) {
+          return;
+        }
+
+        writer.write(part as InferUIMessageChunk<SmartEduUIMessage>);
       };
 
       let latestLessonDraft = buildCompetitionLessonDraft();
@@ -630,14 +622,14 @@ export function createStructuredAuthoringStreamAdapter({
             pushOrReplaceTraceEntry(
               "validate-lesson-output",
               "running",
-              "正在等待模型最终结构化输出，并执行课时计划 schema 与业务校验。",
+              "正在等待模型最终结构化输出，并执行课时计划 schema 检查。",
             );
             writeTrace("generation");
             trustedLessonOutput = await finalLessonPlanPromise;
           } catch (error) {
             writeStreamError(
-              "lesson-repair-failed",
-              error instanceof Error ? error.message : "结构化课时计划修复失败。",
+              "validate-lesson-output",
+              error instanceof Error ? error.message : "结构化课时计划检查失败。",
             );
             return false;
           }
@@ -667,7 +659,7 @@ export function createStructuredAuthoringStreamAdapter({
         pushOrReplaceTraceEntry(
           "validate-lesson-output",
           "success",
-          "结构化课时计划已通过最终 schema 与业务校验。",
+          "结构化课时计划已通过最终 schema 检查。",
         );
         writeTrace("generation");
         const artifact = buildArtifactData(workflow, {
@@ -703,6 +695,15 @@ export function createStructuredAuthoringStreamAdapter({
       };
 
       const finalizeHtmlArtifact = async () => {
+        if (latestUpstreamHtmlArtifact?.isComplete && latestUpstreamHtmlArtifact.status === "ready") {
+          completeRunningTraceStep(
+            "agent-stream-started",
+            "互动大屏 HTML 模型生成流已结束。",
+          );
+          await persistArtifact(latestUpstreamHtmlArtifact);
+          return true;
+        }
+
         if (allowTextOnlyResponse && rawText.trim() && !rawText.includes("<html")) {
           return true;
         }
@@ -743,17 +744,22 @@ export function createStructuredAuthoringStreamAdapter({
           return;
         }
 
+        if (!lessonDraftStream) {
+          pushOrReplaceTraceEntry(
+            "stream-lesson-draft",
+            "running",
+            "正在生成课时计划结构，完成首个结构块后会同步右侧预览。",
+          );
+          writeTrace("generation");
+          return;
+        }
+
         pushOrReplaceTraceEntry(
           "stream-lesson-draft",
           "running",
           "正在建立课时计划草稿流，右侧预览将同步更新。",
         );
         writeTrace("generation");
-        writeLessonDraftArtifact();
-
-        if (!lessonDraftStream) {
-          return;
-        }
 
         for await (const partial of lessonDraftStream) {
           if (hasFinished) {
@@ -777,11 +783,6 @@ export function createStructuredAuthoringStreamAdapter({
           );
         });
 
-      writer.merge(
-        createForwardedUiChunkStream(passthroughStream, {
-          forwardAssistantText,
-        }),
-      );
       startServerPipelineTrace();
       const lessonDraftTask = createLessonDraftTask();
 
@@ -794,6 +795,16 @@ export function createStructuredAuthoringStreamAdapter({
           }
 
           const part = value;
+
+          // 保持上游工具事件、artifact 与 trace 的到达顺序，避免页级 HTML 反馈被最终状态压后。
+          forwardUiChunk(part);
+
+          const upstreamArtifact = mode === "html" ? readArtifactDataPart(part) : undefined;
+
+          if (upstreamArtifact?.contentType === "html") {
+            markStructuredActivity();
+            latestUpstreamHtmlArtifact = upstreamArtifact;
+          }
 
           if (!handleOutputToolInput(part)) {
             return;
@@ -821,6 +832,10 @@ export function createStructuredAuthoringStreamAdapter({
               rawText += part.delta;
 
               if (mode === "lesson") {
+                break;
+              }
+
+              if (latestUpstreamHtmlArtifact) {
                 break;
               }
 

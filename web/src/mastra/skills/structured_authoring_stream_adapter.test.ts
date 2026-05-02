@@ -5,7 +5,11 @@ import {
   DEFAULT_COMPETITION_LESSON_PLAN,
   competitionLessonPlanSchema,
 } from "@/lib/competition-lesson-contract";
-import type { StructuredArtifactData, WorkflowTraceData } from "@/lib/lesson-authoring-contract";
+import {
+  STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+  type StructuredArtifactData,
+  type WorkflowTraceData,
+} from "@/lib/lesson-authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
@@ -86,11 +90,29 @@ function createChunkStream(chunks: UIMessageChunk[]) {
 }
 
 function createConcreteLessonPlan() {
-  return JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "羽毛球"));
+  const lessonPlan = JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "羽毛球"));
+
+  lessonPlan.periodPlan.rows[1].content = [
+    "找准击球窗口：教师示范正手发高远球动作，学生明确击球点和挥拍路线。",
+    "落点雷达练习：两人一组完成定点发球和落点控制。",
+    "连中目标区挑战赛：小组比一比连续发入目标区域次数。",
+    "体能充电站：结合并步移动和核心支撑提升专项体能。",
+  ];
+
+  return lessonPlan;
 }
 
 function createPlaceholderLessonPlan() {
-  return JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "待补充"));
+  const lessonPlan = JSON.parse(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN).replaceAll("XXX", "待补充"));
+
+  lessonPlan.periodPlan.rows[1].content = [
+    "关键发现：明确主要动作方法。",
+    "伙伴试练：完成合作练习。",
+    "小队比赛：开展小组比赛。",
+    "体能补给：完成体能练习。",
+  ];
+
+  return lessonPlan;
 }
 
 function createStructuredLessonOutputChunk(lessonPlan = createConcreteLessonPlan()): UIMessageChunk {
@@ -210,6 +232,36 @@ describe("structured authoring stream adapter", () => {
     );
   });
 
+  it("业务语义问题不再阻断最终 lesson artifact 输出", async () => {
+    const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(createPlaceholderLessonPlan()),
+      mode: "lesson",
+      originalMessages: [],
+      requestId: "request-no-business-block",
+      workflow: baseWorkflow,
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    });
+
+    const chunks = await readAll(stream);
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+    const parsed = competitionLessonPlanSchema.parse(JSON.parse(finalArtifact?.content ?? "{}"));
+    const completedTrace = chunks.map(getTraceData).find((trace) => trace?.phase === "completed");
+
+    expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    expect(parsed.title).toBe("待补充");
+    expect(completedTrace?.trace).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          step: "validate-lesson-output",
+          status: "success",
+        }),
+      ]),
+    );
+  });
+
   it("allowTextOnlyResponse 为 true 时纯文本回复不输出 trace 或 artifact", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       allowTextOnlyResponse: true,
@@ -297,11 +349,11 @@ describe("structured authoring stream adapter", () => {
     );
   });
 
-  it("lesson ready artifact 仍以 repair 后的 finalLessonPlanPromise 为准", async () => {
+  it("lesson ready artifact 仍以 finalLessonPlanPromise 为准", async () => {
     const draftLessonPlan = createPlaceholderLessonPlan();
-    const repairedLessonPlan = createConcreteLessonPlan();
+    const finalLessonPlan = createConcreteLessonPlan();
     const stream = createStructuredAuthoringStreamAdapter({
-      finalLessonPlanPromise: Promise.resolve(repairedLessonPlan),
+      finalLessonPlanPromise: Promise.resolve(finalLessonPlan),
       mode: "lesson",
       originalMessages: [],
       requestId: "request-repaired-final-plan",
@@ -433,6 +485,145 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
+  it("html 上游 artifact 流会被原样透传并作为最终结果持久化，不再由 text-delta 重复合成", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      generationPlan: {
+        ...baseWorkflow.generationPlan,
+        mode: "html",
+        assistantTextPolicy: "suppress-html-text",
+      },
+    } as LessonWorkflowOutput;
+    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section>上游最终大屏</section></body></html>";
+    const upstreamArtifact: StructuredArtifactData = {
+      protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+      stage: "html",
+      contentType: "html",
+      content: html,
+      isComplete: true,
+      status: "ready",
+      source: "data-part",
+      title: "互动大屏 Artifact",
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    };
+    const persistence = {
+      saveArtifactVersion: vi.fn(),
+    } as unknown as LessonAuthoringPersistence;
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "html",
+      originalMessages: [],
+      persistence,
+      projectId: "11111111-1111-4111-8111-111111111111",
+      requestId: "request-html-upstream-artifact",
+      workflow,
+      stream: createChunkStream([
+        { type: "data-artifact", id: "lesson-authoring-artifact-html", data: upstreamArtifact } as UIMessageChunk,
+        { type: "text-delta", id: "html-1", delta: html },
+        { type: "finish", finishReason: "stop" },
+      ]),
+    });
+
+    const chunks = await readAll(stream);
+    const artifacts = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .filter(Boolean);
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      content: html,
+      contentType: "html",
+      isComplete: true,
+      status: "ready",
+    });
+    expect(persistence.saveArtifactVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artifact: expect.objectContaining({
+          content: html,
+          contentType: "html",
+          isComplete: true,
+          status: "ready",
+        }),
+      }),
+    );
+  });
+
+  it("html 页级工具事件会按上游顺序流式输出，早于最终完成状态", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      generationPlan: {
+        ...baseWorkflow.generationPlan,
+        mode: "html",
+        assistantTextPolicy: "suppress-html-text",
+      },
+    } as LessonWorkflowOutput;
+    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section>第 1 页</section></body></html>";
+    const upstreamArtifact: StructuredArtifactData = {
+      protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+      stage: "html",
+      contentType: "html",
+      content: html,
+      isComplete: true,
+      status: "ready",
+      source: "data-part",
+      title: "互动大屏 Artifact",
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    };
+
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "html",
+      originalMessages: [],
+      requestId: "request-html-section-streaming",
+      workflow,
+      stream: createChunkStream([
+        { type: "start-step" },
+        {
+          type: "tool-input-start",
+          toolCallId: "request-html-section-1",
+          toolName: "generateHtmlScreenSection",
+          title: "生成第 1 页 HTML",
+        },
+        {
+          type: "tool-input-available",
+          toolCallId: "request-html-section-1",
+          toolName: "generateHtmlScreenSection",
+          title: "生成第 1 页 HTML",
+          input: {
+            sectionIndex: 0,
+            title: "首页",
+          },
+        },
+        {
+          type: "tool-output-available",
+          toolCallId: "request-html-section-1",
+          output: {
+            title: "首页",
+            characters: 1280,
+            sectionIndex: 0,
+          },
+        },
+        { type: "data-artifact", id: "lesson-authoring-artifact-html", data: upstreamArtifact },
+        { type: "finish-step" },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const toolStartIndex = chunks.findIndex(
+      (chunk) => chunk.type === "tool-input-start" && chunk.toolName === "generateHtmlScreenSection",
+    );
+    const toolOutputIndex = chunks.findIndex(
+      (chunk) => chunk.type === "tool-output-available" && chunk.toolCallId === "request-html-section-1",
+    );
+    const finalArtifactIndex = chunks.findIndex((chunk) => getArtifactData(chunk)?.status === "ready");
+    const completedTraceIndex = chunks.findIndex((chunk) => getTraceData(chunk)?.phase === "completed");
+
+    expect(toolStartIndex).toBeGreaterThan(-1);
+    expect(toolOutputIndex).toBeGreaterThan(toolStartIndex);
+    expect(finalArtifactIndex).toBeGreaterThan(toolOutputIndex);
+    expect(completedTraceIndex).toBeGreaterThan(finalArtifactIndex);
+  });
+
   it("非法输出工具输入会直接报错，不回退到猜测 JSON", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
@@ -553,27 +744,38 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("没有 partial output 时也会先输出 lesson-json 草稿首包", async () => {
+  it("没有 partial output 时不再输出默认草稿首包，只保留真实生成进度", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
+      finalLessonPlanPromise: Promise.resolve(createConcreteLessonPlan()),
       mode: "lesson",
       originalMessages: [],
       requestId: "request-empty-draft-first-packet",
       workflow: baseWorkflow,
-      stream: createChunkStream([createLessonToolChunk(), { type: "finish", finishReason: "stop" }]),
+      stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
     });
 
     const chunks = await readAll(stream);
-    const firstArtifact = chunks
+    const artifacts = chunks
       .filter((chunk) => chunk.type === "data-artifact")
       .map(getArtifactData)
-      .at(0);
+      .filter(Boolean);
+    const draftTrace = chunks
+      .map(getTraceData)
+      .find((trace) =>
+        trace?.trace.some(
+          (entry) =>
+            entry.step === "stream-lesson-draft" &&
+            entry.detail.includes("完成首个结构块后会同步右侧预览"),
+        ),
+      );
 
-    expect(firstArtifact).toMatchObject({
+    expect(artifacts.some((artifact) => artifact?.status === "streaming")).toBe(false);
+    expect(artifacts.at(-1)).toMatchObject({
       contentType: "lesson-json",
-      isComplete: false,
-      status: "streaming",
+      isComplete: true,
+      status: "ready",
     });
-    expect(firstArtifact?.content).toContain("课时计划生成中");
+    expect(draftTrace).toBeDefined();
   });
 
   it("最终课时计划会先 ready，再执行教学站位图增强", async () => {
@@ -697,7 +899,7 @@ describe("structured authoring stream adapter", () => {
         expect.objectContaining({
           step: "stream-lesson-draft",
           status: "success",
-          detail: expect.stringContaining("共同步 46 次草稿更新"),
+          detail: expect.stringContaining("共同步 45 次草稿更新"),
         }),
       ]),
     });

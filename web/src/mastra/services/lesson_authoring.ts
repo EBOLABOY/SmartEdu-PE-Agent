@@ -357,6 +357,7 @@ async function executeLessonAuthoringStream(input: {
   let system = buildPeTeacherSystemPrompt(request.context, {
     lessonPlan: request.lessonPlan,
     mode: agenticMode,
+    responseStage: agenticMode === "lesson" && shouldUseStructuredAdapter ? "generation" : "tool-use",
   });
   let workflow = createAgenticWorkflowContext({
     mode: agenticMode,
@@ -395,7 +396,7 @@ async function executeLessonAuthoringStream(input: {
       workflow,
     })).workflow;
 
-    const generation = await authoringSkills.runLessonGenerationWithRepair({
+    const generation = await authoringSkills.runLessonGenerationWithPostProcess({
       messages: executionMessages,
       requestId,
       serverSide: true,

@@ -246,3 +246,21 @@ export async function getS3ObjectText(input: {
 
   return response.text();
 }
+
+export async function getS3Object(input: {
+  config: S3RestConfig;
+  key: string;
+}) {
+  const response = await requestS3Object({
+    config: input.config,
+    key: input.key,
+    method: "GET",
+  });
+  const body = Buffer.from(await response.arrayBuffer());
+
+  return {
+    body,
+    contentLength: response.headers.get("content-length") ?? undefined,
+    contentType: response.headers.get("content-type") ?? undefined,
+  };
+}
