@@ -63,6 +63,14 @@ const PERSISTED_HTML_VERSION: PersistedArtifactVersion = {
   title: "Persisted HTML",
   contentType: "html",
   content: LIVE_HTML,
+  htmlPages: [
+    {
+      pageIndex: 0,
+      pageRole: "cover",
+      pageTitle: "Live Screen",
+      sectionHtml: '<section class="slide"><h1>Live Screen</h1></section>',
+    },
+  ],
   status: "ready",
   protocolVersion: "structured-v1",
   versionNumber: 1,

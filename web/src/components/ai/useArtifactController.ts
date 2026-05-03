@@ -19,6 +19,8 @@ import {
   exportHtmlResponseSchema,
   type ArtifactView,
 } from "@/lib/lesson-authoring-contract";
+import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact-image-browser-inline";
+import { composeHtmlScreenDocument } from "@/lib/html-screen-editor";
 
 type UseArtifactControllerInput = {
   isHtmlGenerationPending: boolean;
@@ -82,6 +84,16 @@ export function useArtifactController(input: UseArtifactControllerInput) {
       lifecycle.screenPlan
     );
   }, [lifecycle.screenPlan, lifecycle.versions, selectedVersion]);
+  const currentHtmlDocument = useMemo(() => {
+    if (!lifecycle.htmlPages?.length) {
+      return "";
+    }
+
+    return composeHtmlScreenDocument({
+      htmlContent: lifecycle.html,
+      pages: lifecycle.htmlPages,
+    });
+  }, [lifecycle.html, lifecycle.htmlPages]);
   const selectedVersionSlideData = selectedVersionScreenPlan?.sections ?? [];
   const selectedVersionScreenKey = getNativeScreenKey(selectedVersionSlideData);
   const canRestoreSelectedVersion = Boolean(
@@ -89,21 +101,8 @@ export function useArtifactController(input: UseArtifactControllerInput) {
       !selectedVersion.isCurrent &&
       onRestoreArtifactVersion,
   );
-  const downloadBlob = useMemo(() => {
-    if (!lifecycle.html) {
-      return null;
-    }
-
-    return new Blob([lifecycle.html], { type: "text/html;charset=utf-8" });
-  }, [lifecycle.html]);
-
-  const downloadHtmlLocally = () => {
-    if (!downloadBlob) {
-      toast.warning("暂无可导出的大屏文件", { description: "请先确认课时计划并生成互动大屏。" });
-      return;
-    }
-
-    const url = URL.createObjectURL(downloadBlob);
+  const triggerLocalHtmlDownload = (htmlContent: string) => {
+    const url = URL.createObjectURL(new Blob([htmlContent], { type: "text/html;charset=utf-8" }));
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = "smartedu-pe-screen.html";
@@ -111,56 +110,78 @@ export function useArtifactController(input: UseArtifactControllerInput) {
     URL.revokeObjectURL(url);
   };
 
+  const buildOfflineHtmlForLocalDownload = async () => {
+    if (!currentHtmlDocument.trim()) {
+      throw new Error("暂无可导出的大屏文件，请先确认课时计划并生成互动大屏。");
+    }
+
+    const rewritten = await inlineArtifactImagesForBrowserHtml({
+      htmlContent: currentHtmlDocument,
+    });
+
+    if (rewritten.warnings.length > 0) {
+      throw new Error(rewritten.warnings.join("；"));
+    }
+
+    return rewritten.html;
+  };
+
   const downloadHtml = () => {
     void (async () => {
-      if (!downloadBlob) {
-        toast.warning("暂无可导出的大屏文件", { description: "请先确认课时计划并生成互动大屏。" });
-        return;
-      }
-
-      if (!projectId) {
-        downloadHtmlLocally();
-        toast.success("大屏文件已导出", { description: "当前为临时会话，已保存为本地 HTML 文件。" });
-        return;
-      }
-
       setIsExporting(true);
 
       try {
-        const response = await fetch(`/api/projects/${projectId}/exports/html`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            filename: "smartedu-pe-screen.html",
-            html: lifecycle.html,
-          }),
-        });
-        const payload = await response.json().catch(() => null);
+        const offlineHtml = await buildOfflineHtmlForLocalDownload();
+        triggerLocalHtmlDownload(offlineHtml);
 
-        if (!response.ok) {
-          throw new Error(
-            payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
-              ? payload.error
-              : "云端导出失败。",
-          );
+        if (!projectId) {
+          toast.success("离线大屏已导出", {
+            description: "图片资源已写入 HTML 文件，断网环境下也可直接打开。",
+          });
+          return;
         }
 
-        const parsedPayload = exportHtmlResponseSchema.safeParse(payload);
+        try {
+          const response = await fetch(`/api/projects/${projectId}/exports/html`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              filename: "smartedu-pe-screen.html",
+              html: currentHtmlDocument,
+            }),
+          });
+          const payload = await response.json().catch(() => null);
 
-        if (!parsedPayload.success) {
-          throw new Error("云端导出响应结构不合法。");
+          if (!response.ok) {
+            throw new Error(
+              payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
+                ? payload.error
+                : "云端导出失败。",
+            );
+          }
+
+          const parsedPayload = exportHtmlResponseSchema.safeParse(payload);
+
+          if (!parsedPayload.success) {
+            throw new Error("云端导出响应结构不合法。");
+          }
+
+          toast.success("离线大屏已导出", {
+            description: `图片资源已内联到 HTML，并已同步云端：${parsedPayload.data.exportFile.objectKey}`,
+          });
+        } catch (exportError) {
+          toast.warning("离线大屏已下载，云端同步未完成", {
+            description: exportError instanceof Error ? exportError.message : "请检查 S3 环境配置后重试。",
+          });
         }
-
-        downloadHtmlLocally();
-        toast.success("大屏文件已导出", {
-          description: `已写入 S3：${parsedPayload.data.exportFile.objectKey}`,
-        });
-      } catch (exportError) {
-        downloadHtmlLocally();
-        toast.warning("云端导出未完成，已改为本地导出", {
-          description: exportError instanceof Error ? exportError.message : "请检查 S3 环境配置后重试。",
+      } catch (downloadError) {
+        toast.error("离线大屏导出失败", {
+          description:
+            downloadError instanceof Error
+              ? downloadError.message
+              : "受控图片资源未能写入 HTML，当前文件无法保证离线显示。",
         });
       } finally {
         setIsExporting(false);

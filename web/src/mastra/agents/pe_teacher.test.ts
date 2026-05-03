@@ -5,8 +5,8 @@ import { mastra } from "@/mastra";
 import { peTeacherPromptSkills } from "@/mastra/skills";
 
 describe("pe_teacher", () => {
-  it("默认注入广东省比赛体育课时计划参考格式", () => {
-    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("广东省");
+  it("默认注入比赛体育课时计划参考格式", () => {
+    expect(PE_TEACHER_SYSTEM_PROMPT).toContain("课时计划标准规范");
     expect(PE_TEACHER_SYSTEM_PROMPT).toContain("课时计划");
     expect(PE_TEACHER_SYSTEM_PROMPT).toContain("periodPlan");
     expect(PE_TEACHER_SYSTEM_PROMPT).toContain("evaluation");
@@ -23,7 +23,7 @@ describe("pe_teacher", () => {
     ]);
   });
 
-  it("课时计划 Agent 只暴露检索和需求诊断工具，全局工具表不再暴露旧兼容产物工具", async () => {
+  it("课时计划 Agent 只暴露检索和需求诊断工具", async () => {
     const agentTools = await mastra.getAgent("peTeacherAgent").listTools();
     const globalTools = mastra.listTools();
 
@@ -35,19 +35,14 @@ describe("pe_teacher", () => {
     );
     expect(Object.keys(agentTools ?? {})).not.toEqual(
       expect.arrayContaining([
-        "apply_lesson_patch",
-        "generate_structured_lesson",
-        "submit_lesson_plan",
-        "write_lesson_plan",
+        "generateHtmlScreenSection",
+        "submitHtmlScreenSection",
       ]),
     );
     expect(globalTools).toHaveProperty("analyze_requirements");
     expect(globalTools).toHaveProperty("searchStandards");
-    expect(globalTools).not.toHaveProperty("submit_html_screen");
-    expect(globalTools).not.toHaveProperty("apply_lesson_patch");
-    expect(globalTools).not.toHaveProperty("generate_structured_lesson");
-    expect(globalTools).not.toHaveProperty("submit_lesson_plan");
-    expect(globalTools).not.toHaveProperty("write_lesson_plan");
+    expect(globalTools).not.toHaveProperty("generateHtmlScreenSection");
+    expect(globalTools).not.toHaveProperty("submitHtmlScreenSection");
   });
 
   it("lesson 阶段按需检索或诊断，正式课时计划由服务端管线提交", () => {
@@ -66,22 +61,19 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("对象");
     expect(prompt).toContain("durationMinutes");
     expect(prompt).toContain("studentCount");
-    expect(prompt).not.toContain("submit_lesson_plan");
-    expect(prompt).not.toContain("AgentLessonGeneration JSON");
     expect(prompt).not.toContain("信息模糊时先调用 `analyze_requirements`");
     expect(prompt).not.toContain("<artifact>");
   });
 
-  it("lesson 正式生成阶段切换为协议文本约束，不再混入 JSON 输出要求", () => {
+  it("lesson 正式生成阶段使用结构化 JSON 子块约束", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, {
       mode: "lesson",
       responseStage: "generation",
     });
 
     expect(prompt).toContain("正式生成（Generation）阶段输出约束");
-    expect(prompt).toContain("只输出“自定义教案行协议”纯文本");
-    expect(prompt).toContain("多个 @flow");
-    expect(prompt).not.toContain("只允许输出合法 JSON 对象");
+    expect(prompt).toContain("只输出当前服务端结构化子块要求的合法 JSON 对象");
+    expect(prompt).toContain("loadEstimate");
   });
 
   it("会把用户资料注入课时计划教师和学段字段", () => {
@@ -113,23 +105,22 @@ describe("pe_teacher", () => {
 
     expect(prompt).toContain("服务端");
     expect(prompt).toContain("不要调用提交工具");
-    expect(prompt).not.toContain("submit_html_screen");
-    expect(prompt).toContain("简洁 PPT 首页");
+    expect(prompt).not.toContain("submitHtmlScreenSection");
+    expect(prompt).toContain("现代高端发布会幻灯片");
     expect(prompt).toContain("首页必须作为 AI 分镜的第 1 页生成");
     expect(prompt).toContain("开始上课");
-    expect(prompt).toContain("全屏自适应多页结构");
+    expect(prompt).toContain("多页分页结构");
     expect(prompt).toContain("统一 visualSystem");
-    expect(prompt).toContain("Gym Command Desk");
-    expect(prompt).toContain("深色球场基底");
-    expect(prompt).toContain("实体高对比信息面板");
-    expect(prompt).toContain("完整 CSS 和 JavaScript");
+    expect(prompt).toContain("基于教学情境的动态视觉推导");
+    expect(prompt).toContain("Tailwind CSS 技术偏好");
+    expect(prompt).toContain("禁止所有课时套用同一种固定风格模板");
+    expect(prompt).toContain("最小文档组装与分页包装");
     expect(prompt).toContain("学习页面和练习页面原则上合二为一");
     expect(prompt).toContain("学练页不能是文字板");
     expect(prompt).toContain("不使用固定组件枚举限制页面设计");
-    expect(prompt).toContain("cover-stage");
+    expect(prompt).toContain("不要依赖服务端预置类名");
     expect(prompt).toContain("自由分镜契约");
-    expect(prompt).toContain("上一页");
-    expect(prompt).toContain("下一页");
+    expect(prompt).toContain("不要假设服务端会额外注入统一控制脚本");
     expect(prompt).not.toContain("iOS 18");
   });
 
@@ -143,7 +134,7 @@ describe("pe_teacher", () => {
           {
             title: "课堂首页",
             pageRole: "cover",
-            pagePrompt: "生成首页封面，大标题居中并显示开始上课按钮。",
+            pagePrompt: "生成首页封面，采用深色沉浸背景，超大标题偏向左侧排版，学校和教师姓名下沉到底部，并显示开始上课按钮。",
             reason: "首页作为 AI 分镜第 1 页。",
           },
           {

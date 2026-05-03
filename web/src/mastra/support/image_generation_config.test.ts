@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 
-import { enrichHtmlScreenPlanWithVisualAssets } from "./html_screen_visual_asset_skill";
+import { enrichHtmlScreenPlanWithVisualAssets } from "../skills/runtime/html_screen_visual_asset_skill";
 import { getImageGenerationConfig } from "./image_generation_config";
-import { enrichLessonPlanWithDiagramAssets } from "./lesson_diagram_generation_skill";
+import { enrichLessonPlanWithDiagramAssets } from "../skills/runtime/lesson_diagram_generation_skill";
 
 const IMAGE_CONFIG_TEST_ENV_NAMES = [
   "AI_IMAGE_BASE_URL",

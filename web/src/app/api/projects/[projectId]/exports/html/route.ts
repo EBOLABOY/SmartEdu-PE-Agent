@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import {
   deleteS3Object,
+  getS3Object,
   putS3Object,
   type S3RestConfig,
 } from "@/lib/s3/s3-rest-client";
@@ -16,6 +17,7 @@ import {
   jsonRequestErrorResponse,
   readJsonRequest,
 } from "@/lib/api/request";
+import { rewriteArtifactImageUrlsInHtml } from "@/lib/artifact-image-html-rewriter";
 import { injectBrowserSandboxCsp } from "@/lib/browser-sandbox-html";
 import { toIsoDateTime } from "@/lib/date-time";
 import {
@@ -26,11 +28,13 @@ import {
   createSupabaseServerClient,
   hasSupabasePublicEnv,
 } from "@/lib/supabase/server";
+import { parseArtifactImageProxyUrl } from "@/lib/s3/artifact-image-url";
 
 export const runtime = "nodejs";
 
 const HTML_CONTENT_TYPE = "text/html;charset=utf-8" as const;
 const S3_PROVIDER = "s3-compatible" as const;
+const DEFAULT_IMAGE_CONTENT_TYPE = "image/png" as const;
 
 type ExportFileRow = {
   bucket: string;
@@ -65,6 +69,17 @@ function buildObjectKey(projectId: string, filename: string) {
 function buildAttachmentContentDisposition(filename: string) {
   const asciiFallback = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+function buildInlineImageDataUrl(input: {
+  body: Buffer;
+  contentType?: string;
+}) {
+  const contentType = input.contentType?.startsWith("image/")
+    ? input.contentType
+    : DEFAULT_IMAGE_CONTENT_TYPE;
+
+  return `data:${contentType};base64,${input.body.toString("base64")}`;
 }
 
 async function removeUploadedObject({
@@ -166,7 +181,41 @@ export async function POST(
     await requireProjectWriteAccess(supabase, parsedProjectId.data);
 
     const filename = sanitizeFilename(parsedBody.data.filename);
-    const securedHtml = injectBrowserSandboxCsp(parsedBody.data.html, {
+    const artifactStorageConfig = getS3ObjectStorageConfig("artifact");
+    const offlineHtml = await rewriteArtifactImageUrlsInHtml({
+      htmlContent: parsedBody.data.html,
+      resolveReplacementUrl: async (source) => {
+        const parsedSource = parseArtifactImageProxyUrl(source);
+
+        if (!parsedSource) {
+          throw new Error("图片代理路径不合法。");
+        }
+
+        if (parsedSource.projectId !== parsedProjectId.data) {
+          throw new Error("检测到跨项目图片引用，已拒绝离线导出。");
+        }
+
+        if (!artifactStorageConfig) {
+          throw new Error("当前环境未配置 S3 artifact 对象存储读取凭证。");
+        }
+
+        const object = await getS3Object({
+          config: artifactStorageConfig,
+          key: parsedSource.objectKey,
+        });
+
+        return buildInlineImageDataUrl({
+          body: object.body,
+          contentType: object.contentType,
+        });
+      },
+    });
+
+    if (offlineHtml.warnings.length > 0) {
+      throw new Error(offlineHtml.warnings.join("；"));
+    }
+
+    const securedHtml = injectBrowserSandboxCsp(offlineHtml.html, {
       imageSourceOrigin: new URL(request.url).origin,
     });
     const htmlBuffer = Buffer.from(securedHtml, "utf8");

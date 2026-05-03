@@ -219,10 +219,21 @@ export const uiHintSchema = z.discriminatedUnion("action", [
 
 export type UiHint = z.infer<typeof uiHintSchema>;
 
-export const structuredArtifactDataSchema = z.object({
+export const htmlArtifactPageSchema = z
+  .object({
+    pageIndex: z.number().int().nonnegative(),
+    pageRole: z.string().trim().min(1).max(64).optional(),
+    pageTitle: z.string().trim().min(1).max(160).optional(),
+    sectionHtml: z.string().trim().min(1),
+  })
+  .strict();
+
+export type HtmlArtifactPage = z.infer<typeof htmlArtifactPageSchema>;
+
+const htmlArtifactPagesSchema = z.array(htmlArtifactPageSchema).min(1).max(64);
+
+const structuredArtifactDataBaseSchema = z.object({
   protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
-  stage: generationModeSchema,
-  contentType: artifactContentTypeSchema,
   content: z.string(),
   isComplete: z.boolean(),
   status: z.enum(["streaming", "ready", "error"]),
@@ -232,7 +243,21 @@ export const structuredArtifactDataSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
+export const structuredArtifactDataSchema = z.discriminatedUnion("stage", [
+  structuredArtifactDataBaseSchema.extend({
+    stage: z.literal("lesson"),
+    contentType: z.literal("lesson-json"),
+  }).strict(),
+  structuredArtifactDataBaseSchema.extend({
+    stage: z.literal("html"),
+    contentType: z.literal("html"),
+    htmlPages: htmlArtifactPagesSchema,
+  }).strict(),
+]);
+
 export type StructuredArtifactData = z.infer<typeof structuredArtifactDataSchema>;
+export type LessonStructuredArtifactData = Extract<StructuredArtifactData, { stage: "lesson" }>;
+export type HtmlStructuredArtifactData = Extract<StructuredArtifactData, { stage: "html" }>;
 
 export const workflowTraceDataSchema = z.object({
   protocolVersion: z.literal(STRUCTURED_ARTIFACT_PROTOCOL_VERSION),
@@ -258,12 +283,10 @@ export type SmartEduUIData = {
 
 export type SmartEduUIMessage = UIMessage<unknown, SmartEduUIData>;
 
-export const persistedArtifactVersionSchema = z.object({
+const persistedArtifactVersionBaseSchema = z.object({
   id: z.string().uuid(),
   artifactId: z.string().uuid(),
-  stage: generationModeSchema,
   title: z.string().trim().min(1).optional(),
-  contentType: artifactContentTypeSchema,
   content: z.string(),
   status: z.enum(["streaming", "ready", "error"]),
   protocolVersion: z.string().trim().min(1),
@@ -274,7 +297,21 @@ export const persistedArtifactVersionSchema = z.object({
   trace: workflowTraceDataSchema.optional(),
 });
 
+export const persistedArtifactVersionSchema = z.discriminatedUnion("stage", [
+  persistedArtifactVersionBaseSchema.extend({
+    stage: z.literal("lesson"),
+    contentType: z.literal("lesson-json"),
+  }).strict(),
+  persistedArtifactVersionBaseSchema.extend({
+    stage: z.literal("html"),
+    contentType: z.literal("html"),
+    htmlPages: htmlArtifactPagesSchema,
+  }).strict(),
+]);
+
 export type PersistedArtifactVersion = z.infer<typeof persistedArtifactVersionSchema>;
+export type LessonPersistedArtifactVersion = Extract<PersistedArtifactVersion, { stage: "lesson" }>;
+export type HtmlPersistedArtifactVersion = Extract<PersistedArtifactVersion, { stage: "html" }>;
 
 export const persistenceStateSchema = z.object({
   enabled: z.boolean(),
@@ -464,12 +501,24 @@ export const smartEduDataSchemas = {
   trace: workflowTraceDataSchema,
 } as const;
 
+export const htmlFocusTargetSchema = z
+  .object({
+    currentHtml: z.string().max(1_000_000),
+    pageIndex: z.number().int().nonnegative(),
+    pageRole: z.string().trim().min(1).max(64).optional(),
+    pageTitle: z.string().trim().min(1).max(160).optional(),
+  })
+  .strict();
+
+export type HtmlFocusTarget = z.infer<typeof htmlFocusTargetSchema>;
+
 export const chatRequestBodySchema = z
   .object({
     messages: z.array(z.unknown()).max(60),
     projectId: projectIdSchema.optional(),
     context: peTeacherContextSchema.optional(),
     mode: generationModeSchema.optional(),
+    htmlFocus: htmlFocusTargetSchema.optional(),
     lessonPlan: z.string().max(1_000_000).optional(),
     market: standardsMarketSchema.optional(),
   })

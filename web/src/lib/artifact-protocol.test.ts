@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   extractArtifactFromMessage,
-  extractHtmlDocumentFromText,
-  extractJsonObjectText,
   getMessageReasoningText,
   getStructuredArtifactPart,
 } from "@/lib/artifact-protocol";
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import { chatRequestBodySchema, type SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import {
+  chatRequestBodySchema,
+  persistedArtifactVersionSchema,
+  structuredArtifactDataSchema,
+  type SmartEduUIMessage,
+} from "@/lib/lesson-authoring-contract";
 
 describe("artifact-protocol", () => {
   it("chat 请求契约只保留课时计划相关输入，不再接收大屏分镜计划", () => {
@@ -27,37 +30,6 @@ describe("artifact-protocol", () => {
         screenPlan: { sections: [] },
       }).success,
     ).toBe(false);
-  });
-
-  it("能从带前置说明和后置围栏的文本中提取 HTML 文档", () => {
-    const extraction = extractHtmlDocumentFromText(`
-      下面是你要的互动大屏
-
-      \`\`\`html
-      <!DOCTYPE html>
-      <html lang="zh-CN">
-        <head><title>篮球课</title></head>
-        <body><h1>篮球课</h1></body>
-      </html>
-      \`\`\`
-    `);
-
-    expect(extraction.html).toContain("<!DOCTYPE html>");
-    expect(extraction.html).toContain("<html lang=\"zh-CN\">");
-    expect(extraction.htmlComplete).toBe(true);
-    expect(extraction.leadingText).toContain("下面是你要的互动大屏");
-  });
-
-  it("能识别流式未完成的 HTML 文档", () => {
-    const extraction = extractHtmlDocumentFromText(`
-      <!DOCTYPE html>
-      <html lang="zh-CN">
-        <head><title>测试</title></head>
-        <body><div>倒计时
-    `);
-
-    expect(extraction.html).toContain("<html lang=\"zh-CN\">");
-    expect(extraction.htmlComplete).toBe(false);
   });
 
   it("能从结构化 lesson-json data part 中解析流式课时计划", () => {
@@ -92,40 +64,6 @@ describe("artifact-protocol", () => {
     expect(extracted.html).toBe("");
   });
 
-  it("能从带代码围栏和说明的流式 lesson-json 中提前解析课时计划", () => {
-    const message: SmartEduUIMessage = {
-      id: "assistant-lesson-fenced",
-      role: "assistant",
-      parts: [
-        {
-          type: "data-artifact",
-          id: "artifact",
-          data: {
-            protocolVersion: "structured-v1",
-            stage: "lesson",
-            contentType: "lesson-json",
-            content: `下面是结构化课时计划 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
-            isComplete: false,
-            status: "streaming",
-            source: "data-part",
-            updatedAt: new Date().toISOString(),
-          },
-        },
-      ],
-    };
-
-    const extracted = extractArtifactFromMessage(message);
-
-    expect(extracted.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
-    expect(extracted.status).toBe("streaming");
-  });
-
-  it("会从文本中截取 JSON 对象主体", () => {
-    expect(extractJsonObjectText(`说明\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n结束`)).toBe(
-      JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
-    );
-  });
-
   it("能从 reasoning part 中提取模型返回的思考文本", () => {
     const message: SmartEduUIMessage = {
       id: "assistant-reasoning",
@@ -147,6 +85,17 @@ describe("artifact-protocol", () => {
   });
 
   it("能从结构化 html data part 中解析 HTML Artifact", () => {
+    const htmlDocument = `<!DOCTYPE html>
+      <html lang="zh-CN">
+        <head><title>篮球课</title></head>
+        <body>
+          <div class="screen">
+            <section class="slide cover-slide active" data-slide-kind="cover">
+              <main class="cover-shell"><h1>OK</h1></main>
+            </section>
+          </div>
+        </body>
+      </html>`;
     const message: SmartEduUIMessage = {
       id: "assistant-html",
       role: "assistant",
@@ -158,7 +107,16 @@ describe("artifact-protocol", () => {
             protocolVersion: "structured-v1",
             stage: "html",
             contentType: "html",
-            content: "<!DOCTYPE html><html lang=\"zh-CN\"><body>OK</body></html>",
+            content: htmlDocument,
+            htmlPages: [
+              {
+                pageIndex: 0,
+                pageRole: "cover",
+                pageTitle: "OK",
+                sectionHtml:
+                  '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>OK</h1></main></section>',
+              },
+            ],
             isComplete: true,
             status: "ready",
             source: "data-part",
@@ -170,9 +128,43 @@ describe("artifact-protocol", () => {
 
     const extracted = extractArtifactFromMessage(message);
 
-    expect(extracted.html).toContain("<body>OK</body>");
+    expect(extracted.html).toContain("<h1>OK</h1>");
     expect(extracted.htmlComplete).toBe(true);
+    expect(extracted.htmlPages).toHaveLength(1);
+    expect(extracted.htmlPages?.[0]).toMatchObject({
+      pageIndex: 0,
+      pageRole: "cover",
+      pageTitle: "OK",
+    });
     expect(extracted.lessonContent).toBe("");
+  });
+
+  it("schema 会拒绝缺少 htmlPages 的 html artifact 与 persisted version", () => {
+    expect(
+      structuredArtifactDataSchema.safeParse({
+        protocolVersion: "structured-v1",
+        stage: "html",
+        contentType: "html",
+        content: "<!DOCTYPE html><html><body></body></html>",
+        isComplete: true,
+        status: "ready",
+        source: "data-part",
+        updatedAt: new Date().toISOString(),
+      }).success,
+    ).toBe(false);
+    expect(
+      persistedArtifactVersionSchema.safeParse({
+        id: "11111111-1111-4111-8111-111111111111",
+        artifactId: "22222222-2222-4222-8222-222222222222",
+        stage: "html",
+        contentType: "html",
+        content: "<!DOCTYPE html><html><body></body></html>",
+        status: "ready",
+        protocolVersion: "structured-v1",
+        versionNumber: 1,
+        createdAt: new Date().toISOString(),
+      }).success,
+    ).toBe(false);
   });
 
   it("能从结构化 lesson-json data part 中保留 JSON 内容并解析 lessonPlan", () => {

@@ -61,14 +61,6 @@ const CURRENT_STEP_TITLES: Record<string, string> = {
 
 const STEP_TITLES: Record<string, string> = CURRENT_STEP_TITLES;
 
-// 仅兼容历史 trace 回放。当前生成链路已不再写入 lesson-repair-* 步骤；
-// 旧步骤统一并入“检查教案内容”，避免 UI 再出现已废弃的 repair 环节。
-const LEGACY_TRACE_STEP_ALIASES: Record<string, string> = {
-  "lesson-repair-started": "validate-lesson-output",
-  "lesson-repair-finished": "validate-lesson-output",
-  "lesson-repair-failed": "validate-lesson-output",
-};
-
 const TRACE_STEPS_OWNED_BY_AI_SDK_PARTS = new Set([
   "agent-step-start",
   "agent-step-finish",
@@ -78,12 +70,10 @@ const TRACE_STEPS_OWNED_BY_AI_SDK_PARTS = new Set([
 ]);
 
 const PASSIVE_TEXT_ONLY_TRACE_STEPS = new Set([
-  "agentic-entry",
   "authoring-entry",
   "agent-stream-started",
   "agent-step-start",
   "agent-step-finish",
-  "agent-text-response",
   "generation-finished",
 ]);
 
@@ -214,19 +204,6 @@ export function formatWorkflowTraceDetailForTeacher(entry: WorkflowTraceEntry) {
   }
 }
 
-function normalizeWorkflowTraceEntry(entry: WorkflowTraceEntry): WorkflowTraceEntry {
-  const aliasedStep = LEGACY_TRACE_STEP_ALIASES[entry.step];
-
-  if (!aliasedStep) {
-    return entry;
-  }
-
-  return {
-    ...entry,
-    step: aliasedStep,
-  };
-}
-
 function getDisplayTraceEntries(trace: WorkflowTraceData | undefined) {
   if (!trace) {
     return [];
@@ -236,7 +213,6 @@ function getDisplayTraceEntries(trace: WorkflowTraceData | undefined) {
 
   trace.trace
     .filter((entry) => !TRACE_STEPS_OWNED_BY_AI_SDK_PARTS.has(entry.step))
-    .map(normalizeWorkflowTraceEntry)
     .forEach((entry) => {
       dedupedEntries.set(entry.step, entry);
     });
@@ -254,10 +230,6 @@ function buildDetails(trace: WorkflowTraceData | undefined): AssistantWorkflowDe
   }));
 }
 
-function isSubmitToolPart(part: SmartEduUIMessage["parts"][number]) {
-  return part.type === "tool-submit_lesson_plan";
-}
-
 function hasActionableWorkflowTrace(
   message: SmartEduUIMessage,
   trace: WorkflowTraceData | undefined,
@@ -267,7 +239,7 @@ function hasActionableWorkflowTrace(
     return false;
   }
 
-  if (hasArtifact || trace.phase === "failed" || message.parts.some(isSubmitToolPart)) {
+  if (hasArtifact || trace.phase === "failed") {
     return true;
   }
 

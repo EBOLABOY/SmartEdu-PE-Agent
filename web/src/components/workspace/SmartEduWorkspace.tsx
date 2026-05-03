@@ -54,11 +54,16 @@ import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   smartEduDataSchemas,
+  type ArtifactView,
   type PersistedArtifactVersion,
   type PersistedProjectSummary,
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
-import { buildLessonChatRequestBody } from "@/lib/workspace/chat-request";
+import type { HtmlScreenPageSelection } from "@/lib/html-screen-editor";
+import {
+  buildHtmlChatRequestBody,
+  buildLessonChatRequestBody,
+} from "@/lib/workspace/chat-request";
 import { isLikelyLessonPatchInstruction } from "@/lib/workspace/prompt-intent";
 const EMPTY_MESSAGES: SmartEduUIMessage[] = [];
 const EMPTY_PERSISTED_VERSIONS: PersistedArtifactVersion[] = [];
@@ -198,6 +203,8 @@ function AppContent({
   const [hasLiveArtifactAuthority, setHasLiveArtifactAuthority] = useState(false);
   const [isProjectSheetOpen, setIsProjectSheetOpen] = useState(false);
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
+  const [artifactView, setArtifactView] = useState<ArtifactView>("lesson");
+  const [selectedHtmlPage, setSelectedHtmlPage] = useState<HtmlScreenPageSelection | null>(null);
   const previousProjectIdRef = useRef(projectId);
 
   const chatTransport = useMemo(
@@ -336,6 +343,8 @@ function AppContent({
           setLessonConfirmed(false);
           setHasLiveArtifactAuthority(false);
           setIsArtifactSyncPendingState(false);
+          setArtifactView("lesson");
+          setSelectedHtmlPage(null);
         });
       }
       return;
@@ -347,6 +356,8 @@ function AppContent({
         setLessonConfirmed(false);
         setHasLiveArtifactAuthority(false);
         setIsArtifactSyncPendingState(false);
+        setArtifactView("lesson");
+        setSelectedHtmlPage(null);
       });
     }
   }, [initialMessages.length, projectId]);
@@ -407,6 +418,7 @@ function AppContent({
     const prompt = normalizePromptSubmission(submission);
     const normalizedQuery = prompt.text.trim();
     const currentLessonPlan = effectiveArtifactLifecycle.lessonPlan;
+    const currentHtml = effectiveArtifactLifecycle.html.trim();
 
     if (!normalizedQuery || isLoading) {
       return;
@@ -482,15 +494,25 @@ function AppContent({
       setIsArtifactSyncPendingState(true);
     }
 
+    const shouldEditCurrentHtmlPage =
+      artifactView === "canvas" &&
+      currentHtml.length > 0;
+
     await sendMessage(
       prompt.files.length
         ? { text: normalizedQuery, files: prompt.files }
         : { text: normalizedQuery },
       {
         body: withProjectContext(
-          buildLessonChatRequestBody({
-            currentLessonPlan,
-          }),
+          shouldEditCurrentHtmlPage
+            ? buildHtmlChatRequestBody({
+              currentHtml,
+              currentLessonPlan,
+              selectedPage: selectedHtmlPage,
+            })
+            : buildLessonChatRequestBody({
+              currentLessonPlan,
+            }),
           explicitProjectId,
         ),
       },
@@ -560,6 +582,8 @@ function AppContent({
     setLessonConfirmed(false);
     setHasLiveArtifactAuthority(false);
     setIsArtifactSyncPendingState(false);
+    setArtifactView("lesson");
+    setSelectedHtmlPage(null);
     setCurrentProject(project);
     setPersistedVersions([]);
     setMessages([]);
@@ -608,6 +632,8 @@ function AppContent({
     setLessonConfirmed(false);
     setHasLiveArtifactAuthority(false);
     setIsArtifactSyncPendingState(false);
+    setArtifactView("lesson");
+    setSelectedHtmlPage(null);
     setMessages([]);
     setPersistedVersions([]);
     setCurrentProject(null);
@@ -915,11 +941,13 @@ function AppContent({
             >
               <div className="hidden h-full w-[320px] shrink-0 overflow-hidden border-r border-border/40 lg:block 2xl:w-[360px]">
                 <ChatPanel
+                  activeArtifactView={artifactView}
                   error={error}
                   isLoading={isLoading}
                   messages={messages}
                   onSubmitPrompt={(query) => void submitPrompt(query)}
                   projectTitle={currentProject?.title}
+                  selectedHtmlPage={selectedHtmlPage}
                   status={status}
                   stop={stop}
                 />
@@ -941,11 +969,13 @@ function AppContent({
                     <SheetDescription>移动端对话抽屉</SheetDescription>
                   </SheetHeader>
                   <ChatPanel
+                    activeArtifactView={artifactView}
                     error={error}
                     isLoading={isLoading}
                     messages={messages}
                     onSubmitPrompt={(query) => void submitPrompt(query)}
                     projectTitle={currentProject?.title}
+                    selectedHtmlPage={selectedHtmlPage}
                     status={status}
                     stop={stop}
                   />
@@ -966,13 +996,16 @@ function AppContent({
                   isLoading={isLoading}
                   isRestoringVersion={isRestoringArtifactVersionState}
                   lifecycle={effectiveArtifactLifecycle}
+                  onActiveViewChange={setArtifactView}
                   onGenerateHtml={() => {
                     void generateHtmlFromLesson();
                   }}
                   onRestoreArtifactVersion={(snapshot) => {
                     void handleRestoreArtifactVersion(snapshot);
                   }}
+                  onSelectHtmlPage={setSelectedHtmlPage}
                   projectId={projectId}
+                  selectedHtmlPage={selectedHtmlPage}
                 />
               </main>
             </motion.div>

@@ -5,7 +5,6 @@ import type { StandardsSearchResult } from "@/mastra/knowledge/provider-types";
 
 import {
   createServerStandardsPendingWorkflow,
-  enrichWorkflowWithServerStandards,
   resolveWorkflowWithServerStandards,
 } from "./server_standards_enrichment";
 
@@ -210,21 +209,4 @@ describe("server standards enrichment", () => {
     );
   });
 
-  it("keeps enrichWorkflowWithServerStandards as a stable workflow-only compatibility API", async () => {
-    const workflow = await enrichWorkflowWithServerStandards({
-      query: "帮我生成一个六年级武术长拳课时计划",
-      retriever: vi.fn().mockRejectedValue(new Error("vector store unavailable")),
-      workflow: createBaseWorkflow(),
-    });
-
-    expect(workflow.standards.warning).toContain("vector store unavailable");
-    expect(workflow.trace).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          step: "server-standards-retrieval",
-          status: "blocked",
-        }),
-      ]),
-    );
-  });
 });

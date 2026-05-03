@@ -69,6 +69,41 @@ export function isArtifactImageProxyUrl(value: string | null | undefined) {
   return Boolean(projectId) && isSafeSegment(requestId ?? "") && isSafeSegment(filename ?? "");
 }
 
+export function parseArtifactImageProxyUrl(value: string | null | undefined) {
+  const normalized = (value ?? "").replace(/[\u0000-\u001F\u007F\s]+/g, "").trim();
+  const match =
+    /^\/api\/projects\/([^/]+)\/artifact-images\/(lesson-diagrams|html-screen-visuals)\/([^/]+)\/([^/]+)$/i.exec(
+      normalized,
+    );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, projectId, kind, requestId, filename] = match;
+
+  if (!projectId || !kind || !requestId || !filename) {
+    return null;
+  }
+
+  if (!isSafeSegment(requestId) || !isSafeSegment(filename)) {
+    return null;
+  }
+
+  return {
+    filename,
+    kind: kind as ArtifactImageKind,
+    objectKey: buildArtifactImageObjectKey({
+      filename,
+      kind: kind as ArtifactImageKind,
+      projectId,
+      requestId,
+    }),
+    projectId,
+    requestId,
+  };
+}
+
 export function parseArtifactImageProxyPath(input: {
   path: string[];
   projectId: string;

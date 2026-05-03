@@ -125,7 +125,6 @@ function shouldHideAssistantText(message: SmartEduUIMessage, text: string) {
 
   const isLessonGeneration =
     latestArtifact?.stage === "lesson" ||
-    latestArtifact?.contentType === "lesson-json" ||
     hasLessonWorkflowTrace(message);
 
   return isLessonGeneration && looksLikeCompetitionLessonPlanJson(text);

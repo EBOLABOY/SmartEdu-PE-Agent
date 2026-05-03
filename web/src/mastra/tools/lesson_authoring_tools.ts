@@ -12,7 +12,7 @@ import {
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
 
-import { runLessonIntakeSkill } from "../skills/lesson_intake_skill";
+import { runLessonIntakeSkill } from "../skills/runtime/lesson_intake_skill";
 
 const TOOL_MAX_STEPS = 5;
 

@@ -26,7 +26,7 @@ import { createMastraStorageAdapter } from "@/mastra/storage/mastra-storage-adap
 import { LessonAuthoringError, streamLessonAuthoring } from "@/mastra/services/lesson_authoring";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 const CHAT_RATE_LIMIT = 30;
 const CHAT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
@@ -195,6 +195,7 @@ export async function POST(request: Request) {
       memoryPersistence,
       projectId: parsedBody.data.projectId,
       mode: parsedBody.data.mode,
+      htmlFocus: parsedBody.data.htmlFocus,
       context: mergedContext,
       lessonPlan,
       market: parsedBody.data.market,

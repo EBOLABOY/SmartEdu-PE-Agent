@@ -63,8 +63,7 @@ describe("lesson-workflow", () => {
     expect(result.result.decision.intentResult.intent).toBe("generate_lesson");
     expect(result.result.system).toContain("服务端");
     expect(result.result.system).toContain("不要调用课时计划生成或提交工具");
-    expect(result.result.system).not.toContain("submit_lesson_plan");
-    expect(result.result.system).not.toContain("submit_html_screen");
+    expect(result.result.system).not.toContain("submitHtmlScreenSection");
     expect(result.result.system).toContain("正式 lesson 生成由服务端在生成前检索并注入课标依据");
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
     expect(result.result.generationPlan.protocolVersion).toBe("structured-v1");
@@ -178,7 +177,7 @@ describe("lesson-workflow", () => {
     ]);
     expect(result.result.system).toContain("服务端");
     expect(result.result.system).toContain("不要调用提交工具");
-    expect(result.result.system).not.toContain("submit_html_screen");
+    expect(result.result.system).not.toContain("submitHtmlScreenSection");
     expect(result.result.system).toContain("自由分镜契约");
     expect(result.result.system).toContain("不使用固定组件枚举限制页面设计");
     expect(result.result.system).not.toContain("data-support-module");

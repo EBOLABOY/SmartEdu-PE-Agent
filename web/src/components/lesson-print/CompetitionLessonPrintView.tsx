@@ -6,14 +6,28 @@ interface CompetitionLessonPrintViewProps {
   lesson: CompetitionLessonPlan;
 }
 
+function displayLessonText(text: string) {
+  const normalized = text.trim();
+
+  if (normalized === "正在生成") {
+    return "待生成";
+  }
+
+  return text;
+}
+
+function isStreamingPlaceholderText(text: string) {
+  return /^(正在生成|待生成)$/.test(text.trim());
+}
+
 function mergeNarrativeLines(lines: string[]) {
-  const normalized = lines.map((line) => line.trim()).filter(Boolean);
+  const normalized = lines.map((line) => displayLessonText(line).trim()).filter(Boolean);
 
   return normalized.length ? [normalized.join("")] : [];
 }
 
 function joinTextBlock(lines: string[]) {
-  return lines.map((line) => line.trim()).filter(Boolean).join("；");
+  return lines.map((line) => displayLessonText(line).trim()).filter(Boolean).join("；");
 }
 
 function NarrativeParagraphs({ lines }: { lines: string[] }) {
@@ -33,7 +47,7 @@ function CompactLines({ lines }: { lines: string[] }) {
     <>
       {lines.map((line, index) => (
         <p className="competition-print-compact-line" key={`${line}-${index}`}>
-          {line}
+          {displayLessonText(line)}
         </p>
       ))}
     </>
@@ -175,6 +189,10 @@ function KeyPointList({ lesson }: CompetitionLessonPrintViewProps) {
 }
 
 function LearningEvaluationTable({ lesson }: CompetitionLessonPrintViewProps) {
+  if (lesson.evaluation.every((item) => isStreamingPlaceholderText(item.description))) {
+    return <p className="competition-print-paragraph">评价标准待生成。</p>;
+  }
+
   return (
     <table className="competition-print-table competition-print-eval-table">
       <colgroup>
@@ -191,7 +209,7 @@ function LearningEvaluationTable({ lesson }: CompetitionLessonPrintViewProps) {
             <td className="competition-print-center competition-print-eval-level-cell">
               <span className="competition-print-eval-level-text">{item.level}</span>
             </td>
-            <td>{item.description}</td>
+            <td>{displayLessonText(item.description)}</td>
           </tr>
         ))}
       </tbody>
@@ -627,7 +645,7 @@ export default function CompetitionLessonPrintView({ lesson }: CompetitionLesson
           <KeyPointList lesson={lesson} />
         </Section>
         <Section title="六、教学流程">
-          <p className="competition-print-flow">{lesson.flowSummary.join(" → ")}</p>
+          <p className="competition-print-flow">{lesson.flowSummary.map(displayLessonText).join(" → ")}</p>
         </Section>
         <Section title="七、学习评价">
           <LearningEvaluationTable lesson={lesson} />

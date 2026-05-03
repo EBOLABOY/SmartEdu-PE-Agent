@@ -7,11 +7,9 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { loadEnvConfig } from "@next/env";
 import {
-  extractJsonMiddleware,
   generateText,
   Output,
   stepCountIs,
-  wrapLanguageModel,
 } from "ai";
 import { z } from "zod";
 
@@ -21,14 +19,13 @@ import {
   competitionLessonHeaderSchema,
   competitionLessonPlanSchema,
   competitionLessonTeachingDesignSchema,
-  type CompetitionLessonPlan,
 } from "../src/lib/competition-lesson-contract";
 import { createChatModel } from "../src/mastra/models";
-import { runModelOperationWithRetry } from "../src/mastra/skills/lesson_generation_skill";
+import { runModelOperationWithRetry } from "../src/mastra/skills/runtime/lesson_generation_skill";
 import {
   formatLessonValidationIssues,
   performLessonBusinessValidation,
-} from "../src/mastra/skills/lesson_generation_validation";
+} from "../src/mastra/support/lesson_generation_validation";
 
 loadEnvConfig(process.cwd());
 
@@ -334,14 +331,7 @@ function createNativeStructuredModel(modelId: string) {
 function createProjectStructuredModel(modelId: string) {
   assertModelCredentials();
 
-  if (process.env.AI_SUPPORTS_STRUCTURED_OUTPUTS === "true" || !process.env.AI_BASE_URL?.trim()) {
-    return createChatModel(modelId) as ProbeModel;
-  }
-
-  return wrapLanguageModel({
-    model: createChatModel(modelId),
-    middleware: extractJsonMiddleware(),
-  });
+  return createChatModel(modelId) as ProbeModel;
 }
 
 function buildSystemPrompt(definition: ProbeTargetDefinition) {
@@ -616,16 +606,6 @@ async function main() {
   console.log(
     `- model=${options.modelId} | runs=${options.runs} | maxSteps=${options.maxSteps} | mode=${options.mode} | target=${options.target}`,
   );
-  console.log(
-    `- AI_SUPPORTS_STRUCTURED_OUTPUTS=${process.env.AI_SUPPORTS_STRUCTURED_OUTPUTS ?? "unset"}（仅影响 project 模式，不影响 native 模式）`,
-  );
-
-  if (options.mode !== "native" && process.env.AI_SUPPORTS_STRUCTURED_OUTPUTS !== "true") {
-    console.log(
-      "- 提示：当前项目未声明 structured outputs；project 模式主要用于复现现有运行时行为，不等价于底层原生 schema 能力。",
-    );
-  }
-
   let hasFailure = false;
 
   for (const mode of modes) {

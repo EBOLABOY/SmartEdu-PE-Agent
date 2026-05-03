@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildArtifactLifecycle } from "@/components/ai/artifact-model";
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
 import type {
+  HtmlArtifactPage,
   PersistedArtifactVersion,
   SmartEduUIMessage,
   WorkflowTraceData,
@@ -24,33 +25,70 @@ function createTrace(requestId: string, mode: "lesson" | "html"): WorkflowTraceD
   };
 }
 
+const SCREEN_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head><title>历史大屏</title></head>
+  <body>
+    <div class="screen">
+      <section class="slide cover-slide active" data-slide-kind="cover">
+        <main class="cover-shell"><h1>历史大屏</h1></main>
+      </section>
+      <section class="slide lesson-slide" data-slide-kind="learnPractice">
+        <header class="slide-header"><h2>学练页</h2></header>
+        <main class="slide-content"><p>练习内容</p></main>
+      </section>
+    </div>
+  </body>
+</html>`;
+const SCREEN_HTML_PAGES: HtmlArtifactPage[] = [
+  {
+    pageIndex: 0,
+    pageRole: "cover",
+    pageTitle: "历史大屏",
+    sectionHtml:
+      '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>历史大屏</h1></main></section>',
+  },
+  {
+    pageIndex: 1,
+    pageRole: "learnPractice",
+    pageTitle: "学练页",
+    sectionHtml:
+      '<section class="slide lesson-slide" data-slide-kind="learnPractice"><header class="slide-header"><h2>学练页</h2></header><main class="slide-content"><p>练习内容</p></main></section>',
+  },
+];
+
+const PERSISTED_LESSON_VERSION: PersistedArtifactVersion = {
+  id: "11111111-1111-1111-1111-111111111111",
+  artifactId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  stage: "lesson",
+  contentType: "lesson-json",
+  content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+  status: "ready",
+  protocolVersion: "structured-v1",
+  versionNumber: 1,
+  createdAt: "2026-04-25T12:00:00.000Z",
+  isCurrent: true,
+  trace: createTrace("persisted-lesson-trace", "lesson"),
+};
+
+const PERSISTED_HTML_VERSION: PersistedArtifactVersion = {
+  id: "22222222-2222-2222-2222-222222222222",
+  artifactId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  stage: "html",
+  contentType: "html",
+  content: SCREEN_HTML,
+  htmlPages: SCREEN_HTML_PAGES,
+  status: "ready",
+  protocolVersion: "structured-v1",
+  versionNumber: 1,
+  createdAt: "2026-04-25T12:05:00.000Z",
+  isCurrent: true,
+  trace: createTrace("persisted-html-trace", "html"),
+};
+
 const PERSISTED_VERSIONS: PersistedArtifactVersion[] = [
-  {
-    id: "11111111-1111-1111-1111-111111111111",
-    artifactId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    stage: "lesson",
-    contentType: "lesson-json",
-    content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
-    status: "ready",
-    protocolVersion: "structured-v1",
-    versionNumber: 1,
-    createdAt: "2026-04-25T12:00:00.000Z",
-    isCurrent: true,
-    trace: createTrace("persisted-lesson-trace", "lesson"),
-  },
-  {
-    id: "22222222-2222-2222-2222-222222222222",
-    artifactId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-    stage: "html",
-    contentType: "html",
-    content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>历史大屏</h1></body></html>",
-    status: "ready",
-    protocolVersion: "structured-v1",
-    versionNumber: 1,
-    createdAt: "2026-04-25T12:05:00.000Z",
-    isCurrent: true,
-    trace: createTrace("persisted-html-trace", "html"),
-  },
+  PERSISTED_LESSON_VERSION,
+  PERSISTED_HTML_VERSION,
 ];
 
 describe("artifact-model", () => {
@@ -66,17 +104,18 @@ describe("artifact-model", () => {
     );
     expect(lifecycle.versions[0]?.isCurrent).toBe(true);
     expect(lifecycle.activeTrace?.requestId).toBe("persisted-html-trace");
+    expect(lifecycle.htmlPages).toHaveLength(2);
     expect(lifecycle.versions).toHaveLength(2);
   });
 
   it("会在仅课时计划为当前版本时优先展示当前课时计划并清空大屏", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, [
       {
-        ...PERSISTED_VERSIONS[0],
+        ...PERSISTED_LESSON_VERSION,
         isCurrent: true,
       },
       {
-        ...PERSISTED_VERSIONS[1],
+        ...PERSISTED_HTML_VERSION,
         isCurrent: false,
       },
     ]);
@@ -124,35 +163,6 @@ describe("artifact-model", () => {
     expect(lifecycle.versions[0]?.id).toBe("assistant-lesson-lesson");
   });
 
-  it("流式 lesson-json 只要主体 schema 合法就提前暴露 lessonPlan", () => {
-    const assistantMessage = {
-      id: "assistant-lesson-fenced",
-      role: "assistant",
-      parts: [
-        {
-          type: "data-artifact",
-          id: "artifact",
-          data: {
-            protocolVersion: "structured-v1",
-            stage: "lesson",
-            contentType: "lesson-json",
-            content: `下面是结构化课时计划 JSON：\n\n\`\`\`json\n${JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN)}\n\`\`\``,
-            isComplete: false,
-            status: "streaming",
-            source: "data-part",
-            updatedAt: "2026-04-25T12:10:00.000Z",
-          },
-        },
-      ],
-    } as SmartEduUIMessage;
-
-    const lifecycle = buildArtifactLifecycle([assistantMessage], "streaming", false, []);
-
-    expect(lifecycle.status).toBe("streaming");
-    expect(lifecycle.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
-    expect(lifecycle.activeArtifact?.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
-  });
-
   it("data-artifact 尚未到达时不会再把 assistant text 当作 lesson 可信源", () => {
     const assistantMessage = {
       id: "assistant-lesson-text-stream",
@@ -194,6 +204,15 @@ describe("artifact-model", () => {
               stage: "html",
               contentType: "html",
               content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>旧大屏</h1></body></html>",
+              htmlPages: [
+                {
+                  pageIndex: 0,
+                  pageRole: "cover",
+                  pageTitle: "旧大屏",
+                  sectionHtml:
+                    '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>旧大屏</h1></main></section>',
+                },
+              ],
               isComplete: true,
               status: "ready",
               source: "data-part",
@@ -214,6 +233,15 @@ describe("artifact-model", () => {
               stage: "html",
               contentType: "html",
               content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>新版生成中",
+              htmlPages: [
+                {
+                  pageIndex: 0,
+                  pageRole: "cover",
+                  pageTitle: "新版生成中",
+                  sectionHtml:
+                    '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>新版生成中</h1></main></section>',
+                },
+              ],
               isComplete: false,
               status: "streaming",
               source: "data-part",
@@ -247,6 +275,15 @@ describe("artifact-model", () => {
             stage: "html",
             contentType: "html",
             content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>生成中",
+            htmlPages: [
+              {
+                pageIndex: 0,
+                pageRole: "cover",
+                pageTitle: "生成中",
+                sectionHtml:
+                  '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>生成中</h1></main></section>',
+              },
+            ],
             isComplete: false,
             status: "streaming",
             source: "data-part",
@@ -298,11 +335,12 @@ describe("artifact-model", () => {
               protocolVersion: "structured-v1",
               stage: "html",
               contentType: "html",
-              content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>历史大屏</h1></body></html>",
+              content: SCREEN_HTML,
+              htmlPages: SCREEN_HTML_PAGES,
               isComplete: true,
               status: "ready",
               source: "data-part",
-              updatedAt: "2026-04-25T12:05:00.000Z",
+            updatedAt: "2026-04-25T12:05:00.000Z",
             },
           },
         ],
@@ -313,6 +351,7 @@ describe("artifact-model", () => {
 
     expect(lifecycle.stage).toBe("html");
     expect(lifecycle.html).toContain("<h1>历史大屏</h1>");
+    expect(lifecycle.htmlPages?.[1]?.pageTitle).toBe("学练页");
     expect(lifecycle.activeArtifact?.stage).toBe("html");
   });
 
@@ -330,6 +369,15 @@ describe("artifact-model", () => {
               stage: "html",
               contentType: "html",
               content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>旧大屏</h1></body></html>",
+              htmlPages: [
+                {
+                  pageIndex: 0,
+                  pageRole: "cover",
+                  pageTitle: "旧大屏",
+                  sectionHtml:
+                    '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>旧大屏</h1></main></section>',
+                },
+              ],
               isComplete: true,
               status: "ready",
               source: "data-part",
@@ -342,11 +390,11 @@ describe("artifact-model", () => {
 
     const lifecycle = buildArtifactLifecycle(historyMessages, "ready", false, [
       {
-        ...PERSISTED_VERSIONS[0],
+        ...PERSISTED_LESSON_VERSION,
         isCurrent: true,
       },
       {
-        ...PERSISTED_VERSIONS[1],
+        ...PERSISTED_HTML_VERSION,
         isCurrent: false,
       },
     ]);
@@ -375,7 +423,7 @@ describe("artifact-model", () => {
   it("会把持久化 lesson-json 保持为 JSON 内容并解析 lessonPlan", () => {
     const lifecycle = buildArtifactLifecycle([], "ready", false, [
       {
-        ...PERSISTED_VERSIONS[0],
+        ...PERSISTED_LESSON_VERSION,
         contentType: "lesson-json",
         content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
       },
@@ -386,5 +434,35 @@ describe("artifact-model", () => {
     expect(lifecycle.versions[0]?.content).toBe(JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN));
     expect(lifecycle.versions[0]?.lessonPlan?.title).toBe(DEFAULT_COMPETITION_LESSON_PLAN.title);
     expect(lifecycle.versions[0]?.contentType).toBe("lesson-json");
+  });
+
+  it("会忽略缺少 htmlPages 的 html artifact", () => {
+    const invalidHtmlMessage = {
+      id: "assistant-html-invalid",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "html",
+            contentType: "html",
+            content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><section class=\"slide\">无页级数据</section></body></html>",
+            isComplete: true,
+            status: "ready",
+            source: "data-part",
+            updatedAt: "2026-04-25T12:06:00.000Z",
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([invalidHtmlMessage], "ready", true, []);
+
+    expect(lifecycle.stage).toBe("lesson");
+    expect(lifecycle.html).toBe("");
+    expect(lifecycle.htmlPages).toBeUndefined();
+    expect(lifecycle.versions).toHaveLength(0);
   });
 });

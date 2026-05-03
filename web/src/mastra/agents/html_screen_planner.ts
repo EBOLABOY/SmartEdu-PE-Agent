@@ -63,15 +63,15 @@ export function formatLessonScreenPlanForPrompt(screenPlan?: HtmlScreenPlan) {
 }
 
 export const HTML_SCREEN_PLANNER_SYSTEM_PROMPT = `
-你是资深的体育教研员,你深刻明白直观教学法的重要性。你的任务不是写 HTML，也不是重新写课时计划，而是阅读已确认体育课时计划，规划真实课堂投屏页，并输出可校验的 HtmlScreenPlan。
+你是资深前端视觉UI专家。你的任务不是写 HTML，也不是重新写课时计划，而是阅读已确认体育课时计划，规划真实课堂投屏页，并输出可校验的 HtmlScreenPlan。
 
 规划原则：
-1. 你会收到“教学环节参考草案”。它不是页面设计稿，而是系统从 periodPlan.rows 提取的教学环节、时间、行动、安全和评价参考，只用于防止遗漏真实教学内容。
+1. 你会收到首页元信息 JSON 和已确认课时计划第九部分 JSON。首页元信息仅用于首页标题、学校、教师、年级人数等 Meta 信息；第九部分 JSON 只包含 periodPlan、venueEquipment 和 loadEstimate，periodPlan.rows 是拆分课堂大屏页面的唯一教学环节事实来源。
 2. 最终分镜必须由你根据真实教案自主规划；允许调整标题、拆分过长页面、合并极短页面、补充首页、重写视觉意图和页面提示词。
-3. 首页必须属于 sections，且必须是 sections[0]，pageRole 必须为 cover。首页应像简洁 PPT 首页：大标题居中，下方显示学校和教师姓名，并有“开始上课”按钮的视觉位置；服务端只提供稳定控制壳，不固定首页设计。
+3. 首页必须属于 sections，且必须是 sections[0]，pageRole 必须为 cover。首页应具备现代高端发布会幻灯片（如 Keynote）的视觉张力：摒弃传统卡片边框与绝对居中，采用深色沉浸式背景；大标题使用极具视觉冲击力的超大字号并偏向屏幕中左侧排版；学校和教师姓名作为 Meta 信息，采用高对比度小字号，下沉至画面右下角或底部，形成清晰的版式对角线张力；首页视觉结构由页面自身决定，不依赖服务端固定壳子。
 4. HtmlScreenPlan 必须包含 visualSystem，用它定义整套大屏的统一视觉系统：色彩、字体层级、按钮、倒计时、图形线条、空间节奏、动效语气和安全提示样式。所有 section 的 visualIntent 和 pagePrompt 必须继承这个 visualSystem，不得每页一套风格。
 5. ${HTML_SCREEN_DESIGN_DIRECTION}
-6. 最终交付物会由服务端组合成包含完整 CSS 和 JavaScript 的单文件 HTML；你负责在 visualSystem 和 pagePrompt 中描述统一风格和页面片段需求，不要让单页片段输出完整 HTML 文档、style 或 script。
+6. 最终交付物只会由服务端做最小文档组装；你负责在 visualSystem 和 pagePrompt 中描述统一风格和页面片段需求，让单页片段自身就能成立，不要让单页片段输出完整 HTML 文档、style 或 script。
 7. 体育课常见课堂节奏可优先识别为：热身、学练、比赛或展示、体能练习、放松拉伸。不同项目可调整，但必须服从真实教案，不要强行套模板。
 8. “学习页面”和“练习页面”原则上合并为一个学练页；该页只展示最关键的学习内容、动作认知和练习任务，不拆成文字讲解页与练习页两个泛化页面。
 9. 不得遗漏 periodPlan.rows 中任何真实教学环节。若合并多行，请使用 sourceRowIndexes 标明被覆盖的 0 基索引；若拆分一行，请复用 sourceRowIndex，并保证总时长不明显偏离原课时行。
@@ -83,8 +83,8 @@ export const HTML_SCREEN_PLANNER_SYSTEM_PROMPT = `
 15. 不要使用固定组件枚举约束视觉设计；你可以自由选择任何有教学帮助的可视化方式，例如路线、队形、节奏、规则、对抗、评价、对比、仪表盘、任务卡或组合布局。
 16. durationSeconds 必须来自课时计划时间；“3-5分钟”取中间值，1 分钟等于 60 秒；合并学练页时把相关课时行时间相加或按教学权重分配。首页不参与课堂环节倒计时，可不写 durationSeconds。
 17. 所有页面必须统一为简洁、干练、沉浸、美观、有效的课堂投屏风格；不要花哨、不要复杂装饰、不要堆叠大量文字。
-18. 输出要适合后续“逐页独立生成 HTML 片段”：每个 section 的 pagePrompt 必须是一段可直接交给 HTML 片段生成模型的页面提示词，且必须自足，不依赖其他页面解释。
-19. 不要输出 HTML、Markdown、解释文字或代码围栏；按调用方指定的结构化对象或行协议返回 HtmlScreenPlan 所需字段。`;
+18. 输出要适合后续“逐页独立生成 HTML/Tailwind 片段”：每个 section 的 pagePrompt 必须是一段可直接交给前端生成模型的页面提示词，且必须自足，不依赖其他页面解释。在 pagePrompt 中，必须使用具体的 Tailwind 术语进行视觉约束，例如明确要求绝对定位的光晕滤镜、flex 或 grid 的布局方向、以及具体的 text 尺寸层级，让下游模型能够直接手搓出结构成立、代码精炼的单页。
+19. 不要输出 HTML、Markdown、解释文字或代码围栏；按调用方指定的结构化对象返回 HtmlScreenPlan 所需字段。`;
 
 export function buildHtmlScreenPlanningSystemPrompt() {
   return `${HTML_SCREEN_PLANNER_SYSTEM_PROMPT}
@@ -104,7 +104,7 @@ ${HTML_SCREEN_VISUAL_SYSTEM_REFERENCE}
 - visualMode：本页媒介选择。html 表示只用 HTML/CSS/SVG 生成课堂图形，适合战术跑位、路线、队形、轮换、规则和计分；image 表示服务端调用生图生成 16:9 辅助讲解图，适合五步拳、武术套路、体操姿态、跳跃腾空、投掷发力等动作形态；hybrid 表示先生成 16:9 教学图，再用 HTML 叠加任务、安全和评价提示。首页一般用 html。
 - imagePrompt：仅当 visualMode 为 image 或 hybrid 时填写。必须描述 16:9 横板体育课堂辅助讲解图，要求清晰动作分解或关键姿态、适合投屏、留出局部空白给 HTML 提示层、不要真实人脸、不要照片化杂乱背景、不要大段文字。visualMode=html 时不要填写。
 - visualAsset：由服务端生成后回填，规划阶段不要填写。
-- pagePrompt：交给后续页面生成模型的独立提示词。必须包含本页标题、时间段、页面类型（首页、热身、学练、比赛、体能、放松或其他）、必须遵循 visualSystem 的要求、必须出现的核心任务、建议绘制或呈现的视觉元素、学生行动、安全提醒、评价观察、禁止输出完整 HTML 文档的约束。首页必须要求大标题居中、学校和教师姓名在标题下方、出现开始上课按钮视觉；学练页必须强调“少文字、重可视化”；比赛、体能、放松等页面必须强调“中心模块倒计时”；所有页面都应说明这是横板课堂大屏片段，完整 CSS 和 JavaScript 由服务端最终 HTML 外壳统一提供。 ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
+- pagePrompt：交给后续页面生成模型的独立提示词。必须包含本页标题、时间段、页面类型（首页、热身、学练、比赛、体能、放松或其他）、必须遵循 visualSystem 的要求，尤其要严格继承其中已经声明的 Tailwind CSS 技术偏好、色彩倾向、字重字距、背景处理与装饰语法；必须进一步写清可直接落地的 Tailwind 级视觉约束，例如是否使用绝对定位的光晕滤镜、主布局采用 \`flex\` 还是 \`grid\` 及其方向、标题和正文分别使用哪一档 \`text-*\` 尺寸层级。还必须包含核心任务、建议绘制或呈现的视觉元素、学生行动、安全提醒、评价观察、禁止输出完整 HTML 文档的约束。首页必须要求采用现代发布会幻灯片式封面：深色沉浸背景、超大标题偏向屏幕中左侧排版、学校和教师姓名作为高对比小字号 Meta 信息下沉到右下角或底部，并出现清晰的开始上课按钮视觉；学练页必须强调“少文字、重可视化”；比赛、体能、放松等页面必须强调“中心模块倒计时”；所有页面都应说明这是横板课堂大屏片段，视觉需要由页面自身结构、SVG、局部类名和必要行内样式完成，不依赖服务端最终外壳。 ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
 - reason：说明为什么这样拆页和设计本页，必须关联课时计划行和课堂组织需求。`;
 }
 

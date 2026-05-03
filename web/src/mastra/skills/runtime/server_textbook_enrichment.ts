@@ -181,7 +181,7 @@ function applySuccessfulTextbookRetrieval(input: {
   };
 }
 
-export function createServerTextbookFallbackWorkflow(input: {
+function createServerTextbookFallbackWorkflow(input: {
   error: unknown;
   workflow: LessonWorkflowOutput;
 }): LessonWorkflowOutput {

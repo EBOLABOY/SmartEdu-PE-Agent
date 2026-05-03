@@ -27,8 +27,8 @@ import {
   lessonIntentSchema,
   runLessonIntentSkill,
   type LessonIntent,
-} from "../skills/lesson_intent_skill";
-import { runStandardsRetrievalSkill } from "../skills/standards_retrieval_skill";
+} from "../skills/runtime/lesson_intent_skill";
+import { runStandardsRetrievalSkill } from "../skills/runtime/standards_retrieval_skill";
 import { resolveStandardsMarketMetadata } from "../tools/search_standards";
 
 const MAX_WORKFLOW_AGENT_STEPS = 5;

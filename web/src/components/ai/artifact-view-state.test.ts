@@ -35,6 +35,8 @@ describe("artifact-view-state", () => {
   }
 
   function createHtmlMessage(status: "streaming" | "ready") {
+    const pageTitle = "Screen";
+
     return {
       id: `assistant-html-${status}`,
       role: "assistant",
@@ -47,6 +49,15 @@ describe("artifact-view-state", () => {
             stage: "html",
             contentType: "html",
             content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>Screen</h1></body></html>",
+            htmlPages: [
+              {
+                pageIndex: 0,
+                pageRole: "cover",
+                pageTitle,
+                sectionHtml:
+                  `<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>${pageTitle}</h1></main></section>`,
+              },
+            ],
             isComplete: status === "ready",
             status,
             source: "data-part",
@@ -221,5 +232,45 @@ describe("artifact-view-state", () => {
     expect(getArtifactDefaultView(lifecycle)).toBe("canvas");
     expect(reconcileArtifactViewForLifecycle("lesson", lifecycle)).toBe("canvas");
     expect(reconcileArtifactViewForLifecycle("versions", lifecycle)).toBe("versions");
+  });
+
+  it("不会把缺少 htmlPages 的 html artifact 误判为可预览画布", () => {
+    const lifecycle = buildArtifactLifecycle(
+      [
+        createReadyLessonMessage(),
+        {
+          id: "assistant-html-invalid",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-artifact",
+              id: "artifact",
+              data: {
+                protocolVersion: "structured-v1",
+                stage: "html",
+                contentType: "html",
+                content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>Invalid</h1></body></html>",
+                isComplete: true,
+                status: "ready",
+                source: "data-part",
+                updatedAt: "2026-04-25T12:15:00.000Z",
+              },
+            },
+          ],
+        } as SmartEduUIMessage,
+      ],
+      "ready",
+      true,
+      [],
+    );
+    const htmlDisplay = getHtmlArtifactDisplayState(lifecycle);
+
+    expect(htmlDisplay).toMatchObject({
+      hasHtml: false,
+      isPendingRequest: false,
+      isStreaming: false,
+      shouldShowGenerationPanel: false,
+    });
+    expect(getArtifactDefaultView(lifecycle)).toBe("lesson");
   });
 });

@@ -6,15 +6,15 @@ import {
   type UIMessageChunk,
 } from "ai";
 
-import { extractHtmlDocumentFromText } from "@/lib/artifact-protocol";
 import {
   competitionLessonPlanSchema,
-  unwrapAgentLessonGenerationResult,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import { buildCompetitionLessonDraft } from "@/lib/competition-lesson-draft";
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+  type HtmlStructuredArtifactData,
+  structuredArtifactDataSchema,
   type GenerationMode,
   type SmartEduUIMessage,
   type StructuredArtifactData,
@@ -23,13 +23,9 @@ import {
   type WorkflowTraceEntry,
 } from "@/lib/lesson-authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
-import {
-  SUBMIT_LESSON_PLAN_TOOL_NAME,
-  parseSubmitLessonPlanToolInput,
-} from "@/mastra/tools/output_tools";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
-import { enrichLessonPlanWithDiagramAssets } from "./lesson_diagram_generation_skill";
+import { enrichLessonPlanWithDiagramAssets } from "../skills/runtime/lesson_diagram_generation_skill";
 
 const DRAFT_TRACE_UPDATE_INTERVAL = 20;
 const TERMINAL_RUNNING_TRACE_STEPS = new Set([
@@ -102,25 +98,57 @@ function buildArtifactData(
   options: {
     content: string;
     contentType?: StructuredArtifactData["contentType"];
+    htmlPages?: HtmlStructuredArtifactData["htmlPages"];
     isComplete: boolean;
     status: StructuredArtifactData["status"];
     title?: string;
     warningText?: string;
   },
 ): StructuredArtifactData {
+  const title =
+    options.title ??
+    (workflow.generationPlan.mode === "html" ? "互动大屏 Artifact" : "课时计划 Artifact");
+  const updatedAt = nowIsoString();
+
+  if (workflow.generationPlan.mode === "html") {
+    if (options.contentType && options.contentType !== "html") {
+      throw new Error("HTML artifact 的 contentType 必须为 html。");
+    }
+
+    if (!options.htmlPages?.length) {
+      throw new Error("HTML artifact 必须包含 htmlPages，当前结果已拒绝写入。");
+    }
+
+    return {
+      protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
+      stage: "html",
+      contentType: "html",
+      content: options.content,
+      htmlPages: options.htmlPages,
+      isComplete: options.isComplete,
+      status: options.status,
+      source: "data-part",
+      title,
+      ...(options.warningText ? { warningText: options.warningText } : {}),
+      updatedAt,
+    };
+  }
+
+  if (options.contentType && options.contentType !== "lesson-json") {
+    throw new Error("课时计划 artifact 的 contentType 必须为 lesson-json。");
+  }
+
   return {
     protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
-    stage: workflow.generationPlan.mode,
-    contentType: options.contentType ?? (workflow.generationPlan.mode === "html" ? "html" : "lesson-json"),
+    stage: "lesson",
+    contentType: "lesson-json",
     content: options.content,
     isComplete: options.isComplete,
     status: options.status,
     source: "data-part",
-    title:
-      options.title ??
-      (workflow.generationPlan.mode === "html" ? "互动大屏 Artifact" : "课时计划 Artifact"),
+    title,
     ...(options.warningText ? { warningText: options.warningText } : {}),
-    updatedAt: nowIsoString(),
+    updatedAt,
   };
 }
 
@@ -129,6 +157,7 @@ export function createStructuredArtifactData(
   options: {
     content: string;
     contentType?: StructuredArtifactData["contentType"];
+    htmlPages?: HtmlStructuredArtifactData["htmlPages"];
     isComplete: boolean;
     status: StructuredArtifactData["status"];
     title?: string;
@@ -171,28 +200,9 @@ function readStructuredOutputPart(part: UIMessageChunk) {
   return candidate.data?.object;
 }
 
-function readToolInputPart(part: UIMessageChunk) {
-  const candidate = part as {
-    input?: unknown;
-    toolCallId?: string;
-    toolName?: string;
-    type?: string;
-  };
-
-  if (candidate.type !== "tool-input-available" || typeof candidate.toolName !== "string") {
-    return undefined;
-  }
-
-  return {
-    input: candidate.input,
-    toolCallId: typeof candidate.toolCallId === "string" ? candidate.toolCallId : undefined,
-    toolName: candidate.toolName,
-  };
-}
-
 function buildLessonJsonArtifactContent(structuredOutput: unknown) {
   try {
-    const parsed = unwrapAgentLessonGenerationResult(structuredOutput);
+    const parsed = competitionLessonPlanSchema.parse(structuredOutput);
 
     return {
       content: JSON.stringify(parsed),
@@ -208,20 +218,6 @@ function buildLessonJsonArtifactContent(structuredOutput: unknown) {
       }`,
     );
   }
-}
-
-function buildHtmlExtractionWarning(leadingText: string, trailingText: string) {
-  const warnings: string[] = [];
-
-  if (leadingText) {
-    warnings.push("检测到 HTML 前存在说明性文本，系统已自动剥离。");
-  }
-
-  if (trailingText) {
-    warnings.push("检测到 HTML 后存在附加文本，系统已自动忽略。");
-  }
-
-  return warnings.join(" ");
 }
 
 function shouldForwardAssistantText(mode: GenerationMode, workflow: LessonWorkflowOutput) {
@@ -260,23 +256,9 @@ function readArtifactDataPart(part: UIMessageChunk): StructuredArtifactData | un
   }
 
   const data = (part as { data?: unknown }).data;
+  const parsed = structuredArtifactDataSchema.safeParse(data);
 
-  if (!data || typeof data !== "object") {
-    return undefined;
-  }
-
-  const artifact = data as Partial<StructuredArtifactData>;
-
-  if (
-    artifact.protocolVersion !== STRUCTURED_ARTIFACT_PROTOCOL_VERSION ||
-    artifact.source !== "data-part" ||
-    typeof artifact.content !== "string" ||
-    typeof artifact.isComplete !== "boolean"
-  ) {
-    return undefined;
-  }
-
-  return artifact as StructuredArtifactData;
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function createStructuredAuthoringStreamAdapter({
@@ -520,53 +502,6 @@ export function createStructuredAuthoringStreamAdapter({
         finishStream("error");
       };
 
-      const handleOutputToolInput = (part: UIMessageChunk) => {
-        const toolInput = readToolInputPart(part);
-
-        if (!toolInput) {
-          return true;
-        }
-
-        try {
-          if (toolInput.toolName === SUBMIT_LESSON_PLAN_TOOL_NAME) {
-            const submission = parseSubmitLessonPlanToolInput(toolInput.input);
-
-            markStructuredActivity();
-            structuredLessonOutput = submission.lessonPlan;
-            effectiveUiHints.push({
-              action: "switch_tab",
-              params: { tab: "lesson" },
-            });
-            runtimeTrace.push(
-              createTraceEntry(
-                "submit-lesson-plan-tool",
-                "success",
-                `已收到 submit_lesson_plan 工具提交：${submission.summary}`,
-              ),
-            );
-            writeArtifact(
-              buildArtifactData(workflow, {
-                content: JSON.stringify(competitionLessonPlanSchema.parse(submission.lessonPlan)),
-                contentType: "lesson-json",
-                isComplete: false,
-                status: "streaming",
-                title: submission.lessonPlan.title,
-              }),
-            );
-            writeTrace("generation");
-            return true;
-          }
-
-          return true;
-        } catch (error) {
-          writeStreamError(
-            "validate-output-tool-input",
-            error instanceof Error ? error.message : "输出工具输入校验失败。",
-          );
-          return false;
-        }
-      };
-
       const enrichLessonWithDiagrams = async (lessonPlan: CompetitionLessonPlan) => {
         pushOrReplaceTraceEntry(
           "generate-lesson-diagrams",
@@ -642,7 +577,7 @@ export function createStructuredAuthoringStreamAdapter({
 
           writeStreamError(
             "validate-lesson-output",
-            "模型未通过 submit_lesson_plan 提交课时计划，且未返回兼容结构化输出。",
+            "模型未返回合法的 CompetitionLessonPlan 结构化输出。",
           );
           return false;
         }
@@ -708,33 +643,11 @@ export function createStructuredAuthoringStreamAdapter({
           return true;
         }
 
-        const extraction = extractHtmlDocumentFromText(rawText);
-
-        if (!extraction.html.trim()) {
-          writeStreamError("extract-html-document", "模型响应中未提取到 HTML 文档，无法生成互动大屏。");
-          return false;
-        }
-
-        if (!extraction.htmlComplete) {
-          writeStreamError("extract-html-document", "模型 HTML 文档未完整关闭，已拒绝使用截断的大屏内容。");
-          return false;
-        }
-
-        const extractedWarning = buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText);
-        const artifact = buildArtifactData(workflow, {
-          content: extraction.html,
-          isComplete: true,
-          status: "ready",
-          warningText: extractedWarning,
-        });
-
-        completeRunningTraceStep(
-          "agent-stream-started",
-          "互动大屏 HTML 模型生成流已结束。",
+        writeStreamError(
+          "extract-html-document",
+          "当前 HTML 结果缺少结构化页数据 htmlPages，已拒绝写入。",
         );
-        writeArtifact(artifact);
-        await persistArtifact(artifact);
-        return true;
+        return false;
       };
 
       const finalizeArtifact = async () => (mode === "lesson" ? finalizeLessonArtifact() : finalizeHtmlArtifact());
@@ -795,26 +708,34 @@ export function createStructuredAuthoringStreamAdapter({
           }
 
           const part = value;
+          const upstreamArtifact = mode === "html" ? readArtifactDataPart(part) : undefined;
+          const isInvalidHtmlArtifactPart =
+            mode === "html" &&
+            part.type === "data-artifact" &&
+            ((part as { data?: Partial<StructuredArtifactData> }).data?.contentType === "html") &&
+            !upstreamArtifact;
+
+          if (isInvalidHtmlArtifactPart) {
+            writeStreamError(
+              "invalid-html-artifact",
+              "检测到缺少 htmlPages 的 HTML artifact，已拒绝继续使用。",
+            );
+            return;
+          }
 
           // 保持上游工具事件、artifact 与 trace 的到达顺序，避免页级 HTML 反馈被最终状态压后。
           forwardUiChunk(part);
-
-          const upstreamArtifact = mode === "html" ? readArtifactDataPart(part) : undefined;
 
           if (upstreamArtifact?.contentType === "html") {
             markStructuredActivity();
             latestUpstreamHtmlArtifact = upstreamArtifact;
           }
 
-          if (!handleOutputToolInput(part)) {
-            return;
-          }
-
           const structuredOutput = mode === "lesson" ? readStructuredOutputPart(part) : undefined;
 
           if (structuredOutput !== undefined) {
             structuredLessonOutput = structuredOutput;
-            const parsedLessonPlan = unwrapAgentLessonGenerationResult(structuredOutput);
+            const parsedLessonPlan = competitionLessonPlanSchema.parse(structuredOutput);
 
             writeArtifact(
               buildArtifactData(workflow, {
@@ -834,23 +755,6 @@ export function createStructuredAuthoringStreamAdapter({
               if (mode === "lesson") {
                 break;
               }
-
-              if (latestUpstreamHtmlArtifact) {
-                break;
-              }
-
-              const extraction = extractHtmlDocumentFromText(rawText);
-
-              writeArtifact(
-                buildArtifactData(workflow, {
-                  content: extraction.html || rawText,
-                  isComplete: Boolean(extraction.html && extraction.htmlComplete),
-                  status: extraction.html && extraction.htmlComplete ? "ready" : "streaming",
-                  warningText: extraction.html
-                    ? buildHtmlExtractionWarning(extraction.leadingText, extraction.trailingText) || undefined
-                    : undefined,
-                }),
-              );
               break;
             }
 

@@ -110,7 +110,7 @@ function buildPagePrompt(row: CompetitionLessonPlanRow) {
 
   return [
     `为体育课堂大屏的“${title}”时间段生成一个 HTML 内容片段。`,
-    "片段将被服务端放入固定 slide 模板中，不要输出完整 HTML、section、script、style 或 Markdown。",
+    "服务端只会保留最小分页 section 外层，不再注入统一视觉外壳；不要输出完整 HTML、section、script、style 或 Markdown。",
     visualModeInstruction,
     `视觉目标：${buildVisualIntent(row)}`,
     `本环节怎么做：${buildObjective(row)}`,
@@ -118,7 +118,7 @@ function buildPagePrompt(row: CompetitionLessonPlanRow) {
     `安全提醒：${buildSafetyCue(row)}`,
     `评价观察：${buildEvaluationCue(row)}`,
     HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
-    "风格要求：页面像体育馆里的教师课堂控制台，不要空洞海报，不要大面积玻璃装饰，不要让标题孤立漂浮在画面中央。",
+    "风格要求：本页必须严格继承本课已经确定的 visualSystem 与 Tailwind 视觉偏好，不要退回固定风格模板，也不要依赖服务端预置卡片、倒计时或封面类名。",
     "页面必须适合体育馆远距离投屏，使用大字号、强层级、清晰图形和简体中文。",
   ].join("\n");
 }

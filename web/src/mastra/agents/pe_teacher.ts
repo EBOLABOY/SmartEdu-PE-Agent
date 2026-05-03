@@ -4,7 +4,7 @@ import type { AgentConfig } from "@mastra/core/agent";
 import {
   buildPeTeacherSystemPrompt,
   PE_TEACHER_SYSTEM_PROMPT,
-} from "../skills/pe_teacher_prompt";
+} from "../skills/prompt";
 import { analyzeRequirementsTool } from "../tools/lesson_authoring_tools";
 import { searchStandardsTool } from "../tools/search_standards";
 

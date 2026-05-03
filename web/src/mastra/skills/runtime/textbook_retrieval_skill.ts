@@ -1,6 +1,6 @@
 import type { StandardsMarket } from "@/lib/lesson-authoring-contract";
 
-import { searchTextbook } from "../tools/search_textbook";
+import { searchTextbook } from "../../tools/search_textbook";
 
 export type TextbookRetrievalSkillInput = {
   query: string;

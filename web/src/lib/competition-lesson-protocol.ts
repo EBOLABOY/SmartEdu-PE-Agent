@@ -1,9 +1,7 @@
 import { z } from "zod";
 
 import {
-  competitionLessonLoadChartPointSchema,
   competitionLessonPlanSchema,
-  type CompetitionLessonLoadChartPoint,
   type CompetitionLessonPlan,
   type CompetitionLessonPlanRow,
 } from "@/lib/competition-lesson-contract";
@@ -14,6 +12,7 @@ const textListSchema = z.array(nonEmptyString).default([]);
 const FLOW_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
 const OMITTED_FLOW_SUMMARY_LABELS = new Set(["课堂评价", "课后作业"]);
+const BASIC_PART_REQUIRED_SEGMENTS = ["技术学习", "分组练习", "教学比赛", "体能练习"] as const;
 const LESSON_KEYS = new Set([
   "grade",
   "lessonNo",
@@ -82,12 +81,6 @@ export const lessonPlanProtocolDraftSchema = z.object({
       time: nonEmptyString.optional(),
     }),
   ),
-  keyDifficultPoints: z.object({
-    studentLearning: textListSchema,
-    teachingContent: textListSchema,
-    teachingMethod: textListSchema,
-    teachingOrganization: textListSchema,
-  }),
   lesson: z.object({
     grade: nonEmptyString.optional(),
     lessonNo: nonEmptyString.optional(),
@@ -101,7 +94,6 @@ export const lessonPlanProtocolDraftSchema = z.object({
   }),
   load: z.object({
     averageHeartRate: nonEmptyString.optional(),
-    chartPoints: z.array(competitionLessonLoadChartPointSchema).default([]),
     groupDensity: nonEmptyString.optional(),
     individualDensity: nonEmptyString.optional(),
     loadLevel: nonEmptyString.optional(),
@@ -118,10 +110,6 @@ export const lessonPlanProtocolDraftSchema = z.object({
     sportAbility: textListSchema,
     sportMorality: textListSchema,
   }),
-  period: z.object({
-    homework: textListSchema,
-    reflection: textListSchema,
-  }),
   safety: textListSchema,
   warnings: z.array(z.string()).default([]),
 });
@@ -136,15 +124,8 @@ function createEmptyDraft(): LessonPlanProtocolDraft {
     },
     evaluations: [],
     flows: [],
-    keyDifficultPoints: {
-      studentLearning: [],
-      teachingContent: [],
-      teachingMethod: [],
-      teachingOrganization: [],
-    },
     lesson: {},
     load: {
-      chartPoints: [],
       rationale: [],
     },
     narrative: {
@@ -156,10 +137,6 @@ function createEmptyDraft(): LessonPlanProtocolDraft {
       healthBehavior: [],
       sportAbility: [],
       sportMorality: [],
-    },
-    period: {
-      homework: [],
-      reflection: [],
     },
     safety: [],
     warnings: [],
@@ -192,18 +169,12 @@ function setText(target: Record<string, string | undefined>, key: string, value:
 
 const KEY_ALIASES: Record<string, string> = {
   "average_heart_rate": "averageHeartRate",
-  "chart_points": "chartPoints",
-  "chartpoints": "chartPoints",
   "group_density": "groupDensity",
   "individual_density": "individualDensity",
   "lesson_no": "lessonNo",
   "load_level": "loadLevel",
   "student_count": "studentCount",
-  "studentlearning": "studentLearning",
   "target_heart_rate_range": "targetHeartRateRange",
-  "teachingcontent": "teachingContent",
-  "teachingmethod": "teachingMethod",
-  "teachingorganization": "teachingOrganization",
   "teacher_name": "teacherName",
   "teacher_school": "teacherSchool",
   "个人练习密度": "individualDensity",
@@ -219,9 +190,6 @@ const KEY_ALIASES: Record<string, string> = {
   "学校": "teacherSchool",
   "平均心率": "averageHeartRate",
   "年级": "grade",
-  "心率曲线": "chartPoints",
-  "心率曲线点": "chartPoints",
-  "心率曲线节点": "chartPoints",
   "强度": "intensity",
   "教师": "teacher",
   "教师姓名": "teacherName",
@@ -234,17 +202,12 @@ const KEY_ALIASES: Record<string, string> = {
   "组密度": "groupDensity",
   "组织": "organization",
   "组织形式": "organization",
-  "负荷曲线": "chartPoints",
-  "负荷曲线点": "chartPoints",
   "负荷": "loadLevel",
   "课次": "lessonNo",
-  "课后作业": "homework",
-  "课后反思": "reflection",
   "运动负荷": "loadLevel",
   "运动能力": "sportAbility",
   "体育品德": "sportMorality",
   "健康行为": "healthBehavior",
-  "反思": "reflection",
   "主题": "topic",
   "标题": "title",
   "副标题": "subtitle",
@@ -350,47 +313,6 @@ function sectionTarget(draft: LessonPlanProtocolDraft, path: string) {
     case "sportMorality":
     case "sport_morality":
       return draft.objectives.sportMorality;
-    case "key_difficult_points.student_learning":
-    case "key_difficult_points.studentlearning":
-    case "keydifficultpoints.studentlearning":
-    case "studentLearning":
-    case "student_learning":
-    case "学生学习":
-      return draft.keyDifficultPoints.studentLearning;
-    case "key_difficult_points.teaching_content":
-    case "key_difficult_points.teachingcontent":
-    case "keydifficultpoints.teachingcontent":
-    case "teachingContent":
-    case "teaching_content":
-    case "教学内容":
-      return draft.keyDifficultPoints.teachingContent;
-    case "key_difficult_points.teaching_organization":
-    case "key_difficult_points.teachingorganization":
-    case "keydifficultpoints.teachingorganization":
-    case "teachingOrganization":
-    case "teaching_organization":
-    case "教学组织":
-      return draft.keyDifficultPoints.teachingOrganization;
-    case "key_difficult_points.teaching_method":
-    case "key_difficult_points.teachingmethod":
-    case "keydifficultpoints.teachingmethod":
-    case "teachingMethod":
-    case "teaching_method":
-    case "教学方法":
-      return draft.keyDifficultPoints.teachingMethod;
-    case "period_plan.homework":
-    case "periodplan.homework":
-    case "period.homework":
-    case "homework":
-    case "课后作业":
-      return draft.period.homework;
-    case "period_plan.reflection":
-    case "periodplan.reflection":
-    case "period.reflection":
-    case "reflection":
-    case "教学反思":
-    case "课后反思":
-      return draft.period.reflection;
     default:
       return undefined;
   }
@@ -411,81 +333,6 @@ function ensureEvaluation(draft: LessonPlanProtocolDraft, index: number) {
   draft.evaluations[index] ??= {};
 
   return draft.evaluations[index];
-}
-
-function normalizeChartPoints(points: CompetitionLessonLoadChartPoint[]) {
-  const byTime = new Map<number, CompetitionLessonLoadChartPoint>();
-
-  points.forEach((point) => {
-    byTime.set(point.timeMinute, point);
-  });
-
-  return Array.from(byTime.values())
-    .sort((left, right) => left.timeMinute - right.timeMinute)
-    .slice(0, 12);
-}
-
-function parseChartPoints(value: string) {
-  const normalized = compactText(value);
-
-  if (!normalized) {
-    return [];
-  }
-
-  if (normalized.startsWith("[")) {
-    try {
-      return normalizeChartPoints(z.array(competitionLessonLoadChartPointSchema).parse(JSON.parse(normalized)));
-    } catch {
-      return [];
-    }
-  }
-
-  const matches = Array.from(
-    normalized.matchAll(/(\d+(?:\.\d+)?)\s*(分钟|分|['’′`]?)\s*(?:=|：|:)\s*(\d{2,3})(?:\s*次\/分钟)?/g),
-  );
-  const points = matches
-    .map((match) => {
-      const timeMinute = Number.parseFloat(match[1] ?? "");
-      const unit = match[2] ?? "";
-      const heartRate = Number.parseInt(match[3] ?? "", 10);
-
-      if (!Number.isFinite(timeMinute) || !Number.isFinite(heartRate)) {
-        return undefined;
-      }
-
-      const label = unit && /分钟|分/.test(unit) ? `${timeMinute}${unit}` : `${timeMinute}'`;
-
-      return competitionLessonLoadChartPointSchema.parse({
-        heartRate,
-        label,
-        timeMinute,
-      });
-    })
-    .filter((point): point is CompetitionLessonLoadChartPoint => Boolean(point));
-
-  return normalizeChartPoints(points);
-}
-
-function resolveFlowStructure(
-  flow: LessonPlanProtocolDraft["flows"][number],
-  index: number,
-  totalFlows: number,
-) {
-  const normalized = normalizeFlowPart(flow.part);
-
-  if (normalized) {
-    return normalized;
-  }
-
-  if (index === 0) {
-    return "准备部分" as const;
-  }
-
-  if (index === totalFlows - 1) {
-    return "结束部分" as const;
-  }
-
-  return "基本部分" as const;
 }
 
 function applyKeyValue(draft: LessonPlanProtocolDraft, block: ProtocolBlock, key: string, value: string) {
@@ -545,23 +392,13 @@ function applyKeyValue(draft: LessonPlanProtocolDraft, block: ProtocolBlock, key
   }
 
   if (block.kind === "load") {
-    if (key === "chartPoints") {
-      const chartPoints = parseChartPoints(value);
-
-      if (chartPoints.length > 0) {
-        draft.load.chartPoints = chartPoints;
-      }
-      return;
-    }
-
     if (key === "rationale") {
       pushText(draft.load.rationale, value);
       return;
     }
 
     if (LOAD_KEYS.has(key)) {
-      draft.load[key as Exclude<keyof LessonPlanProtocolDraft["load"], "chartPoints" | "rationale">] =
-        compactText(value);
+      draft.load[key as Exclude<keyof LessonPlanProtocolDraft["load"], "rationale">] = compactText(value);
     }
   }
 }
@@ -642,10 +479,6 @@ function requiredText(values: string[], fallback: string) {
   return values.length > 0 ? values : [fallback];
 }
 
-function requiredTextBlock(values: string[], fallback: string[]) {
-  return values.length > 0 ? values : fallback;
-}
-
 function firstText(values: string[], fallback: string) {
   return values.find((value) => value.trim()) ?? fallback;
 }
@@ -669,48 +502,56 @@ function normalizeEvaluations(draft: LessonPlanProtocolDraft) {
   });
 }
 
-function createCompetitionLessonPlanRow(
-  flow: LessonPlanProtocolDraft["flows"][number] | undefined,
-  structure: (typeof FLOW_STRUCTURES)[number],
-): CompetitionLessonPlanRow {
-  return {
-    content: requiredText(flow?.content ?? [], `${structure}课堂活动`),
-    intensity:
-      flow?.intensity ??
-      (structure === "准备部分" ? "中" : structure === "基本部分" ? "中高" : "低"),
-    methods: {
-      students: requiredText(flow?.students ?? [], "按教师要求完成练习，并保持安全距离。"),
-      teacher: requiredText(flow?.teacher ?? [], "讲解示范、巡视指导，并及时提示安全要求。"),
-    },
-    organization: requiredText(
-      flow?.organization ?? [],
-      structure === "基本部分" ? "分组轮换练习队形" : "集合队形",
-    ),
-    structure,
-    time: flow?.time ?? (structure === "准备部分" ? "8分钟" : structure === "基本部分" ? "27分钟" : "5分钟"),
-  };
-}
-
 function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRow[] {
-  const rowsByPart = new Map<(typeof FLOW_STRUCTURES)[number], LessonPlanProtocolDraft["flows"][number][]>();
-
-  FLOW_STRUCTURES.forEach((structure) => {
-    rowsByPart.set(structure, []);
-  });
+  const rowsByPart = new Map<(typeof FLOW_STRUCTURES)[number], LessonPlanProtocolDraft["flows"][number]>();
 
   draft.flows.forEach((flow, index) => {
-    const part = resolveFlowStructure(flow, index, draft.flows.length);
-    rowsByPart.get(part)?.push(flow);
+    const part = normalizeFlowPart(flow.part) ?? FLOW_STRUCTURES[index];
+
+    if (part && !rowsByPart.has(part)) {
+      rowsByPart.set(part, flow);
+    }
   });
 
-  return FLOW_STRUCTURES.flatMap((structure) => {
-    const flows = rowsByPart.get(structure) ?? [];
+  return FLOW_STRUCTURES.map((structure) => {
+    const flow = rowsByPart.get(structure);
 
-    if (flows.length === 0) {
-      return [createCompetitionLessonPlanRow(undefined, structure)];
+    return {
+      content: requiredText(flow?.content ?? [], `${structure}课堂活动`),
+      intensity:
+        flow?.intensity ??
+        (structure === "准备部分" ? "中" : structure === "基本部分" ? "中高" : "低"),
+      methods: {
+        students: requiredText(flow?.students ?? [], "按教师要求完成练习，并保持安全距离。"),
+        teacher: requiredText(flow?.teacher ?? [], "讲解示范、巡视指导，并及时提示安全要求。"),
+      },
+      organization: requiredText(
+        flow?.organization ?? [],
+        structure === "基本部分" ? "分组轮换练习队形" : "集合队形",
+      ),
+      structure,
+      time: flow?.time ?? (structure === "准备部分" ? "8分钟" : structure === "基本部分" ? "27分钟" : "5分钟"),
+    };
+  });
+}
+
+function enrichBasicPartSegments(rows: CompetitionLessonPlanRow[]) {
+  return rows.map((row) => {
+    if (row.structure !== "基本部分") {
+      return row;
     }
 
-    return flows.map((flow) => createCompetitionLessonPlanRow(flow, structure));
+    const contentText = row.content.join("、");
+    const missingSegments = BASIC_PART_REQUIRED_SEGMENTS.filter((segment) => !contentText.includes(segment));
+
+    if (missingSegments.length === 0) {
+      return row;
+    }
+
+    return {
+      ...row,
+      content: [...row.content, missingSegments.join("、")],
+    };
   });
 }
 
@@ -838,7 +679,7 @@ function collectDiagnostics(draft: LessonPlanProtocolDraft) {
     });
   }
 
-  const parts = new Set(draft.flows.map((flow, index) => resolveFlowStructure(flow, index, draft.flows.length)));
+  const parts = new Set(draft.flows.map((flow, index) => normalizeFlowPart(flow.part) ?? FLOW_STRUCTURES[index]));
   FLOW_STRUCTURES.forEach((part) => {
     if (!parts.has(part)) {
       diagnostics.push({
@@ -946,39 +787,30 @@ export function normalizeLessonProtocolDraftToCompetitionLessonPlan(
   }
 
   const sourceRows = normalizeFlows(draft);
-  const rows = sourceRows;
+  const rows = enrichBasicPartSegments(sourceRows);
   const title = draft.lesson.title ?? draft.lesson.topic ?? "体育课时计划";
   const topic = draft.lesson.topic ?? title;
   const mainContent = rows.flatMap((row) => row.content);
-  const basicRows = rows.filter((row) => row.structure === "基本部分");
-  const basicContent = basicRows.flatMap((row) => row.content);
+  const basicRow = rows.find((row) => row.structure === "基本部分") ?? rows[1];
   const flowSummary = sourceRows.flatMap((row) => summarizeFlowContent(row.content));
-  const defaultTeachingContent = [
-    `${topic}的动作方法、练习节奏、规则执行与课堂评价标准。`,
-    ...basicContent.slice(0, 2),
-  ];
-  const defaultHomework = [
-    `课后在安全场地复习${topic}相关动作或体能练习。`,
-    "与家长或同伴交流课堂收获，记录一个需要继续改进的动作要点。",
-  ];
 
   return competitionLessonPlanSchema.parse({
     evaluation: normalizeEvaluations(draft),
     flowSummary: flowSummary.length > 0 ? flowSummary : ["课堂活动"],
     keyDifficultPoints: {
-      studentLearning: requiredText(
-        draft.keyDifficultPoints.studentLearning,
+      studentLearning: [
         `学生能够围绕“${topic}”明确练习任务，逐步提升动作稳定性、合作意识和安全参与能力。`,
-      ),
-      teachingContent: requiredTextBlock(draft.keyDifficultPoints.teachingContent, defaultTeachingContent),
-      teachingMethod: requiredText(
-        draft.keyDifficultPoints.teachingMethod,
+      ],
+      teachingContent: [
+        `${topic}的动作方法、练习节奏、规则执行与课堂评价标准。`,
+        ...basicRow.content.slice(0, 2),
+      ],
+      teachingMethod: [
         "采用讲解示范、分组练习、巡回指导、同伴互评和游戏化挑战相结合的教学方法。",
-      ),
-      teachingOrganization: requiredText(
-        draft.keyDifficultPoints.teachingOrganization,
+      ],
+      teachingOrganization: [
         "依据准备、基本、结束三段结构组织课堂，保持练习密度、安全距离和队伍轮换秩序。",
-      ),
+      ],
     },
     learningObjectives: {
       healthBehavior: requiredText(
@@ -996,7 +828,6 @@ export function normalizeLessonProtocolDraftToCompetitionLessonPlan(
     },
     loadEstimate: {
       averageHeartRate: draft.load.averageHeartRate ?? "145次/分钟",
-      chartPoints: draft.load.chartPoints.length >= 2 ? draft.load.chartPoints : undefined,
       groupDensity: draft.load.groupDensity ?? "约75%",
       individualDensity: draft.load.individualDensity ?? "约45%",
       loadLevel: draft.load.loadLevel ?? "中等偏上",
@@ -1028,12 +859,14 @@ export function normalizeLessonProtocolDraftToCompetitionLessonPlan(
       ),
     },
     periodPlan: {
-      homework: requiredTextBlock(draft.period.homework, defaultHomework),
+      homework: [
+        `课后在安全场地复习${topic}相关动作或体能练习。`,
+        "与家长或同伴交流课堂收获，记录一个需要继续改进的动作要点。",
+      ],
       mainContent: requiredText(mainContent, topic),
-      reflection: requiredText(
-        draft.period.reflection,
+      reflection: [
         "课后重点观察学生参与度、练习密度、动作达成度和安全执行情况，为下一课时调整分层任务。",
-      ),
+      ],
       rows,
       safety: requiredText(draft.safety, "练习中保持安全距离，听从教师口令，发现身体不适及时报告。"),
     },

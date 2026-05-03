@@ -4,6 +4,10 @@ import {
 } from "@/lib/competition-lesson-contract";
 import type { WorkflowTraceEntry } from "@/lib/lesson-authoring-contract";
 
+import {
+  formatLessonValidationIssues,
+  performLessonBusinessValidation,
+} from "../../support/lesson_generation_validation";
 import { runLessonGenerationSkill } from "./lesson_generation_skill";
 
 function nowIsoString() {
@@ -103,14 +107,29 @@ export async function runLessonGenerationWithPostProcess(
 
   const finalLessonPlanPromise = generation.finalLessonPlanPromise?.then((draft) => {
     const citedDraft = appendTextbookCitationsToLessonPlan(draft, input.workflow);
+    const validation = performLessonBusinessValidation(citedDraft);
+
+    if (!validation.isValid) {
+      const detail = `结构化课时计划未通过最终业务校验：\n${formatLessonValidationIssues(validation.issues)}`;
+
+      input.onTrace?.(
+        createPostProcessTraceEntry(
+          "validate-lesson-output",
+          "failed",
+          detail,
+        ),
+      );
+
+      throw new Error(detail);
+    }
 
     input.onTrace?.(
       createPostProcessTraceEntry(
         "validate-lesson-output",
         "success",
         input.workflow.textbook?.references?.length
-          ? "结构化课时计划已完成最终 schema 检查，并已写入教材依据引用。"
-          : "结构化课时计划已完成最终 schema 检查。",
+          ? "结构化课时计划已完成最终 schema 与业务校验，并已写入教材依据引用。"
+          : "结构化课时计划已完成最终 schema 与业务校验。",
       ),
     );
 

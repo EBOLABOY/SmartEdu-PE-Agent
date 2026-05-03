@@ -14,7 +14,7 @@ import {
   getImageGenerationConfig,
   IMAGE_GENERATION_REQUIRED_ENV_NAMES,
   type ImageGenerationConfig,
-} from "./image_generation_config";
+} from "../../support/image_generation_config";
 
 const SCREEN_IMAGE_WIDTH = 1600;
 const SCREEN_IMAGE_HEIGHT = 900;

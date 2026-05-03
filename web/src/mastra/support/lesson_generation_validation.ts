@@ -45,7 +45,7 @@ function isPlaceholderText(value: string) {
 
   return (
     /^x{3,}$/i.test(normalized) ||
-    /待补充|待完善|待填写/.test(normalized) ||
+    /待补充|待完善|待填写|正在生成|待生成/.test(normalized) ||
     /^同上(?:[。；;，,！!？?]*)?$/.test(normalized)
   );
 }

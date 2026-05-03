@@ -5,6 +5,7 @@ import {
   buildArtifactImageObjectKey,
   buildArtifactImageProxyUrl,
   isArtifactImageProxyUrl,
+  parseArtifactImageProxyUrl,
   parseArtifactImageProxyPath,
 } from "./artifact-image-url";
 
@@ -40,6 +41,22 @@ describe("artifact-image-url", () => {
         "projects/33333333-3333-3333-3333-333333333333/lesson-diagrams/request-1/01-a1b2c3d4e5f6.png",
       requestId: "request-1",
     });
+  });
+
+  it("parses constrained artifact proxy URLs back to object-key coordinates", () => {
+    expect(
+      parseArtifactImageProxyUrl(
+        "/api/projects/33333333-3333-3333-3333-333333333333/artifact-images/html-screen-visuals/request-1/01-image.png",
+      ),
+    ).toEqual({
+      filename: "01-image.png",
+      kind: "html-screen-visuals",
+      objectKey:
+        "projects/33333333-3333-3333-3333-333333333333/html-screen-visuals/request-1/01-image.png",
+      projectId: PROJECT_ID,
+      requestId: "request-1",
+    });
+    expect(parseArtifactImageProxyUrl("https://example.com/image.png")).toBeNull();
   });
 
   it("rejects unsafe or unsupported path segments", () => {

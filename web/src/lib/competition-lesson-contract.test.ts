@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
-  agentLessonGenerationSchema,
   competitionLessonPlanSchema,
-  unwrapAgentLessonGenerationResult,
 } from "@/lib/competition-lesson-contract";
 
 describe("competition-lesson-contract", () => {
@@ -16,40 +14,6 @@ describe("competition-lesson-contract", () => {
     expect(parsed.loadEstimate.rationale).toEqual(["XXX"]);
     expect(parsed.periodPlan.mainContent).toEqual(["XXX"]);
     expect(parsed.periodPlan.reflection).toEqual(["XXX"]);
-  });
-
-  it("normalizes scalar text blocks from model output", () => {
-    const legacyDraft = {
-      ...DEFAULT_COMPETITION_LESSON_PLAN,
-      learningObjectives: {
-        ...DEFAULT_COMPETITION_LESSON_PLAN.learningObjectives,
-        sportAbility: "能完成主要动作。",
-      },
-      flowSummary: "warmup -> practice -> cooldown",
-      periodPlan: {
-        ...DEFAULT_COMPETITION_LESSON_PLAN.periodPlan,
-        mainContent: "主教材练习。",
-      },
-    };
-
-    const parsed = competitionLessonPlanSchema.parse(legacyDraft);
-
-    expect(parsed.learningObjectives.sportAbility).toEqual(["能完成主要动作。"]);
-    expect(parsed.flowSummary).toEqual(["warmup -> practice -> cooldown"]);
-    expect(parsed.periodPlan.mainContent).toEqual(["主教材练习。"]);
-  });
-
-  it("课时计划行会把受控中文字段别名归一化为 schema 字段", () => {
-    const aliasedDraft = structuredClone(DEFAULT_COMPETITION_LESSON_PLAN);
-    const firstRow = aliasedDraft.periodPlan.rows[0] as Record<string, unknown>;
-
-    firstRow["强度"] = firstRow.intensity;
-    delete firstRow.intensity;
-
-    const parsed = competitionLessonPlanSchema.parse(aliasedDraft);
-
-    expect(parsed.periodPlan.rows[0]?.intensity).toBe("XXX");
-    expect(parsed.periodPlan.rows[0]).not.toHaveProperty("强度");
   });
 
   it("课时计划行仍拒绝未知字段，不能把 strict schema 变成透传", () => {
@@ -65,14 +29,4 @@ describe("competition-lesson-contract", () => {
     );
   });
 
-  it("AgentLessonGeneration 包装 schema 会保留草稿字段但解包为 CompetitionLessonPlan", () => {
-    const wrapped = agentLessonGenerationSchema.parse({
-      _thinking_process: "先梳理目标、重难点和三段时间分配。",
-      lessonPlan: DEFAULT_COMPETITION_LESSON_PLAN,
-    });
-
-    expect(wrapped._thinking_process).toContain("三段时间");
-    expect(unwrapAgentLessonGenerationResult(wrapped)).toEqual(DEFAULT_COMPETITION_LESSON_PLAN);
-    expect(unwrapAgentLessonGenerationResult(DEFAULT_COMPETITION_LESSON_PLAN)).toEqual(DEFAULT_COMPETITION_LESSON_PLAN);
-  });
 });

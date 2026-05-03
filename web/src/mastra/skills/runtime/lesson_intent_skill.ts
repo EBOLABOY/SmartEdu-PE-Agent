@@ -1,16 +1,14 @@
 import {
   convertToModelMessages,
-  extractJsonMiddleware,
   generateText,
   Output,
   stepCountIs,
-  wrapLanguageModel,
 } from "ai";
 import { z } from "zod";
 
 import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
 
-import { createChatModel } from "../models";
+import { createChatModel } from "../../models";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
 export const lessonIntentTypeSchema = z.enum([
@@ -110,13 +108,8 @@ export async function generateLessonIntentWithAiSdk({
   mode,
   modelId,
 }: LessonIntentGenerateOptions): Promise<LessonIntent> {
-  const model = wrapLanguageModel({
-    model: createChatModel(modelId),
-    middleware: extractJsonMiddleware(),
-  });
-
   const result = await generateText({
-    model,
+    model: createChatModel(modelId),
     system: buildIntentSystemPrompt(),
     messages: [
       ...messages,

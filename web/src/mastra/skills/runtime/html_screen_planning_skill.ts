@@ -2,6 +2,7 @@ import type { FullOutput } from "@mastra/core/stream";
 import {
   convertToModelMessages,
   generateText,
+  Output,
   stepCountIs,
 } from "ai";
 
@@ -13,21 +14,14 @@ import {
   htmlScreenPlanSchema,
   type HtmlScreenPlan,
 } from "@/lib/html-screen-plan-contract";
-import {
-  formatHtmlScreenPlanProtocolDiagnostics,
-  parseHtmlScreenPlanProtocolToHtmlScreenPlan,
-} from "@/lib/html-screen-plan-protocol";
-import {
-  type GenerationMode,
-} from "@/lib/lesson-authoring-contract";
 import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
 
+import { buildHtmlScreenPlanningSystemPrompt } from "../../agents/html_screen_planner";
+import { createChatModel } from "../../models";
 import {
-  buildHtmlScreenPlanningSystemPrompt,
-  formatLessonScreenPlanForPrompt,
-} from "../agents/html_screen_planner";
-import { createChatModel } from "../models";
-import { runModelOperationWithRetry } from "./lesson_generation_skill";
+  resolvePositiveIntegerEnv,
+  withEnhancementTimeout,
+} from "../../support/enhancement_execution";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
 
@@ -54,10 +48,13 @@ export type HtmlScreenPlanAgentRunner = (
   options: HtmlScreenPlanGenerateOptions,
 ) => Promise<FullOutput<HtmlScreenPlan>>;
 
+export type HtmlScreenPlanningSource = "agent";
+
 export type HtmlScreenPlanningResult = {
   modelMessageCount: number;
   plan: HtmlScreenPlan;
-  source: "agent";
+  source: HtmlScreenPlanningSource;
+  warnings: string[];
 };
 
 export class HtmlScreenPlanningError extends Error {
@@ -68,6 +65,10 @@ export class HtmlScreenPlanningError extends Error {
     super(message);
     this.name = "HtmlScreenPlanningError";
   }
+}
+
+function resolveHtmlScreenPlanningTimeoutMs() {
+  return resolvePositiveIntegerEnv("AI_HTML_PLANNER_TIMEOUT_MS", 90_000);
 }
 
 function parseConfirmedLessonPlan(lessonPlan?: string): CompetitionLessonPlan | undefined {
@@ -82,6 +83,35 @@ function parseConfirmedLessonPlan(lessonPlan?: string): CompetitionLessonPlan | 
   } catch {
     return undefined;
   }
+}
+
+function buildLessonPlanNinthSectionForPrompt(lessonPlan?: string) {
+  const parsedLessonPlan = parseConfirmedLessonPlan(lessonPlan);
+
+  if (!parsedLessonPlan) {
+    return undefined;
+  }
+
+  return JSON.stringify({
+    loadEstimate: parsedLessonPlan.loadEstimate,
+    periodPlan: parsedLessonPlan.periodPlan,
+    venueEquipment: parsedLessonPlan.venueEquipment,
+  });
+}
+
+function buildLessonPlanCoverMetaForPrompt(lessonPlan?: string) {
+  const parsedLessonPlan = parseConfirmedLessonPlan(lessonPlan);
+
+  if (!parsedLessonPlan) {
+    return undefined;
+  }
+
+  return JSON.stringify({
+    meta: parsedLessonPlan.meta,
+    subtitle: parsedLessonPlan.subtitle,
+    teacher: parsedLessonPlan.teacher,
+    title: parsedLessonPlan.title,
+  });
 }
 
 function buildSeedHtmlScreenPlan(input: {
@@ -103,21 +133,51 @@ function buildSeedHtmlScreenPlan(input: {
   throw new HtmlScreenPlanningError("HTML 大屏分镜规划缺少可用课时计划，无法构造规划输入。");
 }
 
+function createSeedCoverSection(seedPlan: HtmlScreenPlan): HtmlScreenPlan["sections"][number] {
+  const firstTeachingSection = seedPlan.sections.find((section) => section.pageRole !== "cover");
+  const title = firstTeachingSection?.title ?? seedPlan.sections[0]?.title ?? "体育课堂";
+
+  return {
+    title,
+    pageRole: "cover",
+    visualMode: "html",
+    pagePrompt: [
+      `生成“${title}”互动大屏首页封面。`,
+      "使用现代发布会幻灯片式课堂启动页结构，采用深色沉浸背景和具有张力的非对称排版。",
+      "大标题使用超大字号并偏向屏幕中左侧，学校和教师姓名作为高对比小字号 Meta 信息下沉到右下角或底部，并保留清晰的开始上课按钮视觉。",
+      "不要生成倒计时，不要输出完整 HTML、section、script、style 或 Markdown。",
+    ].join("\n"),
+    reason: "服务端根据课时计划补充首页草案，供分镜规划模型参考。",
+  };
+}
+
+function createPlanningSeedPlan(seedPlan: HtmlScreenPlan): HtmlScreenPlan {
+  const hasCover = seedPlan.sections[0]?.pageRole === "cover";
+
+  return htmlScreenPlanSchema.parse({
+    visualSystem: seedPlan.visualSystem,
+    sections: hasCover ? seedPlan.sections : [createSeedCoverSection(seedPlan), ...seedPlan.sections],
+  });
+}
+
 function buildPlanningModelMessages(input: {
   lessonPlan?: string;
   seedPlan: HtmlScreenPlan;
 }) {
+  const coverMeta = buildLessonPlanCoverMetaForPrompt(input.lessonPlan);
+  const lessonPlanNinthSection = buildLessonPlanNinthSectionForPrompt(input.lessonPlan);
+
   return [
     {
       role: "user" as const,
       content: [
-        "请基于已确认课时计划输出最终 HtmlScreenPlan。必须自动判断课堂需要几个页面，并把首页作为 sections[0]。",
+        "请基于已确认课时计划第九部分输出最终 HtmlScreenPlan。必须自动判断课堂需要几个页面，并把首页作为 sections[0]。",
         "",
-        "教学环节参考草案（只用于防止遗漏 periodPlan.rows，不是页面设计稿；你可以补首页、合并、拆分和重写视觉系统）：",
-        formatLessonScreenPlanForPrompt(input.seedPlan),
+        "首页元信息 JSON（仅用于首页标题、学校、教师、年级人数等 Meta 信息，不用于拆分教学页）：",
+        coverMeta ?? "未提供首页元信息 JSON。",
         "",
-        "已确认课时计划 JSON：",
-        input.lessonPlan ?? "未提供已确认课时计划 JSON。",
+        "已确认课时计划第九部分 JSON（仅包含 periodPlan、venueEquipment、loadEstimate）：",
+        lessonPlanNinthSection ?? "未提供已确认课时计划第九部分 JSON。",
       ].join("\n"),
     },
   ] as AgentModelMessages;
@@ -193,46 +253,6 @@ function normalizeAgentPlan(agentPlan: HtmlScreenPlan, seedPlan: HtmlScreenPlan)
   });
 }
 
-function buildProtocolPlanningSystemPrompt(options: HtmlScreenPlanGenerateOptions) {
-  return [
-    options.system,
-    "你正在执行服务端确定性 HTML 大屏分镜规划任务，不是工具调用或聊天回复。",
-    "你必须只输出“自定义 HTML 分镜行协议”文本。不要输出 JSON、Markdown 标题、HTML、XML、代码围栏或解释文字。",
-    "所有字段必须使用 UTF-8 中文内容。普通字段用 key=value；@visual_system 块内可以直接写正文行。",
-    "必须包含：@visual_system、至少一个首页 @section、覆盖全部课时计划行的教学页 @section。",
-    "第一个 @section 必须是 page_role=cover，首页不写 source_row_index，也不参与倒计时。",
-    "非首页 @section 必须写 title、page_role、source_row_index 或 source_row_indexes、duration_seconds、objective、student_actions、safety_cue、evaluation_cue、visual_intent、visual_mode、page_prompt、reason。",
-    "合并多个课时计划行时写 source_row_indexes=0,1；拆分同一行时可复用 source_row_index。",
-    "student_actions 使用分号分隔 1-3 条动作；visual_mode 只能写 html、image 或 hybrid。",
-    "visual_mode=image 或 hybrid 时必须写 image_prompt；visual_mode=html 时不要写 image_prompt。",
-    "page_prompt 必须是一行完整提示词，交给后续 HTML 片段生成模型使用；不要在协议中输出真正 HTML。",
-    "下面只是协议骨架，不是内容模板；具体分镜、视觉意图和页面提示词由你根据课时计划自主生成，不要照抄骨架说明：",
-    "@visual_system",
-    "整套课堂大屏的统一视觉系统描述。",
-    "",
-    "@section",
-    "title=",
-    "page_role=cover",
-    "visual_mode=html",
-    "page_prompt=",
-    "reason=",
-    "",
-    "@section",
-    "title=",
-    "page_role=learnPractice",
-    "source_row_index=0",
-    "duration_seconds=",
-    "objective=",
-    "student_actions=",
-    "safety_cue=",
-    "evaluation_cue=",
-    "visual_intent=",
-    "visual_mode=html",
-    "page_prompt=",
-    "reason=",
-  ].join("\n\n");
-}
-
 export async function runHtmlScreenPlanningSkill(input: {
   additionalInstructions?: string;
   agentGenerate: HtmlScreenPlanAgentRunner;
@@ -245,49 +265,45 @@ export async function runHtmlScreenPlanningSkill(input: {
     lessonPlan: input.lessonPlan,
     seedPlan: input.seedPlan,
   });
+  const planningSeedPlan = createPlanningSeedPlan(seedPlan);
   const modelMessages = buildPlanningModelMessages({
     lessonPlan: input.lessonPlan,
-    seedPlan,
+    seedPlan: planningSeedPlan,
   });
+  const modelMessageCount = modelMessages.length;
+  const timeoutMs = resolveHtmlScreenPlanningTimeoutMs();
 
   try {
-    const result = await runModelOperationWithRetry(
-      () =>
-        input.agentGenerate(modelMessages, {
-          system: [buildHtmlScreenPlanningSystemPrompt(), input.additionalInstructions].filter(Boolean).join("\n\n"),
-          maxSteps: input.maxSteps,
-          providerOptions: {
-            openai: {
-              store: true,
-            },
+    const result = await withEnhancementTimeout({
+      operation: input.agentGenerate(modelMessages, {
+        system: [buildHtmlScreenPlanningSystemPrompt(), input.additionalInstructions].filter(Boolean).join("\n\n"),
+        maxSteps: input.maxSteps,
+        providerOptions: {
+          openai: {
+            store: true,
           },
-          structuredOutput: {
-            schema: htmlScreenPlanSchema,
-            instructions: "只输出符合 HtmlScreenPlan schema 的结构化对象，不要输出 HTML 或解释文字。",
-            jsonPromptInjection: true,
-          },
-        }),
-      {
-        mode: "html" satisfies GenerationMode,
-        requestId: input.requestId,
-      },
-    );
+        },
+        structuredOutput: {
+          schema: htmlScreenPlanSchema,
+          instructions: "只输出符合 HtmlScreenPlan schema 的结构化对象，不要输出 HTML 或解释文字。",
+          jsonPromptInjection: true,
+        },
+      }),
+      timeoutMessage: `HTML 大屏 AI 分镜规划超过 ${Math.round(timeoutMs / 1000)} 秒，请重试。`,
+      timeoutMs,
+    });
 
     return {
-      modelMessageCount: modelMessages.length,
-      plan: normalizeAgentPlan(result.object, seedPlan),
+      modelMessageCount,
+      plan: normalizeAgentPlan(result.object, planningSeedPlan),
       source: "agent",
+      warnings: [],
     };
   } catch (error) {
-    const errorMessage = `HTML 大屏 Agent 分镜规划失败：${
-      error instanceof Error ? error.message : "unknown-error"
-    }`;
-
-    console.warn("[lesson-authoring] html-screen-planning-failed", {
-      requestId: input.requestId,
-      message: error instanceof Error ? error.message : "unknown-error",
-    });
-    throw new HtmlScreenPlanningError(errorMessage, error);
+    throw new HtmlScreenPlanningError(
+      `HTML 大屏分镜规划失败：${error instanceof Error ? error.message : "unknown-error"}`,
+      error,
+    );
   }
 }
 
@@ -303,28 +319,27 @@ export async function runServerHtmlScreenPlanningSkill(input: {
   const agentGenerate: HtmlScreenPlanAgentRunner = async (messages, options) => {
     const result = await generateText({
       model,
-      system: buildProtocolPlanningSystemPrompt(options),
+      system: [
+        options.system,
+        options.structuredOutput.instructions,
+        "你正在执行服务端确定性 HTML 大屏分镜规划任务，不是工具调用或聊天回复。",
+        "必须返回可被 HtmlScreenPlan schema 校验的结构化对象；不要输出 HTML、Markdown、XML、代码围栏或解释文字。",
+        "sections[0] 必须是首页，pageRole 必须为 cover；非首页必须覆盖全部课时计划行，并写清 pagePrompt，供后续逐页 HTML 片段生成使用。",
+      ].join("\n\n"),
       messages,
+      maxRetries: 0,
+      output: Output.object({
+        schema: options.structuredOutput.schema,
+        name: "HtmlScreenPlan",
+        description: "HTML screen storyboard plan for a PE lesson.",
+      }),
       stopWhen: stepCountIs(options.maxSteps),
       temperature: 0,
+      timeout: resolveHtmlScreenPlanningTimeoutMs(),
     });
 
-    let object: HtmlScreenPlan;
-
-    try {
-      object = parseHtmlScreenPlanProtocolToHtmlScreenPlan(result.text);
-    } catch (error) {
-      throw new Error(
-        error && typeof error === "object" && "diagnostics" in error
-          ? `HTML 分镜行协议生成失败：\n${formatHtmlScreenPlanProtocolDiagnostics(
-              error as Parameters<typeof formatHtmlScreenPlanProtocolDiagnostics>[0],
-            )}`
-          : `HTML 分镜行协议生成失败：${error instanceof Error ? error.message : "unknown-error"}`,
-      );
-    }
-
     return {
-      object,
+      object: htmlScreenPlanSchema.parse(result.output),
       toolResults: [],
       steps: [],
     } as unknown as FullOutput<HtmlScreenPlan>;

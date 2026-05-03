@@ -15,7 +15,7 @@ import {
 import {
   buildLessonPatchSystemPrompt,
   buildLessonPatchUserPrompt,
-} from "../agents/lesson_patch";
+} from "../../agents/lesson_patch";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;

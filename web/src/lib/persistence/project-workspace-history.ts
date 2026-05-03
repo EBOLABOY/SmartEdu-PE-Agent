@@ -1,4 +1,3 @@
-import { extractJsonObjectText } from "@/lib/artifact-protocol";
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
@@ -49,7 +48,7 @@ function normalizeDisplayTitle(value: string | null | undefined) {
 function parseLessonPlan(content: string): CompetitionLessonPlan | undefined {
   try {
     return competitionLessonPlanSchema.parse(
-      JSON.parse(extractJsonObjectText(content)),
+      JSON.parse(content),
     );
   } catch {
     return undefined;

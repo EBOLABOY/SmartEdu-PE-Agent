@@ -15,7 +15,7 @@ import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import { createStructuredAuthoringStreamAdapter } from "./structured_authoring_stream_adapter";
 
-vi.mock("./lesson_diagram_generation_skill", () => ({
+vi.mock("../skills/runtime/lesson_diagram_generation_skill", () => ({
   enrichLessonPlanWithDiagramAssets: vi.fn(async ({ lessonPlan }) => ({
     generatedCount: 0,
     lessonPlan,
@@ -119,22 +119,7 @@ function createStructuredLessonOutputChunk(lessonPlan = createConcreteLessonPlan
   return {
     type: "data-structured-output",
     data: {
-      object: {
-        _thinking_process: "先完成教学设计草稿。",
-        lessonPlan,
-      },
-    },
-  } as UIMessageChunk;
-}
-
-function createLessonToolChunk(lessonPlan = createConcreteLessonPlan(), summary = "生成课时计划"): UIMessageChunk {
-  return {
-    type: "tool-input-available",
-    toolCallId: "tool-lesson-1",
-    toolName: "submit_lesson_plan",
-    input: {
-      lessonPlan,
-      summary,
+      object: lessonPlan,
     },
   } as UIMessageChunk;
 }
@@ -181,7 +166,7 @@ async function readAll(stream: ReadableStream<UIMessageChunk>) {
 
 describe("structured authoring stream adapter", () => {
   it("final lesson artifact 会等待站位图后处理并写入增强后的课时计划", async () => {
-    const { enrichLessonPlanWithDiagramAssets } = await import("./lesson_diagram_generation_skill");
+    const { enrichLessonPlanWithDiagramAssets } = await import("../skills/runtime/lesson_diagram_generation_skill");
     const enhancedLessonPlan = createConcreteLessonPlan();
 
     enhancedLessonPlan.periodPlan.rows[0].diagramAssets = [
@@ -311,44 +296,6 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("submit_lesson_plan 工具输入会立即转换为 lesson artifact，并留下 trace", async () => {
-    const stream = createStructuredAuthoringStreamAdapter({
-      mode: "lesson",
-      originalMessages: [],
-      requestId: "request-tool-lesson",
-      workflow: baseWorkflow,
-      stream: createChunkStream([createLessonToolChunk(), { type: "finish", finishReason: "stop" }]),
-    });
-
-    const chunks = await readAll(stream);
-    const artifacts = chunks
-      .filter((chunk) => chunk.type === "data-artifact")
-      .map(getArtifactData)
-      .filter(Boolean);
-    const trace = chunks
-      .map(getTraceData)
-      .find((value) =>
-        value?.trace.some((entry) => entry.step === "submit-lesson-plan-tool" && entry.status === "success"),
-      );
-
-    expect(artifacts[0]).toMatchObject({
-      contentType: "lesson-json",
-      status: "streaming",
-    });
-    expect(artifacts.at(-1)).toMatchObject({
-      contentType: "lesson-json",
-      status: "ready",
-    });
-    expect(trace?.trace).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          step: "submit-lesson-plan-tool",
-          status: "success",
-        }),
-      ]),
-    );
-  });
-
   it("lesson ready artifact 仍以 finalLessonPlanPromise 为准", async () => {
     const draftLessonPlan = createPlaceholderLessonPlan();
     const finalLessonPlan = createConcreteLessonPlan();
@@ -358,7 +305,7 @@ describe("structured authoring stream adapter", () => {
       originalMessages: [],
       requestId: "request-repaired-final-plan",
       workflow: baseWorkflow,
-      stream: createChunkStream([createLessonToolChunk(draftLessonPlan), { type: "finish", finishReason: "stop" }]),
+      stream: createChunkStream([createStructuredLessonOutputChunk(draftLessonPlan), { type: "finish", finishReason: "stop" }]),
     });
 
     const chunks = await readAll(stream);
@@ -378,11 +325,11 @@ describe("structured authoring stream adapter", () => {
     expect(parsed.title).not.toBe("待补充");
   });
 
-  it("无工具提交时仍保留 legacy structured-output 路径", async () => {
+  it("lesson structured-output 路径会生成 ready artifact", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
       originalMessages: [],
-      requestId: "request-legacy-structured-fallback",
+      requestId: "request-structured-output-ready",
       workflow: baseWorkflow,
       stream: createChunkStream([createStructuredLessonOutputChunk(), { type: "finish", finishReason: "stop" }]),
     });
@@ -399,7 +346,7 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("无工具提交时，html 原始文本提取路径会原样输出模型 HTML", async () => {
+  it("html 纯文本整文档没有 htmlPages 时会直接报错", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -424,20 +371,22 @@ describe("structured authoring stream adapter", () => {
     });
 
     const chunks = await readAll(stream);
-    const finalArtifact = chunks
-      .filter((chunk) => chunk.type === "data-artifact")
-      .map(getArtifactData)
-      .at(-1);
 
-    expect(finalArtifact).toMatchObject({
-      contentType: "html",
-      content: expect.stringContaining("<section class=\"slide\">普通页面</section>"),
-      status: "ready",
-      isComplete: true,
-    });
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: expect.stringContaining("htmlPages"),
+        }),
+        expect.objectContaining({
+          type: "finish",
+          finishReason: "error",
+        }),
+      ]),
+    );
   });
 
-  it("html 文本流在完整文档出现前也会输出 streaming artifact", async () => {
+  it("html 纯文本流不再生成 streaming artifact，而是等待结构化页级 artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -467,22 +416,16 @@ describe("structured authoring stream adapter", () => {
     });
 
     const chunks = await readAll(stream);
-    const artifacts = chunks
-      .filter((chunk) => chunk.type === "data-artifact")
-      .map(getArtifactData)
-      .filter(Boolean);
 
-    expect(artifacts[0]).toMatchObject({
-      contentType: "html",
-      content: expect.stringContaining("正在设计课堂大屏结构"),
-      status: "streaming",
-      isComplete: false,
-    });
-    expect(artifacts.at(-1)).toMatchObject({
-      contentType: "html",
-      status: "ready",
-      isComplete: true,
-    });
+    expect(chunks.some((chunk) => chunk.type === "data-artifact")).toBe(false);
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: expect.stringContaining("htmlPages"),
+        }),
+      ]),
+    );
   });
 
   it("html 上游 artifact 流会被原样透传并作为最终结果持久化，不再由 text-delta 重复合成", async () => {
@@ -500,6 +443,14 @@ describe("structured authoring stream adapter", () => {
       stage: "html",
       contentType: "html",
       content: html,
+      htmlPages: [
+        {
+          pageIndex: 0,
+          pageRole: "cover",
+          pageTitle: "上游最终大屏",
+          sectionHtml: '<section class="slide cover-slide active" data-slide-kind="cover"><h1>上游最终大屏</h1></section>',
+        },
+      ],
       isComplete: true,
       status: "ready",
       source: "data-part",
@@ -563,6 +514,14 @@ describe("structured authoring stream adapter", () => {
       stage: "html",
       contentType: "html",
       content: html,
+      htmlPages: [
+        {
+          pageIndex: 0,
+          pageRole: "cover",
+          pageTitle: "第 1 页",
+          sectionHtml: '<section class="slide cover-slide active" data-slide-kind="cover"><h1>第 1 页</h1></section>',
+        },
+      ],
       isComplete: true,
       status: "ready",
       source: "data-part",
@@ -624,40 +583,6 @@ describe("structured authoring stream adapter", () => {
     expect(completedTraceIndex).toBeGreaterThan(finalArtifactIndex);
   });
 
-  it("非法输出工具输入会直接报错，不回退到猜测 JSON", async () => {
-    const stream = createStructuredAuthoringStreamAdapter({
-      mode: "lesson",
-      originalMessages: [],
-      requestId: "request-invalid-tool-input",
-      workflow: baseWorkflow,
-      stream: createChunkStream([
-        {
-          type: "tool-input-available",
-          toolCallId: "tool-invalid",
-          toolName: "submit_lesson_plan",
-          input: {
-            lessonPlan: { title: "只有标题" },
-            summary: "不完整的提交",
-          },
-        } as UIMessageChunk,
-      ]),
-    });
-
-    const chunks = await readAll(stream);
-
-    expect(chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "error",
-        }),
-        expect.objectContaining({
-          type: "finish",
-          finishReason: "error",
-        }),
-      ]),
-    );
-  });
-
   it("只有原始 lesson 文本且没有工具或 structured output 时会报错", async () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "lesson",
@@ -678,7 +603,7 @@ describe("structured authoring stream adapter", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "error",
-          errorText: expect.stringContaining("submit_lesson_plan"),
+          errorText: expect.stringContaining("CompetitionLessonPlan"),
         }),
       ]),
     );
@@ -690,7 +615,7 @@ describe("structured authoring stream adapter", () => {
       originalMessages: [],
       requestId: "request-json-no-finish",
       workflow: baseWorkflow,
-      stream: createChunkStream([createLessonToolChunk()]),
+      stream: createChunkStream([createStructuredLessonOutputChunk()]),
     });
 
     const chunks = await readAll(stream);
@@ -722,7 +647,7 @@ describe("structured authoring stream adapter", () => {
       originalMessages: [],
       requestId: "request-draft-stream",
       workflow: baseWorkflow,
-      stream: createChunkStream([createLessonToolChunk(), { type: "finish", finishReason: "stop" }]),
+      stream: createChunkStream([createStructuredLessonOutputChunk(), { type: "finish", finishReason: "stop" }]),
     });
 
     const chunks = await readAll(stream);
@@ -935,7 +860,7 @@ describe("structured authoring stream adapter", () => {
           url: "https://example.com/standards",
           title: "课程标准",
         },
-        createLessonToolChunk(),
+        createStructuredLessonOutputChunk(),
         { type: "finish-step" },
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
@@ -970,7 +895,7 @@ describe("structured authoring stream adapter", () => {
       workflow: baseWorkflow,
       persistence,
       projectId: "11111111-1111-4111-8111-111111111111",
-      stream: createChunkStream([createLessonToolChunk(), { type: "finish", finishReason: "stop" }]),
+      stream: createChunkStream([createStructuredLessonOutputChunk(), { type: "finish", finishReason: "stop" }]),
     });
 
     const chunks = await readAll(stream);

@@ -14,7 +14,7 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
-import React from "react";
+import React, { useEffect } from "react";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 
 import {
@@ -32,10 +32,12 @@ import {
 } from "@/components/ai/artifact-view-state";
 import { useArtifactController } from "@/components/ai/useArtifactController";
 import ArtifactTextViewer from "@/components/ai/renderers/ArtifactTextViewer";
+import HtmlScreenEditorPreview from "@/components/ai/renderers/HtmlScreenEditorPreview";
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
 import CompetitionLessonPrintFrame from "@/components/lesson-print/CompetitionLessonPrintFrame";
 import type { ArtifactView } from "@/lib/lesson-authoring-contract";
+import type { HtmlScreenPageSelection } from "@/lib/html-screen-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -48,10 +50,13 @@ interface SmartEduArtifactProps {
   isHtmlGenerationPending?: boolean;
   isLoading: boolean;
   isRestoringVersion?: boolean;
+  onActiveViewChange?: (view: ArtifactView) => void;
   projectId?: string | null;
+  selectedHtmlPage?: HtmlScreenPageSelection | null;
   showDesktopGenerateAction?: boolean;
   onGenerateHtml: () => void;
   onRestoreArtifactVersion?: (snapshot: ArtifactSnapshot) => Promise<void> | void;
+  onSelectHtmlPage?: (page: HtmlScreenPageSelection) => void;
 }
 
 const STATUS_LABELS: Record<ArtifactLifecycleStatus, string> = {
@@ -188,10 +193,13 @@ export default function SmartEduArtifact({
   isHtmlGenerationPending = false,
   isLoading,
   isRestoringVersion = false,
+  onActiveViewChange,
   projectId,
+  selectedHtmlPage,
   showDesktopGenerateAction = true,
   onGenerateHtml,
   onRestoreArtifactVersion,
+  onSelectHtmlPage,
 }: SmartEduArtifactProps) {
   const {
     activeView,
@@ -218,6 +226,10 @@ export default function SmartEduArtifact({
   const hasHtml = htmlDisplay.hasHtml;
   const lessonDisplay = getLessonArtifactDisplayState(lifecycle);
   const competitionLessonPlan = lifecycle.lessonPlan;
+
+  useEffect(() => {
+    onActiveViewChange?.(activeView);
+  }, [activeView, onActiveViewChange]);
 
   return (
     <Artifact className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none">
@@ -342,7 +354,12 @@ export default function SmartEduArtifact({
                       </Button>
                     </div>
                     <div className="min-h-0 flex-1">
-                      <IframeSandbox key={lifecycle.htmlPreviewVersionId ?? html.length} htmlContent={html} />
+                      <HtmlScreenEditorPreview
+                        htmlContent={html}
+                        htmlPages={lifecycle.htmlPages}
+                        onSelectPage={onSelectHtmlPage}
+                        selectedPageIndex={selectedHtmlPage?.pageIndex}
+                      />
                     </div>
                   </div>
                 ) : (
@@ -427,6 +444,13 @@ export default function SmartEduArtifact({
                             code={selectedVersion.content}
                             hasPreviousPreview={hasHtml}
                             trace={selectedVersion.trace}
+                          />
+                        ) : selectedVersion.stage === "html" && !selectedVersion.htmlPages?.length ? (
+                          <StateNotice
+                            className="m-4 flex h-[calc(100%-2rem)] items-center justify-center"
+                            description="该版本缺少页级数据，已不再支持按新编辑链路预览。请重新生成互动大屏。"
+                            layout="center"
+                            title="版本不可预览"
                           />
                         ) : selectedVersion.content.trim() ? (
                           <IframeSandbox htmlContent={selectedVersion.content} />

@@ -68,7 +68,7 @@ export function getHtmlArtifactDisplayState(
   lifecycle: ArtifactLifecycle,
   isHtmlGenerationPending = false,
 ): HtmlArtifactDisplayState {
-  const hasHtml = Boolean(lifecycle.html.trim());
+  const hasHtml = Boolean(lifecycle.html.trim() && lifecycle.htmlPages?.length);
   const isStreaming = lifecycle.stage === "html" && lifecycle.isHtmlStreaming;
   const isPendingRequest = isHtmlGenerationPending && !isStreaming && !hasHtml;
 

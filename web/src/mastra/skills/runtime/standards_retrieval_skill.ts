@@ -1,6 +1,6 @@
 import type { StandardsMarket } from "@/lib/lesson-authoring-contract";
 
-import { searchStandards } from "../tools/search_standards";
+import { searchStandards } from "../../tools/search_standards";
 
 export type StandardsRetrievalSkillInput = {
   query: string;

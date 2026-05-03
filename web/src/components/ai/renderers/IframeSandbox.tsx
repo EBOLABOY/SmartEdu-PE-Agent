@@ -3,6 +3,7 @@
 import { Info, Maximize2, Minimize2, ShieldAlert } from "lucide-react";
 import React, { useEffect, useState, type CSSProperties } from "react";
 
+import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact-image-browser-inline";
 import {
   analyzeBrowserSandboxHtml,
   injectBrowserSandboxCsp,
@@ -15,7 +16,6 @@ import {
   SANDBOX_DESIGN_HEIGHT,
   SANDBOX_DESIGN_WIDTH,
 } from "@/lib/sandbox-viewport";
-import { isArtifactImageProxyUrl } from "@/lib/s3/artifact-image-url";
 
 interface IframeSandboxProps {
   htmlContent: string;
@@ -27,7 +27,6 @@ type SandboxRenderState = SandboxSecurityReport & {
 
 type ResolvedSandboxHtml = {
   html: string;
-  objectUrls: string[];
   warnings: string[];
 };
 
@@ -121,56 +120,14 @@ async function resolveArtifactImagesForSandboxPreview(
   htmlContent: string,
   signal: AbortSignal,
 ): Promise<ResolvedSandboxHtml> {
-  const document = new DOMParser().parseFromString(htmlContent, "text/html");
-  const objectUrls: string[] = [];
-  const warnings: string[] = [];
-  const imageElements = Array.from(document.querySelectorAll<HTMLImageElement>("img[src]"));
-
-  await Promise.all(
-    imageElements.map(async (imageElement) => {
-      const source = imageElement.getAttribute("src");
-
-      if (!source || !isArtifactImageProxyUrl(source)) {
-        return;
-      }
-
-      try {
-        const response = await fetch(source, {
-          credentials: "include",
-          signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`${response.status} ${response.statusText}`);
-        }
-
-        const contentType = response.headers.get("content-type") ?? "";
-
-        if (!contentType.startsWith("image/")) {
-          throw new Error(`unexpected content-type: ${contentType || "unknown"}`);
-        }
-
-        const blob = await response.blob();
-        const objectUrl = URL.createObjectURL(blob);
-
-        objectUrls.push(objectUrl);
-        imageElement.setAttribute("src", objectUrl);
-      } catch (error) {
-        if (signal.aborted) {
-          return;
-        }
-
-        warnings.push(
-          `受控图片资源加载失败：${source}（${error instanceof Error ? error.message : "unknown-error"}）`,
-        );
-      }
-    }),
-  );
+  const rewritten = await inlineArtifactImagesForBrowserHtml({
+    htmlContent,
+    signal,
+  });
 
   return {
-    html: `<!DOCTYPE html>\n${document.documentElement.outerHTML}`,
-    objectUrls,
-    warnings,
+    html: rewritten.html,
+    warnings: rewritten.warnings.map((warning) => warning.replace("改写失败", "加载失败")),
   };
 }
 
@@ -243,7 +200,6 @@ function useSandboxSecurity(htmlContent: string) {
 
     let cancelled = false;
     const abortController = new AbortController();
-    let objectUrls: string[] = [];
     const securityReport = analyzeBrowserSandboxHtml(htmlContent);
 
     const prepareSandboxHtml = async () => {
@@ -258,7 +214,6 @@ function useSandboxSecurity(htmlContent: string) {
         htmlContent,
         abortController.signal,
       );
-      objectUrls = resolved.objectUrls;
 
       return {
         ...securityReport,
@@ -268,11 +223,6 @@ function useSandboxSecurity(htmlContent: string) {
     };
 
     void prepareSandboxHtml().then((nextReport) => {
-      if (cancelled) {
-        objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
-        return;
-      }
-
       if (!cancelled) {
         setReport(nextReport);
       }
@@ -281,7 +231,6 @@ function useSandboxSecurity(htmlContent: string) {
     return () => {
       cancelled = true;
       abortController.abort();
-      objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
     };
   }, [htmlContent]);
 

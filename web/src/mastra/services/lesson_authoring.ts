@@ -14,6 +14,7 @@ import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   smartEduDataSchemas,
   type GenerationMode,
+  type HtmlFocusTarget,
   type LessonAuthoringMemory,
   type PeTeacherContext,
   type SmartEduUIMessage,
@@ -45,6 +46,7 @@ export type LessonAuthoringRequest = {
   projectId?: string;
   context?: PeTeacherContext;
   mode?: GenerationMode;
+  htmlFocus?: HtmlFocusTarget;
   lessonPlan?: string;
   market?: StandardsMarket;
 };
@@ -355,6 +357,7 @@ async function executeLessonAuthoringStream(input: {
   const agenticMode = inferAgenticMode({ explicitMode: mode, query });
   const shouldUseStructuredAdapter = !isPlainConversationQuery(query);
   let system = buildPeTeacherSystemPrompt(request.context, {
+    htmlFocus: request.htmlFocus,
     lessonPlan: request.lessonPlan,
     mode: agenticMode,
     responseStage: agenticMode === "lesson" && shouldUseStructuredAdapter ? "generation" : "tool-use",
@@ -421,6 +424,47 @@ async function executeLessonAuthoringStream(input: {
 
   if (agenticMode === "html" && shouldUseStructuredAdapter) {
     workflow.trace.push(createServerGenerationTraceEntry("html"));
+
+    if (request.htmlFocus) {
+      system = buildPeTeacherSystemPrompt(request.context, {
+        htmlFocus: request.htmlFocus,
+        lessonPlan: request.lessonPlan,
+        mode: "html",
+      });
+      workflow = {
+        ...workflow,
+        system,
+        trace: [
+          ...workflow.trace,
+          createWorkflowTraceEntry(
+            "html-focused-page-context",
+            "success",
+            `已锁定第 ${request.htmlFocus.pageIndex + 1} 页，后续修改默认只作用于当前页。`,
+          ),
+        ],
+      };
+      const htmlStream = await authoringSkills.runServerHtmlFocusedPageEditSkill({
+        htmlFocus: request.htmlFocus,
+        lessonPlan: request.lessonPlan ?? "",
+        messages: executionMessages,
+        requestId,
+        workflow,
+      });
+
+      writer.merge(
+        authoringSkills.createStructuredAuthoringStreamAdapter({
+          mode: "html",
+          originalMessages: executionMessages,
+          persistence: request.persistence,
+          projectId: request.projectId,
+          requestId,
+          workflow,
+          stream: htmlStream,
+        }),
+      );
+      return;
+    }
+
     const planning = await authoringSkills.runServerHtmlScreenPlanningSkill({
       additionalInstructions: query,
       lessonPlan: request.lessonPlan,
@@ -430,6 +474,7 @@ async function executeLessonAuthoringStream(input: {
     const plannedScreenPlan = planning.plan;
 
     system = buildPeTeacherSystemPrompt(request.context, {
+      htmlFocus: request.htmlFocus,
       lessonPlan: request.lessonPlan,
       mode: "html",
       screenPlan: plannedScreenPlan,
@@ -442,7 +487,7 @@ async function executeLessonAuthoringStream(input: {
         createWorkflowTraceEntry(
           "html-screen-planning",
           "success",
-          `已生成 ${plannedScreenPlan.sections.length} 个页面提示词，规划来源：${planning.source}。`,
+          `已生成 ${plannedScreenPlan.sections.length} 个页面提示词。`,
         ),
       ],
     };

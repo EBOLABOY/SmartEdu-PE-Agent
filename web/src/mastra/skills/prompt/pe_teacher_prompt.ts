@@ -1,6 +1,7 @@
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   type GenerationMode,
+  type HtmlFocusTarget,
   type PeTeacherContext,
 } from "@/lib/lesson-authoring-contract";
 import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
@@ -9,11 +10,12 @@ import {
   HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
 } from "@/lib/html-screen-visual-language";
 
-import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "../agents/guangdong_competition_lesson_format";
-import { formatLessonScreenPlanForPrompt } from "../agents/html_screen_planner";
-import type { PromptSkill, PromptSkillWithInput } from "./types";
+import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "../../agents/guangdong_competition_lesson_format";
+import { formatLessonScreenPlanForPrompt } from "../../agents/html_screen_planner";
+import type { PromptSkill, PromptSkillWithInput } from "../../support/prompt_skill_types";
 
 type PeTeacherPromptOptions = {
+  htmlFocus?: HtmlFocusTarget;
   mode?: GenerationMode;
   lessonPlan?: string;
   responseStage?: "tool-use" | "generation";
@@ -70,11 +72,11 @@ ${GUANGDONG_COMPETITION_LESSON_FORMAT}
 
 正式生成（Generation）阶段输出约束：
 1. 当前任务是服务端正式生成，不是聊天回复，也不是工具参数拼装。
-2. 你必须只输出“自定义教案行协议”纯文本，不要输出 JSON、Markdown 表格、HTML、XML、代码围栏或 artifact 标签。
-3. 协议正文必须围绕最终 CompetitionLessonPlan 的业务字段生成：指导思想、教材分析、学情分析、三维目标、教学重难点、教学流程、评价、运动负荷、场地器材、课后作业和教学反思。
-4. 基本部分允许连续输出多个 @flow 块；每个 @flow 只承载一个自然教学活动，便于打印版和互动大屏完整复用。
-5. @load 块除负荷等级、心率区间、平均心率、练习密度和依据外，可额外通过 chartPoints 键值对提供心率曲线点。
-6. 教学重难点、课后作业和教学反思应优先按具体项目、学段和课堂设计直接生成，不要回退到固定占位模板。
+2. 你必须只输出当前服务端结构化子块要求的合法 JSON 对象，不要输出 Markdown 表格、HTML、XML、代码围栏、artifact 标签或解释文字。
+3. JSON 正文必须围绕最终 CompetitionLessonPlan 的业务字段生成：指导思想、教材分析、学情分析、三维目标、教学重难点、教学流程、评价、运动负荷、场地器材、课后作业和教学反思。
+4. 基本部分应拆成若干自然教学活动；每个活动清晰对应一个学习、练习、比赛展示或体能发展任务，便于打印版和互动大屏完整复用。
+5. loadEstimate 除负荷等级、心率区间、平均心率、练习密度和依据外，必须提供可绘制心率曲线的 chartPoints。
+6. 教学重难点、课后作业和教学反思应优先按具体项目、学段和课堂设计直接生成，不要使用固定占位模板。
 `;
   }
 
@@ -172,10 +174,10 @@ lesson 阶段要求：
 `,
 };
 
-const htmlScreenSkill: PromptSkillWithInput<Pick<PeTeacherPromptOptions, "lessonPlan" | "screenPlan">> = {
+const htmlScreenSkill: PromptSkillWithInput<Pick<PeTeacherPromptOptions, "htmlFocus" | "lessonPlan" | "screenPlan">> = {
   id: "html-screen",
   description: "约束 html 阶段基于已确认课时计划由服务端生成互动大屏。",
-  render: ({ lessonPlan, screenPlan }) => `
+  render: ({ htmlFocus, lessonPlan, screenPlan }) => `
 当前阶段：html
 这是互动大屏工作区。只有当用户明确要求生成、修改或交付大屏时，才基于下方“已确认课时计划”生成课堂学习辅助大屏 HTML。正式 HTML 文档由服务端确定性管线生成并提交到右侧大屏区；你不要调用提交工具。若用户只是聊天或没有已确认课时计划，直接说明下一步需要先定稿教案。
 
@@ -186,22 +188,31 @@ html 阶段要求：
 
 HTML 设计与交互约束：
 1. 页面目标不是“像 PPT 一样讲解”，而是辅助真实上课，帮助学生知道当前环节、怎么做、还剩多久，以及安全边界。
-2. 首页必须作为 AI 分镜的第 1 页生成，像简洁 PPT 首页：大标题居中，下方显示学校和教师姓名，并提供醒目的“开始上课”按钮视觉；服务端只负责按钮兜底和控制壳。
-3. 必须采用全屏自适应多页结构，自动适应屏幕大小，不再固定 16:9；不得生成单页长文或普通网页信息流。
+2. 首页必须作为 AI 分镜的第 1 页生成，具备现代高端发布会幻灯片的视觉张力：采用深色沉浸背景，超大标题偏向屏幕中左侧排版，学校和教师姓名作为高对比小字号 Meta 信息下沉到右下角或底部，并提供醒目的“开始上课”视觉引导；不要依赖服务端注入按钮壳。
+3. 必须采用清晰的多页分页结构，便于逐页查看或上下滑动，不得生成单页长文或普通网页信息流。
 4. 必须先定义统一 visualSystem，并让首页、热身、学练、比赛、体能、放松等页面共享同一套色彩、字体层级、倒计时、按钮和图形语言。
 5. ${HTML_SCREEN_DESIGN_DIRECTION}
-6. 最终 HTML 由服务端组合为包含完整 CSS 和 JavaScript 的单文件；单页分镜只生成 HTML 内容片段，不自行输出完整文档、style 或 script。
+6. 最终 HTML 只由服务端做最小文档组装与分页包装；单页分镜只生成 HTML 内容片段，不自行输出完整文档、style 或 script。
 7. 必须按课时计划中的主要教学环节拆分页，常见节奏可参考：热身、学练、比赛或展示、体能练习、放松拉伸。
 8. 学习页面和练习页面原则上合二为一，只展示学习内容、动作认知和练习任务，不拆成两个文字讲解页面。
 9. 学练页不能是文字板；若涉及战术、跑位、轮换、配合、阵型、路线、攻防站位等内容，必须使用 HTML/CSS/SVG 手搓有助于理解的图形或互动区域。
 10. 比赛、体能练习、放松拉伸、课堂总结等其他页面，默认采用居中的任务模块和醒目倒计时，文字只保留关键短句。
-11. 必须提供“开始上课”“上一页”“下一页”“暂停/继续”“重新计时”控制能力，并在课时结束后自动进入下一页。
+11. 若页面需要“开始上课”或倒计时视觉，应由页面自身表达清楚，不要假设服务端会额外注入统一控制脚本。
 12. 每页必须带与课时计划一致的倒计时；1 分钟 = 60 秒；时间缺失时按合理估算并标注“估算时间”；首页不参与课堂环节倒计时。
 13. 视觉风格应简洁干练、沉浸、美观、有效：大字号、高对比、强层级、适合远距离观看，不花哨、不堆装饰。
 14. 所有可见文本必须是简体中文，不得出现英文控制台风格文案。
 15. ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
+16. 若系统提供“当前锁定页面”，默认只修改这一页，不重写其他页；回答时也应围绕当前页修改来理解用户意图。
 
 ${renderScreenPlanPrompt(screenPlan)}
+
+${htmlFocus
+    ? `当前锁定页面：
+- 第 ${htmlFocus.pageIndex + 1} 页
+${htmlFocus.pageTitle ? `- 页面标题：${htmlFocus.pageTitle}` : ""}
+${htmlFocus.pageRole ? `- 页面角色：${htmlFocus.pageRole}` : ""}
+`
+    : ""}
 
 已确认课时计划：
 ${lessonPlan ?? "未提供已确认课时计划，请要求用户先确认课时计划。"}
@@ -230,7 +241,7 @@ function renderContextPrompt(
 
   const teacherFieldInstruction =
     responseStage === "generation"
-      ? "若提供了学校名称和教师姓名，正式生成协议的 @lesson teacher_school 和 teacher_name 必须同步填写。"
+      ? "若提供了学校名称和教师姓名，正式生成结果的 teacher.school 和 teacher.name 必须同步填写。"
       : "若提供了学校名称和教师姓名，JSON 的 teacher.school 和 teacher.name 必须同步填写。";
   const contextUsageInstruction =
     responseStage === "generation"
@@ -268,6 +279,19 @@ function renderCurrentArtifactPrompt(options?: PeTeacherPromptOptions) {
     );
   }
 
+  if (options?.htmlFocus) {
+    parts.push(
+      [
+        "当前锁定的互动大屏页面：",
+        `- 第 ${options.htmlFocus.pageIndex + 1} 页`,
+        options.htmlFocus.pageTitle ? `- 页面标题：${options.htmlFocus.pageTitle}` : null,
+        options.htmlFocus.pageRole ? `- 页面角色：${options.htmlFocus.pageRole}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+
   return parts.join("\n\n");
 }
 
@@ -288,6 +312,7 @@ export function buildPeTeacherSystemPrompt(context?: PeTeacherContext, options?:
   const modePrompt =
     mode === "html"
       ? htmlScreenSkill.render({
+        htmlFocus: options?.htmlFocus,
         lessonPlan: options?.lessonPlan,
         screenPlan: options?.screenPlan,
       })

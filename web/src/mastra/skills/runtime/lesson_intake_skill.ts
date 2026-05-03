@@ -1,10 +1,8 @@
 import {
   convertToModelMessages,
-  extractJsonMiddleware,
   generateText,
   Output,
   stepCountIs,
-  wrapLanguageModel,
 } from "ai";
 
 import {
@@ -20,8 +18,8 @@ import {
   type SmartEduUIMessage,
 } from "@/lib/lesson-authoring-contract";
 
-import { buildLessonIntakeSystemPrompt } from "../agents/lesson_intake";
-import { createChatModel } from "../models";
+import { buildLessonIntakeSystemPrompt } from "../../agents/lesson_intake";
+import { createChatModel } from "../../models";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
@@ -55,13 +53,8 @@ export async function generateLessonIntakeWithAiSdk({
   maxSteps,
   modelId,
 }: LessonIntakeGenerateOptions): Promise<LessonIntakeResult> {
-  const model = wrapLanguageModel({
-    model: createChatModel(modelId),
-    middleware: extractJsonMiddleware(),
-  });
-
   const result = await generateText({
-    model,
+    model: createChatModel(modelId),
     system,
     messages,
     stopWhen: stepCountIs(maxSteps),

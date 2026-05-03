@@ -2,7 +2,15 @@ import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 import type { runLessonGenerationWithPostProcess } from "@/mastra/skills";
+
+type MockHtmlScreenPlanningResult = {
+  modelMessageCount: number;
+  plan: HtmlScreenPlan;
+  source: "agent";
+  warnings: string[];
+};
 
 const mocks = vi.hoisted(() => {
   const createChunkStream = (chunks: UIMessageChunk[]) =>
@@ -121,7 +129,7 @@ const mocks = vi.hoisted(() => {
       partialOutputStream: undefined,
       stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
     })),
-    runServerHtmlScreenPlanningSkill: vi.fn(async () => ({
+    runServerHtmlScreenPlanningSkill: vi.fn<() => Promise<MockHtmlScreenPlanningResult>>(async () => ({
       modelMessageCount: 1,
       plan: {
         visualSystem: "统一清爽的体育课堂投屏系统，首页和教学页共享同一套色彩、按钮、倒计时和图形语言。",
@@ -129,7 +137,7 @@ const mocks = vi.hoisted(() => {
           {
             title: "课堂首页",
             pageRole: "cover",
-            pagePrompt: "生成首页封面，大标题居中，学校和教师姓名位于标题下方，并呈现开始上课按钮视觉。",
+            pagePrompt: "生成首页封面，采用深色沉浸背景，超大标题偏向左侧排版，学校和教师姓名作为 Meta 信息下沉到右下角，并呈现开始上课按钮视觉。",
             reason: "测试用首页。",
           },
           {
@@ -148,6 +156,7 @@ const mocks = vi.hoisted(() => {
         ],
       },
       source: "agent",
+      warnings: [],
     })),
     runServerHtmlGenerationSkill: vi.fn(async () =>
       createChunkStream([
@@ -303,7 +312,7 @@ describe("lesson authoring service", () => {
           {
             title: "课堂首页",
             pageRole: "cover",
-            pagePrompt: "生成首页封面，大标题居中，学校和教师姓名位于标题下方，并呈现开始上课按钮视觉。",
+            pagePrompt: "生成首页封面，采用深色沉浸背景，超大标题偏向左侧排版，学校和教师姓名作为 Meta 信息下沉到右下角，并呈现开始上课按钮视觉。",
             reason: "测试用首页。",
           },
           {
@@ -322,6 +331,7 @@ describe("lesson authoring service", () => {
         ],
       },
       source: "agent",
+      warnings: [],
     });
     mocks.runServerHtmlGenerationSkill.mockResolvedValue(
       mocks.createChunkStream([
@@ -739,8 +749,10 @@ describe("lesson authoring service", () => {
     );
   });
 
-  it("HTML 分镜规划失败时直接报错，不继续生成大屏", async () => {
-    mocks.runServerHtmlScreenPlanningSkill.mockRejectedValueOnce(new Error("planner unavailable"));
+  it("HTML 分镜规划失败时直接返回错误，不再继续生成大屏", async () => {
+    mocks.runServerHtmlScreenPlanningSkill.mockRejectedValueOnce(
+      new Error("HTML 大屏分镜规划失败：planner unavailable"),
+    );
     const { streamLessonAuthoring } = await import("./lesson_authoring");
 
     const result = await streamLessonAuthoring({
@@ -760,14 +772,13 @@ describe("lesson authoring service", () => {
     expect(mocks.runServerHtmlGenerationSkill).not.toHaveBeenCalled();
     expect(chunks).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ type: "start" }),
+        expect.objectContaining({ type: "data-trace" }),
         expect.objectContaining({
           type: "error",
-          errorText: "planner unavailable",
+          errorText: "HTML 大屏分镜规划失败：planner unavailable",
         }),
-        expect.objectContaining({
-          type: "finish",
-          finishReason: "error",
-        }),
+        expect.objectContaining({ type: "finish", finishReason: "error" }),
       ]),
     );
   });

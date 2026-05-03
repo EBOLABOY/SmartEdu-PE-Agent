@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  type HtmlStructuredArtifactData,
   persistedArtifactVersionSchema,
   type PersistedArtifactVersion,
   type StructuredArtifactData,
@@ -24,6 +25,7 @@ type ArtifactVersionManifestEntry = {
   contentStorageProvider: "s3-compatible";
   contentType: StructuredArtifactData["contentType"];
   createdAt: string;
+  htmlPages?: HtmlStructuredArtifactData["htmlPages"];
   id: string;
   isCurrent: boolean;
   protocolVersion: string;
@@ -170,6 +172,25 @@ async function hydrateManifestEntry(entry: ArtifactVersionManifestEntry): Promis
     trace: entry.trace,
     versionNumber: entry.versionNumber,
     warningText: entry.warningText,
+    ...(entry.stage === "html" ? { htmlPages: entry.htmlPages } : {}),
+  });
+}
+
+async function hydrateManifestEntries(entries: ArtifactVersionManifestEntry[]) {
+  const settled = await Promise.allSettled(entries.map((entry) => hydrateManifestEntry(entry)));
+
+  return settled.flatMap((result, index) => {
+    if (result.status === "fulfilled") {
+      return [result.value];
+    }
+
+    const entry = entries[index];
+    console.warn("[artifact-version-manifest] skip-invalid-version", {
+      message: result.reason instanceof Error ? result.reason.message : "unknown-error",
+      stage: entry?.stage,
+      versionId: entry?.id,
+    });
+    return [];
   });
 }
 
@@ -230,6 +251,7 @@ async function saveArtifactVersionToS3ManifestLocked(input: {
     ...(input.trace ? { trace: input.trace } : {}),
     versionNumber,
     ...(input.artifact.warningText ? { warningText: input.artifact.warningText } : {}),
+    ...(input.artifact.stage === "html" ? { htmlPages: input.artifact.htmlPages } : {}),
   };
 
   const versions = manifest.versions.map((version) =>
@@ -266,7 +288,7 @@ export async function listArtifactVersionsFromS3Manifest(projectId: string) {
     return null;
   }
 
-  return Promise.all(manifest.versions.map(hydrateManifestEntry));
+  return hydrateManifestEntries(manifest.versions);
 }
 
 export async function restoreArtifactVersionInS3Manifest(input: {
@@ -311,7 +333,7 @@ async function restoreArtifactVersionInS3ManifestLocked(input: {
   manifest.updatedAt = new Date().toISOString();
   await writeArtifactVersionManifest(manifest);
 
-  return Promise.all(manifest.versions.map(hydrateManifestEntry));
+  return hydrateManifestEntries(manifest.versions);
 }
 
 export async function resolveCurrentLessonPlanFromS3Manifest(projectId: string) {

@@ -1,8 +1,12 @@
 import { isDataUIPart, type UIMessage } from "ai";
 
+import {
+  structuredArtifactDataSchema,
+} from "@/lib/lesson-authoring-contract";
 import type {
   ArtifactContentType,
   GenerationMode,
+  HtmlStructuredArtifactData,
   SmartEduUIMessage,
   StructuredArtifactData,
   WorkflowTraceData,
@@ -17,6 +21,7 @@ export type ExtractedArtifact = {
   lessonContent: string;
   html: string;
   htmlComplete: boolean;
+  htmlPages?: HtmlStructuredArtifactData["htmlPages"];
   source: "structured" | "none";
   status?: StructuredArtifactData["status"];
   title?: string;
@@ -34,32 +39,13 @@ const EMPTY_EXTRACTED_ARTIFACT: ExtractedArtifact = {
   source: "none",
 };
 
-function stripJsonCodeFence(text: string) {
-  const trimmed = text.trim();
-  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
-
-  return match?.[1]?.trim() ?? trimmed;
-}
-
-export function extractJsonObjectText(text: string) {
-  const stripped = stripJsonCodeFence(text);
-  const start = stripped.indexOf("{");
-  const end = stripped.lastIndexOf("}");
-
-  if (start < 0 || end <= start) {
-    return stripped;
-  }
-
-  return stripped.slice(start, end + 1);
-}
-
 export function lessonContentToPlan(
   content: string,
   contentType: ArtifactContentType,
 ): CompetitionLessonPlan | undefined {
   try {
     return contentType === "lesson-json"
-      ? competitionLessonPlanSchema.parse(JSON.parse(extractJsonObjectText(content)))
+      ? competitionLessonPlanSchema.parse(JSON.parse(content))
       : undefined;
   } catch {
     return undefined;
@@ -87,58 +73,16 @@ export function getMessageReasoningText(message: Pick<UIMessage, "parts">) {
     .join("\n\n");
 }
 
-export type HtmlDocumentExtraction = {
-  html: string;
-  htmlComplete: boolean;
-  leadingText: string;
-  trailingText: string;
-};
-
-export function extractHtmlDocumentFromText(content: string): HtmlDocumentExtraction {
-  const documentStartCandidates = [content.search(/<!doctype\s+html/i), content.search(/<html[\s>]/i)].filter(
-    (index) => index >= 0,
-  );
-
-  if (documentStartCandidates.length === 0) {
-    return {
-      html: "",
-      htmlComplete: false,
-      leadingText: content.trim(),
-      trailingText: "",
-    };
-  }
-
-  const documentStartIndex = Math.min(...documentStartCandidates);
-  const leadingText = content.slice(0, documentStartIndex).trim();
-  const documentBody = content.slice(documentStartIndex);
-  const htmlEndMatch = /<\/html>/i.exec(documentBody);
-
-  if (!htmlEndMatch) {
-    return {
-      html: documentBody.trim(),
-      htmlComplete: false,
-      leadingText,
-      trailingText: "",
-    };
-  }
-
-  const htmlEndIndex = htmlEndMatch.index + htmlEndMatch[0].length;
-
-  return {
-    html: documentBody.slice(0, htmlEndIndex).trim(),
-    htmlComplete: true,
-    leadingText,
-    trailingText: documentBody.slice(htmlEndIndex).trim(),
-  };
-}
-
 export function getStructuredArtifactPart(message: UIMessage): StructuredArtifactData | undefined {
   const artifactParts = message.parts.filter(
     (part): part is Extract<SmartEduUIMessage["parts"][number], { type: "data-artifact" }> =>
       isDataUIPart(part) && part.type === "data-artifact",
   );
 
-  return artifactParts.at(-1)?.data;
+  const candidate = artifactParts.at(-1)?.data;
+  const parsed = structuredArtifactDataSchema.safeParse(candidate);
+
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function getStructuredTracePart(message: UIMessage): WorkflowTraceData | undefined {
@@ -158,6 +102,7 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
       structuredArtifact.stage === "lesson"
         ? lessonContentToPlan(structuredArtifact.content, structuredArtifact.contentType)
         : undefined;
+    const htmlPages = structuredArtifact.stage === "html" ? structuredArtifact.htmlPages : undefined;
 
     return {
       stage: structuredArtifact.stage,
@@ -168,6 +113,7 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
       html: structuredArtifact.stage === "html" ? structuredArtifact.content : "",
       htmlComplete:
         structuredArtifact.stage === "html" ? structuredArtifact.isComplete : structuredArtifact.status === "ready",
+      htmlPages,
       source: "structured",
       status: structuredArtifact.status,
       title: structuredArtifact.title,

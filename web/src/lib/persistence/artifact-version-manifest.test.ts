@@ -53,6 +53,36 @@ const LESSON_CONTENT = JSON.stringify({
   ...DEFAULT_COMPETITION_LESSON_PLAN,
   title: "篮球运球接力",
 });
+const HTML_ARTIFACT: StructuredArtifactData = {
+  content: `<!DOCTYPE html>
+<html lang="zh-CN">
+  <head><title>篮球运球接力</title></head>
+  <body>
+    <div class="screen">
+      <section class="slide cover-slide active" data-slide-kind="cover">
+        <main class="cover-shell"><h1>篮球运球接力</h1></main>
+      </section>
+    </div>
+  </body>
+</html>`,
+  contentType: "html",
+  htmlPages: [
+    {
+      pageIndex: 0,
+      pageRole: "cover",
+      pageTitle: "篮球运球接力",
+      sectionHtml:
+        '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>篮球运球接力</h1></main></section>',
+    },
+  ],
+  isComplete: true,
+  protocolVersion: "structured-v1",
+  source: "data-part",
+  stage: "html",
+  status: "ready",
+  title: "篮球运球接力大屏",
+  updatedAt: "2026-05-01T00:00:00.000Z",
+};
 const ARTIFACT: StructuredArtifactData = {
   content: LESSON_CONTENT,
   contentType: "lesson-json",
@@ -217,6 +247,86 @@ describe("artifact-version-manifest", () => {
       isCurrent: true,
       title: "篮球运球接力",
     });
+  });
+
+  it("会跳过缺少 htmlPages 的旧版 html version，而不是让整个列表失败", async () => {
+    getS3ObjectTextMock
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          currentByStage: { html: "22222222-2222-2222-2222-222222222222" },
+          projectId: PROJECT_ID,
+          schemaVersion: 1,
+          updatedAt: "2026-05-01T00:00:00.000Z",
+          versions: [
+            {
+              artifactId: "11111111-3333-3333-3333-333333333333",
+              contentObjectKey: `projects/${PROJECT_ID}/versions/version-1/lesson.json`,
+              contentStorageBucket: "artifact-bucket",
+              contentStorageProvider: "s3-compatible",
+              contentType: "lesson-json",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              id: "11111111-1111-1111-1111-111111111111",
+              isCurrent: true,
+              protocolVersion: "structured-v1",
+              stage: "lesson",
+              status: "ready",
+              title: "篮球运球接力",
+              versionNumber: 1,
+            },
+            {
+              artifactId: "22222222-3333-3333-3333-333333333333",
+              contentObjectKey: `projects/${PROJECT_ID}/versions/version-2/screen.html`,
+              contentStorageBucket: "artifact-bucket",
+              contentStorageProvider: "s3-compatible",
+              contentType: "html",
+              createdAt: "2026-05-01T00:01:00.000Z",
+              id: "22222222-2222-2222-2222-222222222222",
+              isCurrent: true,
+              protocolVersion: "structured-v1",
+              stage: "html",
+              status: "ready",
+              title: "旧版大屏",
+              versionNumber: 1,
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(LESSON_CONTENT)
+      .mockResolvedValueOnce("<!DOCTYPE html><html lang=\"zh-CN\"><body>legacy</body></html>");
+
+    const versions = await listArtifactVersionsFromS3Manifest(PROJECT_ID);
+
+    expect(versions).toHaveLength(1);
+    expect(versions?.[0]?.stage).toBe("lesson");
+  });
+
+  it("会在 manifest 中保留 htmlPages 元数据", async () => {
+    getS3ObjectTextMock.mockRejectedValueOnce(
+      new (await import("@/lib/s3/s3-rest-client")).S3ObjectNotFoundError("not found", {
+        bucket: "artifact-bucket",
+        key: `projects/${PROJECT_ID}/versions/manifest.json`,
+        method: "GET",
+        responseText: "",
+        status: 404,
+        statusText: "Not Found",
+      }),
+    );
+    uploadArtifactContentMock.mockResolvedValueOnce({
+      bucket: "artifact-bucket",
+      byteSize: 256,
+      checksum: "html-artifact",
+      objectKey: `projects/${PROJECT_ID}/versions/version-1/screen.html`,
+      provider: "s3-compatible",
+    });
+
+    await saveArtifactVersionToS3Manifest({
+      artifact: HTML_ARTIFACT,
+      projectId: PROJECT_ID,
+    });
+
+    const manifest = JSON.parse(putS3ObjectMock.mock.calls.at(-1)?.[0]?.body ?? "{}");
+
+    expect(manifest.versions[0]?.htmlPages).toEqual(HTML_ARTIFACT.htmlPages);
   });
 
   it("restores current pointers in the S3 manifest", async () => {

@@ -178,7 +178,7 @@ function applySuccessfulStandardsRetrieval(input: {
   };
 }
 
-export function createServerStandardsFallbackWorkflow(input: {
+function createServerStandardsFallbackWorkflow(input: {
   error: unknown;
   workflow: LessonWorkflowOutput;
 }): LessonWorkflowOutput {
@@ -266,16 +266,6 @@ export async function resolveWorkflowWithServerStandards(input: {
       workflow: input.workflow,
     }),
   };
-}
-
-export async function enrichWorkflowWithServerStandards(input: {
-  market?: StandardsMarket;
-  query: string;
-  retriever?: ServerStandardsRetriever;
-  timeoutMs?: number;
-  workflow: LessonWorkflowOutput;
-}): Promise<LessonWorkflowOutput> {
-  return (await resolveWorkflowWithServerStandards(input)).workflow;
 }
 
 export type ServerStandardsEnrichmentInput = Pick<LessonWorkflowInput, "market" | "query">;

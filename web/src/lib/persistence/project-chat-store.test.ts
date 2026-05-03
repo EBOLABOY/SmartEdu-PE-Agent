@@ -75,6 +75,15 @@ describe("project-chat-store", () => {
             stage: "html",
             contentType: "html",
             content: "<!DOCTYPE html><html lang=\"zh-CN\"><body>OK</body></html>",
+            htmlPages: [
+              {
+                pageIndex: 0,
+                pageRole: "cover",
+                pageTitle: "OK",
+                sectionHtml:
+                  '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>OK</h1></main></section>',
+              },
+            ],
             isComplete: true,
             status: "ready",
             source: "data-part",

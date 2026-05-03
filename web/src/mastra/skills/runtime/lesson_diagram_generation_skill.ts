@@ -19,7 +19,7 @@ import {
   getImageGenerationConfig,
   IMAGE_GENERATION_REQUIRED_ENV_NAMES,
   type ImageGenerationConfig,
-} from "./image_generation_config";
+} from "../../support/image_generation_config";
 
 const DIAGRAM_GRID_COLUMNS = 3;
 const DIAGRAM_GRID_ROWS = 3;

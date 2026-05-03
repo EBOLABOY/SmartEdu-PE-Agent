@@ -29,7 +29,7 @@ function buildTargetPathHint(targetPaths?: string[]) {
   }
 
   return [
-    "用户在 UI 中优先指向这些旧字段路径。它们只作为定位提示，不允许在工具参数中输出 JSON Pointer：",
+    "用户在 UI 中优先指向这些字段路径。它们只作为定位提示，不允许在工具参数中输出 JSON Pointer：",
     ...targetPaths.map((path) => `- ${path}`),
     "如果需要同步调整相关业务字段，使用相应的语义工具表达。",
   ].join("\n");
