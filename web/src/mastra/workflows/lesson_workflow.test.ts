@@ -178,8 +178,8 @@ describe("lesson-workflow", () => {
     expect(result.result.system).toContain("服务端");
     expect(result.result.system).toContain("不要调用提交工具");
     expect(result.result.system).not.toContain("submitHtmlScreenSection");
-    expect(result.result.system).toContain("自由分镜契约");
-    expect(result.result.system).toContain("不使用固定组件枚举限制页面设计");
+    expect(result.result.system).toContain("大屏直接生成契约");
+    expect(result.result.system).toContain("不再存在独立分镜规划层");
     expect(result.result.system).not.toContain("data-support-module");
     expect(result.result.system).not.toContain("support module 只能是");
   });

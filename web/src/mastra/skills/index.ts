@@ -6,10 +6,6 @@ export {
 export {
   runCompetitionLessonPatchSkill,
   type LessonPatchAgentRunner,
-  runServerHtmlScreenPlanningSkill,
-  runHtmlScreenPlanningSkill,
-  type HtmlScreenPlanAgentRunner,
-  type HtmlScreenPlanningResult,
   generateLessonIntakeWithAiSdk,
   runLessonIntakeSkill,
   type LessonIntakeGenerateRunner,
@@ -44,9 +40,6 @@ export {
   createWorkflowTraceStep,
 } from "../support/structured_authoring_stream_adapter";
 export type {
-  ArtifactSnapshotBuilder,
   ArtifactStreamEvent,
-  LessonBlockGenerationEvent,
-  LessonBlockId,
 } from "../support/artifact_stream_events";
 export type { PromptSkill, PromptSkillWithInput } from "../support/prompt_skill_types";

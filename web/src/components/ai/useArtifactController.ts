@@ -20,7 +20,6 @@ import {
   type ArtifactView,
 } from "@/lib/lesson-authoring-contract";
 import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact-image-browser-inline";
-import { composeHtmlScreenDocument } from "@/lib/html-screen-editor";
 
 type UseArtifactControllerInput = {
   isHtmlGenerationPending: boolean;
@@ -29,12 +28,6 @@ type UseArtifactControllerInput = {
   onRestoreArtifactVersion?: (snapshot: ArtifactSnapshot) => Promise<void> | void;
   projectId?: string | null;
 };
-
-function getNativeScreenKey(slides: NonNullable<ArtifactLifecycle["slideData"]>) {
-  return slides
-    .map((slide, index) => `${index}:${slide.title}:${slide.durationSeconds ?? "auto"}:${slide.pagePrompt ?? ""}`)
-    .join("|");
-}
 
 export function useArtifactController(input: UseArtifactControllerInput) {
   const {
@@ -60,42 +53,13 @@ export function useArtifactController(input: UseArtifactControllerInput) {
     lifecycle.versions.find((snapshot) => snapshot.id === effectiveSelectedVersionId) ??
     lifecycle.activeArtifact ??
     lifecycle.versions.at(-1);
-  const selectedVersionScreenPlan = useMemo(() => {
-    if (!selectedVersion) {
-      return undefined;
-    }
-
-    if (selectedVersion.screenPlan) {
-      return selectedVersion.screenPlan;
-    }
-
-    if (selectedVersion.stage !== "html") {
-      return undefined;
-    }
-
-    const selectedVersionIndex = lifecycle.versions.findIndex((snapshot) => snapshot.id === selectedVersion.id);
-    const priorVersions =
-      selectedVersionIndex >= 0
-        ? lifecycle.versions.slice(0, selectedVersionIndex).reverse()
-        : [...lifecycle.versions].reverse();
-
-    return (
-      priorVersions.find((snapshot) => snapshot.stage === "lesson" && snapshot.screenPlan)?.screenPlan ??
-      lifecycle.screenPlan
-    );
-  }, [lifecycle.screenPlan, lifecycle.versions, selectedVersion]);
   const currentHtmlDocument = useMemo(() => {
-    if (!lifecycle.htmlPages?.length) {
-      return "";
+    if (lifecycle.html.trim()) {
+      return lifecycle.html;
     }
 
-    return composeHtmlScreenDocument({
-      htmlContent: lifecycle.html,
-      pages: lifecycle.htmlPages,
-    });
-  }, [lifecycle.html, lifecycle.htmlPages]);
-  const selectedVersionSlideData = selectedVersionScreenPlan?.sections ?? [];
-  const selectedVersionScreenKey = getNativeScreenKey(selectedVersionSlideData);
+    return "";
+  }, [lifecycle.html]);
   const canRestoreSelectedVersion = Boolean(
     selectedVersion?.persistedVersionId &&
       !selectedVersion.isCurrent &&
@@ -247,8 +211,6 @@ export function useArtifactController(input: UseArtifactControllerInput) {
     printLesson,
     restoreSelectedVersion,
     selectedVersion,
-    selectedVersionScreenKey,
-    selectedVersionSlideData,
     setSelectedVersionId,
     setView,
   };

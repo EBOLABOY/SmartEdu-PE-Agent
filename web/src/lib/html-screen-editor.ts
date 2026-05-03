@@ -19,6 +19,7 @@ const H1_REGEX = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i;
 const H2_REGEX = /<h2\b[^>]*>([\s\S]*?)<\/h2>/i;
 const ROLE_REGEX = /data-slide-kind="([^"]+)"/i;
 const TITLE_REGEX = /<title\b[^>]*>([\s\S]*?)<\/title>/i;
+const SINGLE_PAGE_MAIN_REGEX = /<main\b[^>]*data-html-screen-document=(?:"single-page"|'single-page')[^>]*>[\s\S]*?<\/main>/i;
 
 const EDITOR_PREVIEW_STYLE = `
 <style data-editor-preview>
@@ -106,6 +107,35 @@ function extractDocumentTitle(htmlContent: string) {
   return titleMatch ? stripTags(titleMatch[1] ?? "") : "";
 }
 
+function stripCodeFence(value: string) {
+  const trimmed = value.trim();
+  const fenceMatch = /^```(?:html)?\s*([\s\S]*?)\s*```$/i.exec(trimmed);
+
+  return fenceMatch?.[1]?.trim() ?? trimmed;
+}
+
+export function ensureCompleteHtmlDocument(value: string) {
+  const html = stripCodeFence(value);
+
+  if (/<html\b/i.test(html) && /<body\b/i.test(html)) {
+    return html.startsWith("<!DOCTYPE html>") ? html : `<!DOCTYPE html>\n${html}`;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>互动大屏</title>
+</head>
+<body>
+  <main data-html-screen-document="single-page">
+${html}
+  </main>
+</body>
+</html>`;
+}
+
 function buildHtmlArtifactPage(sectionHtml: string, pageIndex: number): HtmlArtifactPage {
   return {
     pageIndex,
@@ -113,40 +143,6 @@ function buildHtmlArtifactPage(sectionHtml: string, pageIndex: number): HtmlArti
     pageTitle: extractPageTitle(sectionHtml, pageIndex),
     sectionHtml,
   };
-}
-
-function buildFallbackHtmlDocument(input: {
-  htmlContent?: string;
-  pages: HtmlArtifactPage[];
-}) {
-  const lang = input.htmlContent ? extractDocumentLang(input.htmlContent) : "zh-CN";
-  const headHtml = input.htmlContent ? extractHeadHtml(input.htmlContent) : "";
-  const title =
-    (input.htmlContent ? extractDocumentTitle(input.htmlContent) : "") ||
-    input.pages[0]?.pageTitle ||
-    "互动大屏";
-  const sectionsHtml = input.pages
-    .slice()
-    .sort((left, right) => left.pageIndex - right.pageIndex)
-    .map((page) => page.sectionHtml.trim())
-    .join("\n");
-  const shouldInjectFallbackHead = !headHtml;
-  const shouldInjectTitle = shouldInjectFallbackHead || !TITLE_REGEX.test(headHtml);
-
-  return `<!DOCTYPE html>
-<html lang="${lang}">
-<head>
-${headHtml}
-${shouldInjectFallbackHead ? '  <meta charset="utf-8">' : ""}
-${shouldInjectFallbackHead ? '  <meta name="viewport" content="width=device-width, initial-scale=1">' : ""}
-${shouldInjectTitle ? `  <title>${title}</title>` : ""}
-</head>
-<body>
-  <main data-html-screen-document="assembled">
-    ${sectionsHtml}
-  </main>
-</body>
-</html>`;
 }
 
 function findSectionMatches(htmlContent: string): HtmlScreenPageMatch[] {
@@ -192,7 +188,24 @@ ${EDITOR_PREVIEW_STYLE}
 export function createHtmlArtifactPages(htmlContent: string): HtmlArtifactPage[] {
   const sections = findSectionMatches(htmlContent);
 
-  return sections.map((section, pageIndex) => buildHtmlArtifactPage(section.sectionHtml, pageIndex));
+  if (sections.length > 0) {
+    return sections.map((section, pageIndex) => buildHtmlArtifactPage(section.sectionHtml, pageIndex));
+  }
+
+  const singlePageMain = SINGLE_PAGE_MAIN_REGEX.exec(htmlContent)?.[0]?.trim();
+  const fallbackTitle = extractDocumentTitle(htmlContent) || "互动大屏";
+  const sectionHtml =
+    singlePageMain ??
+    `<main data-html-screen-document="single-page"><h1>${fallbackTitle}</h1></main>`;
+
+  return [
+    {
+      pageIndex: 0,
+      pageRole: "singlePage",
+      pageTitle: fallbackTitle,
+      sectionHtml,
+    },
+  ];
 }
 
 export function extractHtmlScreenPages(htmlContent: string): HtmlScreenPageDescriptor[] {
@@ -206,49 +219,6 @@ export function extractHtmlScreenPages(htmlContent: string): HtmlScreenPageDescr
   }));
 }
 
-export function composeHtmlScreenDocument(input: {
-  htmlContent?: string;
-  pages: HtmlArtifactPage[];
-}) {
-  const pages = input.pages
-    .slice()
-    .sort((left, right) => left.pageIndex - right.pageIndex);
-
-  if (pages.length === 0) {
-    return input.htmlContent?.trim() ?? "";
-  }
-
-  const sectionsHtml = pages.map((page) => page.sectionHtml.trim()).join("\n");
-  const currentHtml = input.htmlContent?.trim() ?? "";
-
-  if (!currentHtml) {
-    return buildFallbackHtmlDocument({
-      pages,
-    });
-  }
-
-  const sections = findSectionMatches(currentHtml);
-
-  if (sections.length > 0) {
-    const firstSection = sections[0]!;
-    const lastSection = sections[sections.length - 1]!;
-
-    return `${currentHtml.slice(0, firstSection.start)}${sectionsHtml}${currentHtml.slice(lastSection.end)}`;
-  }
-
-  const bodyCloseMatch = /<\/body>/i.exec(currentHtml);
-
-  if (bodyCloseMatch) {
-    const bodyCloseIndex = bodyCloseMatch.index;
-    return `${currentHtml.slice(0, bodyCloseIndex)}\n<main data-html-screen-document="assembled">\n${sectionsHtml}\n</main>\n${currentHtml.slice(bodyCloseIndex)}`;
-  }
-
-  return buildFallbackHtmlDocument({
-    htmlContent: currentHtml,
-    pages,
-  });
-}
-
 export function replaceHtmlScreenPageInnerHtml(input: {
   htmlContent: string;
   nextInnerHtml: string;
@@ -256,6 +226,22 @@ export function replaceHtmlScreenPageInnerHtml(input: {
 }) {
   const sections = findSectionMatches(input.htmlContent);
   const selected = sections[input.pageIndex];
+
+  if (!selected && input.pageIndex === 0) {
+    const mainMatch = SINGLE_PAGE_MAIN_REGEX.exec(input.htmlContent);
+
+    if (mainMatch) {
+      const startTag = mainMatch[0].match(/^<main\b[^>]*>/i)?.[0];
+
+      if (!startTag) {
+        throw new Error("单页大屏缺少 main 起始标签，无法替换。");
+      }
+
+      const rebuiltMain = `${startTag}\n${input.nextInnerHtml.trim()}\n</main>`;
+
+      return `${input.htmlContent.slice(0, mainMatch.index)}${rebuiltMain}${input.htmlContent.slice(mainMatch.index + mainMatch[0].length)}`;
+    }
+  }
 
   if (!selected) {
     throw new Error(`未找到第 ${input.pageIndex + 1} 页，无法完成当前页替换。`);

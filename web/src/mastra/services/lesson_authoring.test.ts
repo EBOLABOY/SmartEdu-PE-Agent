@@ -2,15 +2,7 @@ import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 import type { runLessonGenerationWithPostProcess } from "@/mastra/skills";
-
-type MockHtmlScreenPlanningResult = {
-  modelMessageCount: number;
-  plan: HtmlScreenPlan;
-  source: "agent";
-  warnings: string[];
-};
 
 const mocks = vi.hoisted(() => {
   const createChunkStream = (chunks: UIMessageChunk[]) =>
@@ -126,37 +118,7 @@ const mocks = vi.hoisted(() => {
     getWorkflow: vi.fn(),
     runLessonGenerationWithPostProcess: vi.fn(async () => ({
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
-      partialOutputStream: undefined,
       stream: createChunkStream([{ type: "finish", finishReason: "stop" }]),
-    })),
-    runServerHtmlScreenPlanningSkill: vi.fn<() => Promise<MockHtmlScreenPlanningResult>>(async () => ({
-      modelMessageCount: 1,
-      plan: {
-        visualSystem: "统一清爽的体育课堂投屏系统，首页和教学页共享同一套色彩、按钮、倒计时和图形语言。",
-        sections: [
-          {
-            title: "课堂首页",
-            pageRole: "cover",
-            pagePrompt: "生成首页封面，采用深色沉浸背景，超大标题偏向左侧排版，学校和教师姓名作为 Meta 信息下沉到右下角，并呈现开始上课按钮视觉。",
-            reason: "测试用首页。",
-          },
-          {
-            title: "AI 校正后的分镜",
-            pageRole: "learnPractice",
-            durationSeconds: 300,
-            sourceRowIndex: 0,
-            objective: "让学生明确本环节任务。",
-            studentActions: ["看清任务", "保持距离", "听口令行动"],
-            safetyCue: "保持前后左右安全距离。",
-            evaluationCue: "观察是否按要求完成动作。",
-            visualIntent: "自由设计有助于理解的课堂组织图。",
-            pagePrompt: "生成课堂组织页面片段，自由选择视觉表达。",
-            reason: "测试用规划结果。",
-          },
-        ],
-      },
-      source: "agent",
-      warnings: [],
     })),
     runServerHtmlGenerationSkill: vi.fn(async () =>
       createChunkStream([
@@ -189,7 +151,6 @@ vi.mock("@/mastra/skills", () => ({
   resolveWorkflowWithServerStandards: mocks.resolveWorkflowWithServerStandards,
   resolveWorkflowWithServerTextbook: mocks.resolveWorkflowWithServerTextbook,
   runLessonGenerationWithPostProcess: mocks.runLessonGenerationWithPostProcess,
-  runServerHtmlScreenPlanningSkill: mocks.runServerHtmlScreenPlanningSkill,
   runServerHtmlGenerationSkill: mocks.runServerHtmlGenerationSkill,
 }));
 
@@ -301,37 +262,7 @@ describe("lesson authoring service", () => {
     }));
     mocks.runLessonGenerationWithPostProcess.mockResolvedValue({
       finalLessonPlanPromise: Promise.resolve(DEFAULT_COMPETITION_LESSON_PLAN),
-      partialOutputStream: undefined,
       stream: mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
-    });
-    mocks.runServerHtmlScreenPlanningSkill.mockResolvedValue({
-      modelMessageCount: 1,
-      plan: {
-        visualSystem: "统一清爽的体育课堂投屏系统，首页和教学页共享同一套色彩、按钮、倒计时和图形语言。",
-        sections: [
-          {
-            title: "课堂首页",
-            pageRole: "cover",
-            pagePrompt: "生成首页封面，采用深色沉浸背景，超大标题偏向左侧排版，学校和教师姓名作为 Meta 信息下沉到右下角，并呈现开始上课按钮视觉。",
-            reason: "测试用首页。",
-          },
-          {
-            title: "AI 校正后的分镜",
-            pageRole: "learnPractice",
-            durationSeconds: 300,
-            sourceRowIndex: 0,
-            objective: "让学生明确本环节任务。",
-            studentActions: ["看清任务", "保持距离", "听口令行动"],
-            safetyCue: "保持前后左右安全距离。",
-            evaluationCue: "观察是否按要求完成动作。",
-            visualIntent: "自由设计有助于理解的课堂组织图。",
-            pagePrompt: "生成课堂组织页面片段，自由选择视觉表达。",
-            reason: "测试用规划结果。",
-          },
-        ],
-      },
-      source: "agent",
-      warnings: [],
     });
     mocks.runServerHtmlGenerationSkill.mockResolvedValue(
       mocks.createChunkStream([
@@ -408,7 +339,6 @@ describe("lesson authoring service", () => {
     );
     expect(mocks.runLessonGenerationWithPostProcess).toHaveBeenCalledWith(
       expect.objectContaining({
-        serverSide: true,
         workflow: expect.objectContaining({
           generationPlan: expect.objectContaining({ mode: "lesson" }),
           system: expect.stringContaining("年级：三年级"),
@@ -701,29 +631,14 @@ describe("lesson authoring service", () => {
     await readChunks(result.stream);
 
     expect(mocks.getAgent).not.toHaveBeenCalled();
-    expect(mocks.runServerHtmlScreenPlanningSkill).toHaveBeenCalledWith(
-      expect.objectContaining({
-        additionalInstructions: "请给这份课生成互动大屏",
-        lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
-        maxSteps: 7,
-      }),
-    );
     expect(mocks.runServerHtmlGenerationSkill).toHaveBeenCalledWith(
       expect.objectContaining({
         lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
-        screenPlan: expect.objectContaining({
-          sections: expect.arrayContaining([
-            expect.objectContaining({
-              pagePrompt: "生成课堂组织页面片段，自由选择视觉表达。",
-              title: "AI 校正后的分镜",
-            }),
-          ]),
-        }),
         workflow: expect.objectContaining({
           system: expect.stringContaining("当前已确认课时计划 JSON"),
           trace: expect.arrayContaining([
             expect.objectContaining({
-              step: "html-screen-planning",
+              step: "html-screen-generation",
               status: "success",
             }),
           ]),
@@ -746,40 +661,6 @@ describe("lesson authoring service", () => {
           ]),
         }),
       }),
-    );
-  });
-
-  it("HTML 分镜规划失败时直接返回错误，不再继续生成大屏", async () => {
-    mocks.runServerHtmlScreenPlanningSkill.mockRejectedValueOnce(
-      new Error("HTML 大屏分镜规划失败：planner unavailable"),
-    );
-    const { streamLessonAuthoring } = await import("./lesson_authoring");
-
-    const result = await streamLessonAuthoring({
-      lessonPlan: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
-      messages: [
-        {
-          id: "user-html-planning-failed",
-          role: "user",
-          parts: [{ type: "text", text: "请生成互动大屏" }],
-        },
-      ],
-      mode: "html",
-    });
-    const chunks = await readChunks(result.stream);
-
-    expect(mocks.runServerHtmlScreenPlanningSkill).toHaveBeenCalled();
-    expect(mocks.runServerHtmlGenerationSkill).not.toHaveBeenCalled();
-    expect(chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "start" }),
-        expect.objectContaining({ type: "data-trace" }),
-        expect.objectContaining({
-          type: "error",
-          errorText: "HTML 大屏分镜规划失败：planner unavailable",
-        }),
-        expect.objectContaining({ type: "finish", finishReason: "error" }),
-      ]),
     );
   });
 

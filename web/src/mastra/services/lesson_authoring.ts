@@ -402,14 +402,12 @@ async function executeLessonAuthoringStream(input: {
     const generation = await authoringSkills.runLessonGenerationWithPostProcess({
       messages: executionMessages,
       requestId,
-      serverSide: true,
       workflow,
     });
 
     writer.merge(
       authoringSkills.createStructuredAuthoringStreamAdapter({
         finalLessonPlanPromise: generation.finalLessonPlanPromise,
-        lessonDraftStream: generation.partialOutputStream,
         mode: "lesson",
         originalMessages: executionMessages,
         persistence: request.persistence,
@@ -465,38 +463,23 @@ async function executeLessonAuthoringStream(input: {
       return;
     }
 
-    const planning = await authoringSkills.runServerHtmlScreenPlanningSkill({
-      additionalInstructions: query,
-      lessonPlan: request.lessonPlan,
-      maxSteps: workflow.generationPlan.maxSteps,
-      requestId,
-    });
-    const plannedScreenPlan = planning.plan;
-
     system = buildPeTeacherSystemPrompt(request.context, {
       htmlFocus: request.htmlFocus,
       lessonPlan: request.lessonPlan,
       mode: "html",
-      screenPlan: plannedScreenPlan,
     });
     workflow = {
       ...workflow,
       system,
       trace: [
         ...workflow.trace,
-        createWorkflowTraceEntry(
-          "html-screen-planning",
-          "success",
-          `已生成 ${plannedScreenPlan.sections.length} 个页面提示词。`,
-        ),
+        createWorkflowTraceEntry("html-screen-generation", "success", "已进入直接 HTML 流式生成管线。"),
       ],
     };
     const htmlStream = await authoringSkills.runServerHtmlGenerationSkill({
       lessonPlan: request.lessonPlan ?? "",
       messages: executionMessages,
-      projectId: request.projectId,
       requestId,
-      screenPlan: plannedScreenPlan,
       workflow,
     });
 

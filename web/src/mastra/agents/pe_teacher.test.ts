@@ -35,13 +35,13 @@ describe("pe_teacher", () => {
     );
     expect(Object.keys(agentTools ?? {})).not.toEqual(
       expect.arrayContaining([
-        "generateHtmlScreenSection",
+        "generateHtmlScreenDocument",
         "submitHtmlScreenSection",
       ]),
     );
     expect(globalTools).toHaveProperty("analyze_requirements");
     expect(globalTools).toHaveProperty("searchStandards");
-    expect(globalTools).not.toHaveProperty("generateHtmlScreenSection");
+    expect(globalTools).not.toHaveProperty("generateHtmlScreenDocument");
     expect(globalTools).not.toHaveProperty("submitHtmlScreenSection");
   });
 
@@ -106,55 +106,33 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("服务端");
     expect(prompt).toContain("不要调用提交工具");
     expect(prompt).not.toContain("submitHtmlScreenSection");
-    expect(prompt).toContain("现代高端发布会幻灯片");
-    expect(prompt).toContain("首页必须作为 AI 分镜的第 1 页生成");
+    expect(prompt).toContain("完整单页");
+    expect(prompt).toContain("不要拆成 PPT、多页 slide、上下滑动分页");
+    expect(prompt).toContain("不再存在独立分镜规划层");
     expect(prompt).toContain("开始上课");
-    expect(prompt).toContain("多页分页结构");
     expect(prompt).toContain("统一 visualSystem");
     expect(prompt).toContain("基于教学情境的动态视觉推导");
     expect(prompt).toContain("Tailwind CSS 技术偏好");
     expect(prompt).toContain("禁止所有课时套用同一种固定风格模板");
-    expect(prompt).toContain("最小文档组装与分页包装");
-    expect(prompt).toContain("学习页面和练习页面原则上合二为一");
-    expect(prompt).toContain("学练页不能是文字板");
-    expect(prompt).toContain("不使用固定组件枚举限制页面设计");
+    expect(prompt).toContain("一次性生成完整文档");
+    expect(prompt).toContain("学习内容和练习任务原则上合并呈现");
+    expect(prompt).toContain("学练区域不能是文字板");
     expect(prompt).toContain("不要依赖服务端预置类名");
-    expect(prompt).toContain("自由分镜契约");
+    expect(prompt).toContain("大屏直接生成契约");
     expect(prompt).toContain("不要假设服务端会额外注入统一控制脚本");
     expect(prompt).not.toContain("iOS 18");
   });
 
-  it("html 阶段会注入自由大屏分镜计划", () => {
+  it("html 阶段不再注入大屏分镜计划", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, {
       mode: "html",
       lessonPlan: "## 十、课时计划\n| 比赛展示 | 6 分钟 |",
-      screenPlan: {
-        visualSystem: "统一清爽的体育课堂投屏系统。",
-        sections: [
-          {
-            title: "课堂首页",
-            pageRole: "cover",
-            pagePrompt: "生成首页封面，采用深色沉浸背景，超大标题偏向左侧排版，学校和教师姓名下沉到底部，并显示开始上课按钮。",
-            reason: "首页作为 AI 分镜第 1 页。",
-          },
-          {
-            title: "比赛展示",
-            pageRole: "competition",
-            durationSeconds: 360,
-            pagePrompt: "自由设计比赛展示页面，突出规则、挑战目标和即时评价。",
-            reason: "比赛挑战页需要即时反馈。",
-          },
-        ],
-      },
     });
 
-    expect(prompt).toContain("课堂大屏分镜计划");
-    expect(prompt).toContain("统一视觉系统");
-    expect(prompt).toContain("课堂首页");
-    expect(prompt).toContain("pageRole=cover");
+    expect(prompt).toContain("课时计划");
     expect(prompt).toContain("比赛展示");
-    expect(prompt).toContain("durationSeconds=360");
-    expect(prompt).toContain("自由设计比赛展示页面");
-    expect(prompt).not.toContain("supportModule=scoreboard");
+    expect(prompt).toContain("不再存在独立分镜规划层");
+    expect(prompt).not.toContain("课堂大屏分镜计划");
+    expect(prompt).not.toContain("pageRole=cover");
   });
 });

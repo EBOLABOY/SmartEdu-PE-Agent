@@ -10,6 +10,10 @@ import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
+import {
+  createHtmlArtifactPages,
+  ensureCompleteHtmlDocument,
+} from "@/lib/html-screen-editor";
 import { buildCompetitionLessonDraft } from "@/lib/competition-lesson-draft";
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -221,7 +225,10 @@ function buildLessonJsonArtifactContent(structuredOutput: unknown) {
 }
 
 function shouldForwardAssistantText(mode: GenerationMode, workflow: LessonWorkflowOutput) {
-  return mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text";
+  return (
+    mode === "html" ||
+    (mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text")
+  );
 }
 
 function shouldForwardUiChunk(
@@ -635,11 +642,39 @@ export function createStructuredAuthoringStreamAdapter({
             "agent-stream-started",
             "互动大屏 HTML 模型生成流已结束。",
           );
-          await persistArtifact(latestUpstreamHtmlArtifact);
+          await persistArtifact({
+            ...latestUpstreamHtmlArtifact,
+            content: ensureCompleteHtmlDocument(latestUpstreamHtmlArtifact.content),
+          });
           return true;
         }
 
-        if (allowTextOnlyResponse && rawText.trim() && !rawText.includes("<html")) {
+        const trimmedRawText = rawText.trim();
+
+        if (trimmedRawText) {
+          const completedHtml = ensureCompleteHtmlDocument(trimmedRawText);
+          const htmlPages = createHtmlArtifactPages(completedHtml);
+
+          if (htmlPages.length > 0) {
+            const artifact = buildArtifactData(workflow, {
+              content: completedHtml,
+              contentType: "html",
+              htmlPages,
+              isComplete: true,
+              status: "ready",
+            });
+
+            completeRunningTraceStep(
+              "agent-stream-started",
+              "互动大屏 HTML 模型生成流已结束。",
+            );
+            writeArtifact(artifact);
+            await persistArtifact(artifact);
+            return true;
+          }
+        }
+
+        if (allowTextOnlyResponse && trimmedRawText) {
           return true;
         }
 

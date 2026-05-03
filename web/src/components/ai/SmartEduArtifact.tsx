@@ -354,15 +354,15 @@ export default function SmartEduArtifact({
                       </Button>
                     </div>
                     <div className="min-h-0 flex-1">
-                      <HtmlScreenEditorPreview
-                        htmlContent={html}
-                        htmlPages={lifecycle.htmlPages}
-                        onSelectPage={onSelectHtmlPage}
-                        selectedPageIndex={selectedHtmlPage?.pageIndex}
-                      />
+                        <HtmlScreenEditorPreview
+                          htmlContent={html}
+                          htmlPages={lifecycle.htmlPages}
+                          onSelectPage={onSelectHtmlPage}
+                          selectedPageIndex={selectedHtmlPage?.pageIndex}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ) : (
+                  ) : (
                   <CanvasPendingGuide hasLesson={lessonDisplay.hasLesson} />
                 )}
               </div>
@@ -444,13 +444,6 @@ export default function SmartEduArtifact({
                             code={selectedVersion.content}
                             hasPreviousPreview={hasHtml}
                             trace={selectedVersion.trace}
-                          />
-                        ) : selectedVersion.stage === "html" && !selectedVersion.htmlPages?.length ? (
-                          <StateNotice
-                            className="m-4 flex h-[calc(100%-2rem)] items-center justify-center"
-                            description="该版本缺少页级数据，已不再支持按新编辑链路预览。请重新生成互动大屏。"
-                            layout="center"
-                            title="版本不可预览"
                           />
                         ) : selectedVersion.content.trim() ? (
                           <IframeSandbox htmlContent={selectedVersion.content} />

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  composeHtmlScreenDocument,
-  createHtmlArtifactPages,
   extractHtmlScreenPages,
   replaceHtmlScreenPageInnerHtml,
 } from "@/lib/html-screen-editor";
@@ -55,47 +53,47 @@ describe("html-screen-editor", () => {
     expect(pages[0]?.previewHtml).toContain("data-editor-preview");
   });
 
-  it("只替换目标页，不改动其他页", () => {
-    const updated = replaceHtmlScreenPageInnerHtml({
-      htmlContent: SAMPLE_HTML,
-      nextInnerHtml: `
-        <header class="slide-header">
-          <div>
-            <h2>修改后的学练页</h2>
-          </div>
-        </header>
-        <main class="slide-content">
-          <div class="brief-block"><p>新内容</p></div>
-        </main>
-      `,
-      pageIndex: 1,
-    });
+  it("将无 slide 的单页 HTML 作为一个可预览页面", () => {
+    const singlePageHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>单页大屏</title>
+</head>
+<body>
+  <main data-html-screen-document="single-page">
+    <h1>篮球三步上篮单页总览</h1>
+  </main>
+</body>
+</html>`;
 
-    expect(updated).toContain("修改后的学练页");
-    expect(updated).toContain("新内容");
-    expect(updated).toContain("篮球三步上篮");
-    expect(updated).not.toContain("原始内容");
+    const pages = extractHtmlScreenPages(singlePageHtml);
+
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toMatchObject({
+      pageIndex: 0,
+      pageRole: "singlePage",
+      pageTitle: "单页大屏",
+    });
+    expect(pages[0]?.sectionHtml).toContain('data-html-screen-document="single-page"');
+    expect(pages[0]?.previewHtml).toContain("篮球三步上篮单页总览");
   });
 
-  it("能把独立页面重新组合成完整 HTML 文档", () => {
-    const pages = createHtmlArtifactPages(SAMPLE_HTML);
-    const remixed = composeHtmlScreenDocument({
-      htmlContent: SAMPLE_HTML,
-      pages: pages.map((page) =>
-        page.pageIndex === 1
-          ? {
-              ...page,
-              sectionHtml: page.sectionHtml.replace("原始内容", "组合后的内容"),
-            }
-          : page,
-      ),
+  it("能替换单页 HTML 的 main 内部内容", () => {
+    const singlePageHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><title>单页大屏</title></head>
+<body><main data-html-screen-document="single-page"><h1>旧内容</h1></main></body>
+</html>`;
+
+    const updated = replaceHtmlScreenPageInnerHtml({
+      htmlContent: singlePageHtml,
+      nextInnerHtml: "<h1>新内容</h1>",
+      pageIndex: 0,
     });
 
-    expect(remixed).toContain("<title>测试大屏</title>");
-    expect(remixed).toContain("学练页");
-    expect(remixed).toContain("篮球三步上篮");
-    expect(remixed).toContain("组合后的内容");
-    expect(remixed).not.toContain("原始内容");
-    expect(remixed).toContain('<nav class="controls">控件</nav>');
+    expect(updated).toContain('<main data-html-screen-document="single-page">');
+    expect(updated).toContain("新内容");
+    expect(updated).not.toContain("旧内容");
   });
 });

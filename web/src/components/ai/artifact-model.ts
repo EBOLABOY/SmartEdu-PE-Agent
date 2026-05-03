@@ -48,7 +48,6 @@ export type ArtifactLifecycle = {
   htmlPreviewVersionId?: string;
   lessonPlan?: CompetitionLessonPlan;
   screenPlan?: HtmlScreenPlan;
-  slideData?: HtmlScreenPlan["sections"];
   status: ArtifactLifecycleStatus;
   stage: ArtifactStage;
   activeArtifact?: ArtifactSnapshot;
@@ -268,7 +267,6 @@ export function buildArtifactLifecycle(
     htmlPreviewVersionId: shouldPreferHtml ? latestReadyHtml?.id : undefined,
     lessonPlan: latestLesson?.lessonPlan,
     screenPlan,
-    slideData: screenPlan?.sections ?? [],
     status: activeArtifact?.status ?? (isStreaming ? "streaming" : "idle"),
     stage: shouldPreferHtml ? "html" : "lesson",
     activeArtifact,

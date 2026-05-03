@@ -4,14 +4,12 @@ import {
   type HtmlFocusTarget,
   type PeTeacherContext,
 } from "@/lib/lesson-authoring-contract";
-import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 import {
   HTML_SCREEN_DESIGN_DIRECTION,
   HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE,
 } from "@/lib/html-screen-visual-language";
 
 import { GUANGDONG_COMPETITION_LESSON_FORMAT } from "../../agents/guangdong_competition_lesson_format";
-import { formatLessonScreenPlanForPrompt } from "../../agents/html_screen_planner";
 import type { PromptSkill, PromptSkillWithInput } from "../../support/prompt_skill_types";
 
 type PeTeacherPromptOptions = {
@@ -19,7 +17,6 @@ type PeTeacherPromptOptions = {
   mode?: GenerationMode;
   lessonPlan?: string;
   responseStage?: "tool-use" | "generation";
-  screenPlan?: HtmlScreenPlan;
 };
 
 const baseTeacherPersonaSkill: PromptSkill = {
@@ -138,25 +135,15 @@ const agenticToolUseSkill: PromptSkill = {
 `,
 };
 
-function renderScreenPlanPrompt(screenPlan?: HtmlScreenPlan) {
-  const base = `
-课堂大屏自由分镜契约：
-1. 服务端会先根据已确认课时计划规划首页和多个课堂内容页，再逐页生成 HTML 片段。
-2. 首页必须作为分镜计划的第 1 页，由 AI 生成内容片段；服务端只提供统一外壳、开始按钮兜底、导航和计时控制。
-3. 不使用固定组件枚举限制页面设计；应根据教学内容自由选择最有效的视觉表达。
-4. 所有页面必须共享同一个 visualSystem，不允许每页各自更换设计语言。
-5. 每个内容页必须服务真实课堂执行，而不是堆砌装饰或普通网页信息。
-6. 如果系统提供了“课堂大屏分镜计划”，必须优先遵循其中的 visualSystem、pagePrompt、时间、学生行动、安全提醒和评价观察。
+function renderScreenPlanPrompt() {
+  return `
+课堂大屏直接生成契约：
+1. 服务端会直接把已确认课时计划第九部分和用户本轮要求发给模型，一次性生成完整单页 HTML 大屏。
+2. 不再存在独立分镜规划层，不要按 slide、section 数组或多页页面协议来理解任务。
+3. 必须把关键课堂信息压缩到一个横板投屏页面，适合真实课堂执行。
+4. 页面必须共享同一个 visualSystem，并在单页内部自然组织热身、学练、比赛、体能、放松、安全和评价信息。
+5. 你只需要围绕当前已确认课时计划和锁定页面做生成或修改，不要自己新增分镜协议。
 `;
-
-  if (!screenPlan?.sections.length) {
-    return base;
-  }
-
-  return `${base}
-
-课堂大屏分镜计划：
-${formatLessonScreenPlanForPrompt(screenPlan)}`;
 }
 
 const lessonAuthoringSkill: PromptSkill = {
@@ -174,10 +161,10 @@ lesson 阶段要求：
 `,
 };
 
-const htmlScreenSkill: PromptSkillWithInput<Pick<PeTeacherPromptOptions, "htmlFocus" | "lessonPlan" | "screenPlan">> = {
+const htmlScreenSkill: PromptSkillWithInput<Pick<PeTeacherPromptOptions, "htmlFocus" | "lessonPlan">> = {
   id: "html-screen",
   description: "约束 html 阶段基于已确认课时计划由服务端生成互动大屏。",
-  render: ({ htmlFocus, lessonPlan, screenPlan }) => `
+  render: ({ htmlFocus, lessonPlan }) => `
 当前阶段：html
 这是互动大屏工作区。只有当用户明确要求生成、修改或交付大屏时，才基于下方“已确认课时计划”生成课堂学习辅助大屏 HTML。正式 HTML 文档由服务端确定性管线生成并提交到右侧大屏区；你不要调用提交工具。若用户只是聊天或没有已确认课时计划，直接说明下一步需要先定稿教案。
 
@@ -187,28 +174,27 @@ html 阶段要求：
 3. 服务端会把最终 HTML 写入结构化 artifact。
 
 HTML 设计与交互约束：
-1. 页面目标不是“像 PPT 一样讲解”，而是辅助真实上课，帮助学生知道当前环节、怎么做、还剩多久，以及安全边界。
-2. 首页必须作为 AI 分镜的第 1 页生成，具备现代高端发布会幻灯片的视觉张力：采用深色沉浸背景，超大标题偏向屏幕中左侧排版，学校和教师姓名作为高对比小字号 Meta 信息下沉到右下角或底部，并提供醒目的“开始上课”视觉引导；不要依赖服务端注入按钮壳。
-3. 必须采用清晰的多页分页结构，便于逐页查看或上下滑动，不得生成单页长文或普通网页信息流。
-4. 必须先定义统一 visualSystem，并让首页、热身、学练、比赛、体能、放松等页面共享同一套色彩、字体层级、倒计时、按钮和图形语言。
+1. 页面目标不是“像 PPT 一样讲解”，而是辅助真实上课，帮助学生知道当前任务、怎么做、还剩多久，以及安全边界。
+2. 最终大屏必须是一个完整单页，直接呈现课堂主题、关键学练任务、安全边界、评价观察和时间节奏；不要拆成 PPT、多页 slide、上下滑动分页或普通网页信息流。
+3. 单页视觉应具备现代高端投屏画面的张力：清晰主标题、强层级模块、必要的课堂 Meta 信息和醒目的“开始上课/当前任务”视觉引导。
+4. 必须先定义统一 visualSystem，并让主题区、任务区、路线/图解区、安全区、评价区共享同一套色彩、字体层级、倒计时、按钮和图形语言。
 5. ${HTML_SCREEN_DESIGN_DIRECTION}
-6. 最终 HTML 只由服务端做最小文档组装与分页包装；单页分镜只生成 HTML 内容片段，不自行输出完整文档、style 或 script。
-7. 必须按课时计划中的主要教学环节拆分页，常见节奏可参考：热身、学练、比赛或展示、体能练习、放松拉伸。
-8. 学习页面和练习页面原则上合二为一，只展示学习内容、动作认知和练习任务，不拆成两个文字讲解页面。
-9. 学练页不能是文字板；若涉及战术、跑位、轮换、配合、阵型、路线、攻防站位等内容，必须使用 HTML/CSS/SVG 手搓有助于理解的图形或互动区域。
-10. 比赛、体能练习、放松拉伸、课堂总结等其他页面，默认采用居中的任务模块和醒目倒计时，文字只保留关键短句。
-11. 若页面需要“开始上课”或倒计时视觉，应由页面自身表达清楚，不要假设服务端会额外注入统一控制脚本。
-12. 每页必须带与课时计划一致的倒计时；1 分钟 = 60 秒；时间缺失时按合理估算并标注“估算时间”；首页不参与课堂环节倒计时。
-13. 视觉风格应简洁干练、沉浸、美观、有效：大字号、高对比、强层级、适合远距离观看，不花哨、不堆装饰。
-14. 所有可见文本必须是简体中文，不得出现英文控制台风格文案。
-15. ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
-16. 若系统提供“当前锁定页面”，默认只修改这一页，不重写其他页；回答时也应围绕当前页修改来理解用户意图。
+6. 最终 HTML 由服务端一次性生成完整文档，不再做分页包装；不要假设服务端会额外注入统一控制脚本。
+7. 必须把课时计划中的主要教学环节压缩为同一屏可读的模块，常见内容可包含：热身、学练、比赛或展示、体能练习、放松拉伸。
+8. 学习内容和练习任务原则上合并呈现，只展示动作认知、练习任务和关键评价，不拆成多个文字讲解页面。
+9. 学练区域不能是文字板；若涉及战术、跑位、轮换、配合、阵型、路线、攻防站位等内容，必须使用 HTML/CSS/SVG 手搓有助于理解的图形或互动区域。
+10. 比赛、体能练习、放松拉伸、课堂总结等信息应作为同一页面的紧凑模块，文字只保留关键短句。
+11. 倒计时或时间节奏应在单页中表达清楚；1 分钟 = 60 秒；时间缺失时按合理估算并标注“估算时间”。
+12. 视觉风格应简洁干练、沉浸、美观、有效：大字号、高对比、强层级、适合远距离观看，不花哨、不堆装饰。
+13. 所有可见文本必须是简体中文，不得出现英文控制台风格文案。
+14. ${HTML_SCREEN_SUPPORTED_FRAGMENT_CLASS_GUIDE}
+15. 若系统提供“当前锁定页面”，默认修改这张单页大屏，不重写课时计划；回答时也应围绕当前单页修改来理解用户意图。
 
-${renderScreenPlanPrompt(screenPlan)}
+${renderScreenPlanPrompt()}
 
 ${htmlFocus
     ? `当前锁定页面：
-- 第 ${htmlFocus.pageIndex + 1} 页
+- 单页大屏
 ${htmlFocus.pageTitle ? `- 页面标题：${htmlFocus.pageTitle}` : ""}
 ${htmlFocus.pageRole ? `- 页面角色：${htmlFocus.pageRole}` : ""}
 `
@@ -270,22 +256,14 @@ function renderCurrentArtifactPrompt(options?: PeTeacherPromptOptions) {
     );
   }
 
-  if (options?.screenPlan?.sections.length) {
-    parts.push(
-      [
-        "当前已确认课堂大屏分镜计划：",
-        formatLessonScreenPlanForPrompt(options.screenPlan),
-      ].join("\n"),
-    );
-  }
-
   if (options?.htmlFocus) {
     parts.push(
       [
-        "当前锁定的互动大屏页面：",
-        `- 第 ${options.htmlFocus.pageIndex + 1} 页`,
+        "当前锁定的互动大屏单页：",
+        "- 单页大屏",
         options.htmlFocus.pageTitle ? `- 页面标题：${options.htmlFocus.pageTitle}` : null,
         options.htmlFocus.pageRole ? `- 页面角色：${options.htmlFocus.pageRole}` : null,
+        options.htmlFocus.currentHtml ? "- 当前页面 HTML 已由系统注入。" : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -314,7 +292,6 @@ export function buildPeTeacherSystemPrompt(context?: PeTeacherContext, options?:
       ? htmlScreenSkill.render({
         htmlFocus: options?.htmlFocus,
         lessonPlan: options?.lessonPlan,
-        screenPlan: options?.screenPlan,
       })
       : lessonAuthoringSkill.render();
   const contextPrompt = renderContextPrompt(context, responseStage);

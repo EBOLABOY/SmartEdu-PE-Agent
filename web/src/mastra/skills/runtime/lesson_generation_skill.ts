@@ -2,12 +2,10 @@ import {
   convertToModelMessages,
   stepCountIs,
   streamText,
-  type DeepPartial,
   type UIMessageChunk,
 } from "ai";
 
 import {
-  competitionLessonPlanSchema,
   type CompetitionLessonPlan,
 } from "@/lib/competition-lesson-contract";
 import {
@@ -20,23 +18,8 @@ import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
 
-export type LessonStructuredGenerator = (options: {
-  maxSteps: number;
-  messages: AgentModelMessages;
-  modelId: string;
-  system: string;
-}) => Promise<CompetitionLessonPlan>;
-
-export type LessonStructuredStreamer = (options: {
-  maxSteps: number;
-  messages: AgentModelMessages;
-  modelId: string;
-  system: string;
-}) => Promise<LessonGenerationStreams | ReadableStream<UIMessageChunk>>;
-
 export type LessonGenerationStreams = {
-  finalLessonPlanPromise?: Promise<CompetitionLessonPlan>;
-  partialOutputStream?: AsyncIterable<DeepPartial<CompetitionLessonPlan>>;
+  finalLessonPlanPromise: Promise<CompetitionLessonPlan>;
   stream: ReadableStream<UIMessageChunk>;
 };
 
@@ -110,12 +93,6 @@ export async function runModelOperationWithRetry<T>(
   }
 
   throw lastError;
-}
-
-function normalizeLessonGenerationStreams(
-  output: LessonGenerationStreams | ReadableStream<UIMessageChunk>,
-): LessonGenerationStreams {
-  return output instanceof ReadableStream ? { stream: output } : output;
 }
 
 function createServerLessonProtocolSystemPrompt(system: string) {
@@ -260,65 +237,23 @@ export async function runLessonGenerationSkill(input: {
   messages: SmartEduUIMessage[];
   modelId?: string;
   requestId: string;
-  serverSide?: boolean;
-  structuredStream?: LessonStructuredStreamer;
-  structuredGenerate?: LessonStructuredGenerator;
   workflow: LessonWorkflowOutput;
 }) {
   const modelMessages = await convertToModelMessages(input.messages);
-  const streamer =
-    input.structuredStream ??
-    (input.structuredGenerate
-      ? async (options: Parameters<LessonStructuredStreamer>[0]) => {
-          const lessonPlan = await input.structuredGenerate!(options);
-          const content = JSON.stringify(competitionLessonPlanSchema.parse(lessonPlan));
-
-          return {
-            finalLessonPlanPromise: Promise.resolve(competitionLessonPlanSchema.parse(lessonPlan)),
-            stream: new ReadableStream<UIMessageChunk>({
-              start(controller) {
-                const id = "lesson-json";
-
-                controller.enqueue({ type: "text-start", id });
-                controller.enqueue({ type: "text-delta", id, delta: content });
-                controller.enqueue({ type: "text-end", id });
-                controller.enqueue({ type: "finish", finishReason: "stop" });
-                controller.close();
-              },
-            }),
-          };
-        }
-      : input.serverSide === false
-        ? undefined
-        : (options: Parameters<LessonStructuredStreamer>[0]) =>
-            streamCompetitionLessonPlanServerSideWithProtocol({
-              maxSteps: options.maxSteps,
-              messages: options.messages,
-              modelId: options.modelId,
-              system: options.system,
-            }));
-
-  if (!streamer) {
-    throw new Error("Lesson generation requires a server-side lesson protocol streamer.");
-  }
-
-  const generationStreams = normalizeLessonGenerationStreams(
-    await runModelOperationWithRetry(
-      () =>
-        streamer({
-          maxSteps: input.workflow.generationPlan.maxSteps,
-          messages: modelMessages,
-          modelId: input.modelId ?? DEFAULT_LESSON_MODEL_ID,
-          system: input.workflow.system,
-        }),
-      { mode: "lesson", requestId: input.requestId },
-    ),
+  const generationStreams = await runModelOperationWithRetry(
+    () =>
+      streamCompetitionLessonPlanServerSideWithProtocol({
+        maxSteps: input.workflow.generationPlan.maxSteps,
+        messages: modelMessages,
+        modelId: input.modelId ?? DEFAULT_LESSON_MODEL_ID,
+        system: input.workflow.system,
+      }),
+    { mode: "lesson", requestId: input.requestId },
   );
 
   return {
     finalLessonPlanPromise: generationStreams.finalLessonPlanPromise,
     modelMessageCount: modelMessages.length,
-    partialOutputStream: generationStreams.partialOutputStream,
     stream: generationStreams.stream,
   };
 }

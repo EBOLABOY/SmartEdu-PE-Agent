@@ -346,7 +346,7 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("html 纯文本整文档没有 htmlPages 时会直接报错", async () => {
+  it("html 纯文本整文档会直接抽取 htmlPages 并生成 artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -372,21 +372,33 @@ describe("structured authoring stream adapter", () => {
 
     const chunks = await readAll(stream);
 
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+
+    expect(finalArtifact).toMatchObject({
+      contentType: "html",
+      status: "ready",
+      isComplete: true,
+      htmlPages: [
+        expect.objectContaining({
+          pageIndex: 0,
+          sectionHtml: expect.stringContaining("普通页面"),
+        }),
+      ],
+    });
     expect(chunks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: "error",
-          errorText: expect.stringContaining("htmlPages"),
-        }),
-        expect.objectContaining({
           type: "finish",
-          finishReason: "error",
+          finishReason: "stop",
         }),
       ]),
     );
   });
 
-  it("html 纯文本流不再生成 streaming artifact，而是等待结构化页级 artifact", async () => {
+  it("html 纯文本流会在结束时封装为 ready artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -417,15 +429,23 @@ describe("structured authoring stream adapter", () => {
 
     const chunks = await readAll(stream);
 
-    expect(chunks.some((chunk) => chunk.type === "data-artifact")).toBe(false);
-    expect(chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "error",
-          errorText: expect.stringContaining("htmlPages"),
-        }),
-      ]),
-    );
+    const finalArtifact = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .at(-1);
+
+    expect(finalArtifact).toMatchObject({
+      contentType: "html",
+      status: "ready",
+      isComplete: true,
+    });
+    expect(finalArtifact?.content).toContain("正在设计课堂大屏结构");
+
+    if (!finalArtifact || finalArtifact.stage !== "html") {
+      throw new Error("Expected final HTML artifact.");
+    }
+
+    expect(finalArtifact.htmlPages[0]?.sectionHtml).toContain("课堂");
   });
 
   it("html 上游 artifact 流会被原样透传并作为最终结果持久化，不再由 text-delta 重复合成", async () => {
@@ -532,33 +552,33 @@ describe("structured authoring stream adapter", () => {
     const stream = createStructuredAuthoringStreamAdapter({
       mode: "html",
       originalMessages: [],
-      requestId: "request-html-section-streaming",
+      requestId: "request-html-document-streaming",
       workflow,
       stream: createChunkStream([
         { type: "start-step" },
         {
           type: "tool-input-start",
-          toolCallId: "request-html-section-1",
-          toolName: "generateHtmlScreenSection",
-          title: "生成第 1 页 HTML",
+          toolCallId: "request-html-document-1",
+          toolName: "generateHtmlScreenDocument",
+          title: "生成单页 HTML",
         },
         {
           type: "tool-input-available",
-          toolCallId: "request-html-section-1",
-          toolName: "generateHtmlScreenSection",
-          title: "生成第 1 页 HTML",
+          toolCallId: "request-html-document-1",
+          toolName: "generateHtmlScreenDocument",
+          title: "生成单页 HTML",
           input: {
-            sectionIndex: 0,
+            documentMode: "single-page",
             title: "首页",
           },
         },
         {
           type: "tool-output-available",
-          toolCallId: "request-html-section-1",
+          toolCallId: "request-html-document-1",
           output: {
             title: "首页",
             characters: 1280,
-            sectionIndex: 0,
+            documentMode: "single-page",
           },
         },
         { type: "data-artifact", id: "lesson-authoring-artifact-html", data: upstreamArtifact },
@@ -569,10 +589,10 @@ describe("structured authoring stream adapter", () => {
 
     const chunks = await readAll(stream);
     const toolStartIndex = chunks.findIndex(
-      (chunk) => chunk.type === "tool-input-start" && chunk.toolName === "generateHtmlScreenSection",
+      (chunk) => chunk.type === "tool-input-start" && chunk.toolName === "generateHtmlScreenDocument",
     );
     const toolOutputIndex = chunks.findIndex(
-      (chunk) => chunk.type === "tool-output-available" && chunk.toolCallId === "request-html-section-1",
+      (chunk) => chunk.type === "tool-output-available" && chunk.toolCallId === "request-html-document-1",
     );
     const finalArtifactIndex = chunks.findIndex((chunk) => getArtifactData(chunk)?.status === "ready");
     const completedTraceIndex = chunks.findIndex((chunk) => getTraceData(chunk)?.phase === "completed");
