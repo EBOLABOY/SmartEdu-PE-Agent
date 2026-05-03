@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createHtmlArtifactPages,
+  ensureCompleteHtmlDocument,
   extractHtmlScreenPages,
   replaceHtmlScreenPageInnerHtml,
 } from "@/lib/html-screen-editor";
@@ -77,6 +79,44 @@ describe("html-screen-editor", () => {
     });
     expect(pages[0]?.sectionHtml).toContain('data-html-screen-document="single-page"');
     expect(pages[0]?.previewHtml).toContain("篮球三步上篮单页总览");
+  });
+
+  it("严格模式不会把无 slide 的单页 HTML 当作新生成分页结果", () => {
+    const pages = createHtmlArtifactPages(
+      `<!DOCTYPE html><html lang="zh-CN"><head><title>单页</title></head><body><main data-html-screen-document="single-page"><h1>单页</h1></main></body></html>`,
+      { allowSinglePageFallback: false },
+    );
+
+    expect(pages).toHaveLength(0);
+  });
+
+  it("能识别单引号 class 和 data-slide-kind 的分页", () => {
+    const pages = createHtmlArtifactPages(`<!DOCTYPE html>
+<html lang='zh-CN'>
+<head><title>单引号大屏</title></head>
+<body>
+  <section class='slide cover-slide' data-slide-kind='cover'><h1>首页</h1></section>
+  <section data-slide-kind='learnPractice' class='lesson-slide slide'><h2>学练</h2></section>
+</body>
+</html>`);
+
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toMatchObject({
+      pageRole: "cover",
+      pageTitle: "首页",
+    });
+    expect(pages[1]).toMatchObject({
+      pageRole: "learnPractice",
+      pageTitle: "学练",
+    });
+  });
+
+  it("完整 HTML 会注入通用大屏翻页引擎", () => {
+    const html = ensureCompleteHtmlDocument(`<section class="slide"><h1>首页</h1></section>`);
+
+    expect(html).toContain("data-screen-engine");
+    expect(html).toContain("data-screen-engine-controls");
+    expect(html).toContain("ArrowRight");
   });
 
   it("能替换单页 HTML 的 main 内部内容", () => {

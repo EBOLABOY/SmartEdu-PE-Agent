@@ -12,12 +12,12 @@ type HtmlScreenPageMatch = {
   start: number;
 };
 
-const SECTION_REGEX = /<section\b[^>]*class="[^"]*\bslide\b[^"]*"[^>]*>[\s\S]*?<\/section>/gi;
+const SECTION_REGEX = /<section\b(?=[^>]*\bclass\s*=\s*(?:"[^"]*\bslide\b[^"]*"|'[^']*\bslide\b[^']*'))[^>]*>[\s\S]*?<\/section>/gi;
 const HEAD_REGEX = /<head\b[^>]*>([\s\S]*?)<\/head>/i;
-const HTML_LANG_REGEX = /<html\b[^>]*lang="([^"]+)"/i;
+const HTML_LANG_REGEX = /<html\b[^>]*lang\s*=\s*(?:"([^"]+)"|'([^']+)')/i;
 const H1_REGEX = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i;
 const H2_REGEX = /<h2\b[^>]*>([\s\S]*?)<\/h2>/i;
-const ROLE_REGEX = /data-slide-kind="([^"]+)"/i;
+const ROLE_REGEX = /\bdata-slide-kind\s*=\s*(?:"([^"]+)"|'([^']+)')/i;
 const TITLE_REGEX = /<title\b[^>]*>([\s\S]*?)<\/title>/i;
 const SINGLE_PAGE_MAIN_REGEX = /<main\b[^>]*data-html-screen-document=(?:"single-page"|'single-page')[^>]*>[\s\S]*?<\/main>/i;
 
@@ -25,37 +25,190 @@ const EDITOR_PREVIEW_STYLE = `
 <style data-editor-preview>
   html, body {
     width: 100%;
-    min-height: 100%;
-    height: auto !important;
+    height: 100%;
     margin: 0;
-    overflow: auto !important;
+    overflow: hidden !important;
   }
   body {
-    background: #e5e7eb;
+    background: transparent;
   }
   [data-editor-preview-page] {
-    min-height: 100vh;
-    padding: 16px;
-    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
   }
   .slide {
     position: relative !important;
     inset: auto !important;
-    min-height: 100vh;
+    width: 100%;
+    height: 100%;
     display: block !important;
     margin: 0;
-  }
-  .controls,
-  script {
-    display: none !important;
-  }
-  [data-start],
-  .start-button,
-  .start-button-visual,
-  .control-btn {
-    pointer-events: none !important;
+    overflow: hidden;
   }
 </style>`.trim();
+
+const SCREEN_ENGINE_SCRIPT = `
+<script data-screen-engine>
+(function() {
+  if (window.__screenEngineInitialized) return;
+  window.__screenEngineInitialized = true;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    if (slides.length === 0) return;
+
+    let currentIndex = 0;
+    let timerInterval = null;
+    let timeRemaining = 0;
+
+    // 初始化样式：只显示第一页，其他隐藏
+    slides.forEach((slide, index) => {
+      slide.style.display = index === 0 ? 'block' : 'none';
+      slide.style.position = 'absolute';
+      slide.style.top = '0';
+      slide.style.left = '0';
+      slide.style.width = '100%';
+      slide.style.height = '100%';
+    });
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function updateTimerDisplay(slide, seconds) {
+      const displays = slide.querySelectorAll('.duration-display, .timer-display');
+      displays.forEach(el => {
+        el.textContent = formatTime(seconds);
+      });
+    }
+
+    function goToSlide(index) {
+      if (index < 0 || index >= slides.length) return;
+      
+      slides[currentIndex].style.display = 'none';
+      currentIndex = index;
+      const currentSlide = slides[currentIndex];
+      currentSlide.style.display = 'block';
+
+      if (timerInterval) clearInterval(timerInterval);
+
+      const durationRaw = currentSlide.getAttribute('data-duration');
+      if (durationRaw) {
+        timeRemaining = parseInt(durationRaw, 10);
+        if (isNaN(timeRemaining)) timeRemaining = 0;
+      } else {
+        timeRemaining = 0;
+      }
+
+      updateTimerDisplay(currentSlide, timeRemaining);
+
+      if (timeRemaining > 0) {
+        timerInterval = setInterval(() => {
+          timeRemaining--;
+          updateTimerDisplay(currentSlide, timeRemaining);
+          if (timeRemaining <= 0) {
+            clearInterval(timerInterval);
+            if (currentIndex < slides.length - 1) {
+               goToSlide(currentIndex + 1);
+            }
+          }
+        }, 1000);
+      }
+    }
+
+    function goNext() {
+      goToSlide(Math.min(currentIndex + 1, slides.length - 1));
+    }
+
+    function goPrevious() {
+      goToSlide(Math.max(currentIndex - 1, 0));
+    }
+
+    function ensureFallbackControls() {
+      if (slides.length <= 1 || document.querySelector('[data-screen-engine-controls]')) return;
+
+      const controls = document.createElement('div');
+      controls.setAttribute('data-screen-engine-controls', 'true');
+      controls.style.position = 'fixed';
+      controls.style.right = '24px';
+      controls.style.bottom = '24px';
+      controls.style.zIndex = '2147483647';
+      controls.style.display = 'flex';
+      controls.style.gap = '10px';
+      controls.style.fontFamily = 'system-ui, sans-serif';
+
+      const previous = document.createElement('button');
+      previous.type = 'button';
+      previous.textContent = '上一页';
+      previous.setAttribute('aria-label', '上一页');
+      previous.setAttribute('data-screen-prev', 'true');
+
+      const next = document.createElement('button');
+      next.type = 'button';
+      next.textContent = '下一页';
+      next.setAttribute('aria-label', '下一页');
+      next.setAttribute('data-screen-next', 'true');
+
+      [previous, next].forEach((button) => {
+        button.style.border = '1px solid rgba(255,255,255,0.55)';
+        button.style.borderRadius = '999px';
+        button.style.background = 'rgba(15,23,42,0.78)';
+        button.style.color = 'rgb(248,250,252)';
+        button.style.fontSize = '16px';
+        button.style.fontWeight = '700';
+        button.style.padding = '10px 16px';
+        button.style.cursor = 'pointer';
+      });
+
+      controls.append(previous, next);
+      document.body.appendChild(controls);
+
+      previous.addEventListener('click', goPrevious);
+      next.addEventListener('click', goNext);
+    }
+
+    // 绑定开始按钮
+    const startButtons = document.querySelectorAll('.start-button');
+    startButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (currentIndex === 0) {
+          if (slides.length > 1) {
+            goToSlide(1);
+          } else {
+            btn.style.transition = 'opacity 0.3s';
+            btn.style.opacity = '0';
+            btn.style.pointerEvents = 'none';
+            goToSlide(0);
+          }
+        }
+      });
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+        event.preventDefault();
+        goNext();
+      }
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+        event.preventDefault();
+        goPrevious();
+      }
+    });
+    ensureFallbackControls();
+    document.querySelectorAll('[data-screen-next]').forEach(btn => {
+      btn.addEventListener('click', goNext);
+    });
+    document.querySelectorAll('[data-screen-prev]').forEach(btn => {
+      btn.addEventListener('click', goPrevious);
+    });
+    goToSlide(0);
+  });
+})();
+</script>
+`.trim();
 
 function decodeHtmlEntities(value: string) {
   return value
@@ -76,18 +229,21 @@ function extractHeadHtml(htmlContent: string) {
 }
 
 function extractDocumentLang(htmlContent: string) {
-  return HTML_LANG_REGEX.exec(htmlContent)?.[1]?.trim() || "zh-CN";
+  const langMatch = HTML_LANG_REGEX.exec(htmlContent);
+  return langMatch?.[1]?.trim() || langMatch?.[2]?.trim() || "zh-CN";
 }
 
 function addActiveClass(sectionHtml: string) {
-  return sectionHtml.replace(/class="([^"]*)"/i, (_match, className: string) => {
+  return sectionHtml.replace(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/i, (match, doubleQuoted: string, singleQuoted: string) => {
+    const className = doubleQuoted ?? singleQuoted ?? "";
     const classes = className.split(/\s+/).filter(Boolean);
+    const quote = match.includes("'") ? "'" : "\"";
 
     if (!classes.includes("active")) {
       classes.push("active");
     }
 
-    return `class="${classes.join(" ")}"`;
+    return `class=${quote}${classes.join(" ")}${quote}`;
   });
 }
 
@@ -99,7 +255,8 @@ function extractPageTitle(sectionHtml: string, pageIndex: number) {
 }
 
 function extractPageRole(sectionHtml: string) {
-  return ROLE_REGEX.exec(sectionHtml)?.[1]?.trim() || undefined;
+  const roleMatch = ROLE_REGEX.exec(sectionHtml);
+  return roleMatch?.[1]?.trim() || roleMatch?.[2]?.trim() || undefined;
 }
 
 function extractDocumentTitle(htmlContent: string) {
@@ -116,12 +273,12 @@ function stripCodeFence(value: string) {
 
 export function ensureCompleteHtmlDocument(value: string) {
   const html = stripCodeFence(value);
+  let finalHtml = html;
 
   if (/<html\b/i.test(html) && /<body\b/i.test(html)) {
-    return html.startsWith("<!DOCTYPE html>") ? html : `<!DOCTYPE html>\n${html}`;
-  }
-
-  return `<!DOCTYPE html>
+    finalHtml = html.startsWith("<!DOCTYPE html>") ? html : `<!DOCTYPE html>\n${html}`;
+  } else {
+    finalHtml = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -129,11 +286,16 @@ export function ensureCompleteHtmlDocument(value: string) {
   <title>互动大屏</title>
 </head>
 <body>
-  <main data-html-screen-document="single-page">
 ${html}
-  </main>
 </body>
 </html>`;
+  }
+
+  if (!finalHtml.includes("data-screen-engine")) {
+    finalHtml = finalHtml.replace(/<\/body>/i, `\n${SCREEN_ENGINE_SCRIPT}\n</body>`);
+  }
+
+  return finalHtml;
 }
 
 function buildHtmlArtifactPage(sectionHtml: string, pageIndex: number): HtmlArtifactPage {
@@ -185,11 +347,18 @@ ${EDITOR_PREVIEW_STYLE}
 </html>`;
 }
 
-export function createHtmlArtifactPages(htmlContent: string): HtmlArtifactPage[] {
+export function createHtmlArtifactPages(
+  htmlContent: string,
+  options: { allowSinglePageFallback?: boolean } = {},
+): HtmlArtifactPage[] {
   const sections = findSectionMatches(htmlContent);
 
   if (sections.length > 0) {
     return sections.map((section, pageIndex) => buildHtmlArtifactPage(section.sectionHtml, pageIndex));
+  }
+
+  if (options.allowSinglePageFallback === false) {
+    return [];
   }
 
   const singlePageMain = SINGLE_PAGE_MAIN_REGEX.exec(htmlContent)?.[0]?.trim();

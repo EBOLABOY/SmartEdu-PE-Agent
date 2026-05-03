@@ -108,10 +108,7 @@ describe("competition-lesson-protocol", () => {
       school: "未填写学校",
     });
     expect(plan.periodPlan.rows.map((row) => row.structure)).toEqual(["准备部分", "基本部分", "结束部分"]);
-    expect(plan.periodPlan.rows[1]?.content).toEqual([
-      "行进间运球练习、绕桶运球接力、小组挑战",
-      "技术学习、分组练习、教学比赛、体能练习",
-    ]);
+    expect(plan.periodPlan.rows[1]?.content).toEqual(["行进间运球练习、绕桶运球接力、小组挑战"]);
     expect(plan.flowSummary).toEqual([
       "课堂常规",
       "专项热身",
@@ -204,10 +201,7 @@ organization=集合
     expect(plan.title).toBe("足球脚内侧传接球");
     expect(plan.meta.studentCount).toBe("36人");
     expect(plan.venueEquipment.equipment).toEqual(["篮球20个", "标志桶8个"]);
-    expect(plan.periodPlan.rows[1]?.content).toEqual([
-      "传接球练习",
-      "技术学习、分组练习、教学比赛、体能练习",
-    ]);
+    expect(plan.periodPlan.rows[1]?.content).toEqual(["传接球练习"]);
     expect(plan.loadEstimate.averageHeartRate).toBe("140次/分钟");
   });
 

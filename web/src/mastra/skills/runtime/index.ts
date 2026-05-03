@@ -19,10 +19,6 @@ export {
   enrichLessonPlanWithDiagramAssets,
   type LessonDiagramGenerationResult,
 } from "./lesson_diagram_generation_skill";
-export {
-  enrichHtmlScreenPlanWithVisualAssets,
-  type HtmlScreenVisualAssetResult,
-} from "./html_screen_visual_asset_skill";
 export { runLessonGenerationWithPostProcess } from "./lesson_generation_postprocess";
 export { runStandardsRetrievalSkill } from "./standards_retrieval_skill";
 export { runTextbookRetrievalSkill } from "./textbook_retrieval_skill";

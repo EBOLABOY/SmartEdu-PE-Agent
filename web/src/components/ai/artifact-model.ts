@@ -7,8 +7,6 @@ import {
   lessonContentToPlan,
 } from "@/lib/artifact-protocol";
 import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
-import { buildLessonScreenPlanFromLessonPlan } from "@/lib/lesson-screen-plan";
-import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 import type {
   ArtifactContentType,
   HtmlArtifactPage,
@@ -29,7 +27,6 @@ export type ArtifactSnapshot = {
   contentType?: ArtifactContentType;
   htmlPages?: HtmlArtifactPage[];
   lessonPlan?: CompetitionLessonPlan;
-  screenPlan?: HtmlScreenPlan;
   status: ArtifactLifecycleStatus;
   version: number;
   artifactId?: string;
@@ -47,7 +44,6 @@ export type ArtifactLifecycle = {
   isHtmlStreaming: boolean;
   htmlPreviewVersionId?: string;
   lessonPlan?: CompetitionLessonPlan;
-  screenPlan?: HtmlScreenPlan;
   status: ArtifactLifecycleStatus;
   stage: ArtifactStage;
   activeArtifact?: ArtifactSnapshot;
@@ -83,21 +79,12 @@ function normalizeLessonVersionContent(content: string, contentType?: ArtifactCo
   return lessonPlan ? JSON.stringify(lessonPlan) : content;
 }
 
-function buildScreenPlan(lessonPlan?: CompetitionLessonPlan) {
-  if (!lessonPlan) {
-    return undefined;
-  }
-
-  return buildLessonScreenPlanFromLessonPlan(lessonPlan);
-}
-
 function hasHtmlPages(htmlPages?: HtmlArtifactPage[]): htmlPages is HtmlArtifactPage[] {
   return Array.isArray(htmlPages) && htmlPages.length > 0;
 }
 
 function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): ArtifactSnapshot {
   const lessonPlan = lessonContentToPlan(version.content, version.contentType);
-  const screenPlan = buildScreenPlan(lessonPlan);
   const htmlPages =
     version.stage === "html" && hasHtmlPages(version.htmlPages) ? version.htmlPages : undefined;
 
@@ -113,7 +100,6 @@ function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): Artif
     contentType: version.contentType,
     htmlPages,
     lessonPlan,
-    screenPlan,
     status: version.status,
     version: version.versionNumber,
     artifactId: version.artifactId,
@@ -187,7 +173,6 @@ export function buildArtifactLifecycle(
       const version = liveVersions.filter((item) => item.stage === "lesson").length + 1;
       const fallbackStatus: ArtifactLifecycleStatus =
         isStreaming && index === assistantMessages.length - 1 ? "streaming" : "ready";
-      const screenPlan = buildScreenPlan(extracted.lessonPlan);
 
       liveVersions.push({
         id: `${messageId}-lesson`,
@@ -196,7 +181,6 @@ export function buildArtifactLifecycle(
         content: extracted.lessonContent,
         contentType: extracted.artifact?.contentType,
         lessonPlan: extracted.lessonPlan,
-        screenPlan,
         status: resolveSnapshotStatus(extracted.status, fallbackStatus),
         version,
         trace: extracted.trace,
@@ -246,13 +230,16 @@ export function buildArtifactLifecycle(
   const latestLesson = shouldUsePersistedAsActiveSource ? persistedLesson : liveLesson;
   const latestHtml = shouldUsePersistedAsActiveSource ? persistedHtml : liveHtml;
   const latestReadyHtml = shouldUsePersistedAsActiveSource ? persistedHtml : liveReadyHtml;
-  const screenPlan = latestLesson?.screenPlan ?? buildScreenPlan(latestLesson?.lessonPlan);
   const liveLessonIndex = liveVersions.findLastIndex((item) => item.stage === "lesson");
   const liveHtmlIndex = liveVersions.findLastIndex((item) => item.stage === "html");
+  const hasLiveHtmlPriority =
+    latestHtml !== undefined &&
+    (lessonConfirmed ||
+      latestHtml.status === "streaming" ||
+      (!isStreaming && liveHtmlIndex > liveLessonIndex));
   const shouldPreferHtml = shouldUsePersistedAsActiveSource
     ? Boolean(latestHtml)
-    : Boolean(latestHtml) &&
-      (lessonConfirmed || (!isStreaming && liveHtmlIndex > liveLessonIndex));
+    : hasLiveHtmlPriority;
   const activeArtifact = shouldPreferHtml ? latestHtml : latestLesson;
 
   return {
@@ -266,7 +253,6 @@ export function buildArtifactLifecycle(
     ),
     htmlPreviewVersionId: shouldPreferHtml ? latestReadyHtml?.id : undefined,
     lessonPlan: latestLesson?.lessonPlan,
-    screenPlan,
     status: activeArtifact?.status ?? (isStreaming ? "streaming" : "idle"),
     stage: shouldPreferHtml ? "html" : "lesson",
     activeArtifact,

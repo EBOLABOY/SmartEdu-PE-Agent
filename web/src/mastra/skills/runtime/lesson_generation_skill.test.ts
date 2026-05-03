@@ -384,7 +384,7 @@ description=优秀
     );
   });
 
-  it("server html generation creates one single-page document from the full storyboard", async () => {
+  it("server html generation requests and streams a multi-slide document", async () => {
     vi.mocked(streamText).mockReturnValueOnce({
       text: Promise.resolve(
         `<!DOCTYPE html>
@@ -395,12 +395,9 @@ description=优秀
   <style>body{margin:0;overflow:hidden;background:#0f172a;color:#fff}</style>
 </head>
 <body>
-  <main data-html-screen-document="single-page">
-    <h1>篮球行进间运球</h1>
-    <div>首页封面</div>
-    <div>热身任务</div>
-    <div>比赛挑战</div>
-  </main>
+  <section class="slide" data-slide-kind="cover"><h1>篮球行进间运球</h1><button class="start-button">开始</button></section>
+  <section class="slide" data-slide-kind="warmup" data-duration="300"><h2>热身任务</h2></section>
+  <section class="slide" data-slide-kind="competition" data-duration="480"><h2>比赛挑战</h2></section>
 </body>
 </html>`,
       ),
@@ -428,12 +425,13 @@ description=优秀
     expect(generateText).toHaveBeenCalledTimes(0);
     expect(streamText).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0].messages)).toContain("已确认课时计划第九部分 JSON");
+    expect(JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0].messages)).toContain("<section class=\\\"slide\\\">");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("严禁生成单页");
     expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain('data-html-screen-document="single-page"');
-    expect(html).toContain("首页封面");
+    expect(html).toContain('<section class="slide" data-slide-kind="cover"');
     expect(html).toContain("热身任务");
     expect(html).toContain("比赛挑战");
-    expect(html).not.toContain('<section class="slide"');
+    expect(html).not.toContain('data-html-screen-document="single-page"');
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("data-start");
     expect(html).not.toContain("cover-shell");

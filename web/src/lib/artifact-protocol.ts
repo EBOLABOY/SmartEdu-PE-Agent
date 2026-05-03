@@ -73,10 +73,21 @@ export function getMessageReasoningText(message: Pick<UIMessage, "parts">) {
     .join("\n\n");
 }
 
+function isSmartEduArtifactDataPart(
+  part: UIMessage["parts"][number],
+): part is Extract<SmartEduUIMessage["parts"][number], { type: "data-artifact" }> {
+  return isDataUIPart(part) && part.type === "data-artifact";
+}
+
+function isSmartEduTraceDataPart(
+  part: UIMessage["parts"][number],
+): part is Extract<SmartEduUIMessage["parts"][number], { type: "data-trace" }> {
+  return isDataUIPart(part) && part.type === "data-trace";
+}
+
 export function getStructuredArtifactPart(message: UIMessage): StructuredArtifactData | undefined {
   const artifactParts = message.parts.filter(
-    (part): part is Extract<SmartEduUIMessage["parts"][number], { type: "data-artifact" }> =>
-      isDataUIPart(part) && part.type === "data-artifact",
+    isSmartEduArtifactDataPart,
   );
 
   const candidate = artifactParts.at(-1)?.data;
@@ -87,8 +98,7 @@ export function getStructuredArtifactPart(message: UIMessage): StructuredArtifac
 
 export function getStructuredTracePart(message: UIMessage): WorkflowTraceData | undefined {
   const traceParts = message.parts.filter(
-    (part): part is Extract<SmartEduUIMessage["parts"][number], { type: "data-trace" }> =>
-      isDataUIPart(part) && part.type === "data-trace",
+    isSmartEduTraceDataPart,
   );
 
   return traceParts.at(-1)?.data;

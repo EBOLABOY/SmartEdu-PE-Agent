@@ -17,8 +17,6 @@ export {
   runLessonGenerationSkill,
   enrichLessonPlanWithDiagramAssets,
   type LessonDiagramGenerationResult,
-  enrichHtmlScreenPlanWithVisualAssets,
-  type HtmlScreenVisualAssetResult,
   runLessonGenerationWithPostProcess,
   runStandardsRetrievalSkill,
   runTextbookRetrievalSkill,

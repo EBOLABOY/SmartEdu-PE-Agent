@@ -346,7 +346,7 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("html 纯文本整文档会直接抽取 htmlPages 并生成 artifact", async () => {
+  it("html 纯文本整文档会直接抽取多页 htmlPages 并生成 artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -364,7 +364,7 @@ describe("structured authoring stream adapter", () => {
         {
           type: "text-delta",
           id: "html-1",
-          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">普通页面</section></body></html>",
+          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">首页</section><section class=\"slide\">普通页面</section></body></html>",
         },
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
@@ -384,6 +384,10 @@ describe("structured authoring stream adapter", () => {
       htmlPages: [
         expect.objectContaining({
           pageIndex: 0,
+          sectionHtml: expect.stringContaining("首页"),
+        }),
+        expect.objectContaining({
+          pageIndex: 1,
           sectionHtml: expect.stringContaining("普通页面"),
         }),
       ],
@@ -398,7 +402,138 @@ describe("structured authoring stream adapter", () => {
     );
   });
 
-  it("html 纯文本流会在结束时封装为 ready artifact", async () => {
+  it("html 纯文本整文档只有单个 slide 时会拒绝保存 ready artifact", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      generationPlan: {
+        ...baseWorkflow.generationPlan,
+        mode: "html",
+        assistantTextPolicy: "suppress-html-text",
+      },
+    } as LessonWorkflowOutput;
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "html",
+      originalMessages: [],
+      requestId: "request-html-single-slide-rejected",
+      workflow,
+      stream: createChunkStream([
+        {
+          type: "text-delta",
+          id: "html-1",
+          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">只有首页</section></body></html>",
+        },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+
+    expect(chunks.some((chunk) => getArtifactData(chunk)?.status === "ready")).toBe(false);
+    expect(chunks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "error",
+          errorText: expect.stringContaining("至少 2 个"),
+        }),
+      ]),
+    );
+  });
+
+  it("html text-delta 到达时会同步输出包含 htmlPages 的 streaming artifact", async () => {
+    const workflow = {
+      ...baseWorkflow,
+      generationPlan: {
+        ...baseWorkflow.generationPlan,
+        mode: "html",
+        assistantTextPolicy: "suppress-html-text",
+      },
+    } as LessonWorkflowOutput;
+    const firstDelta = "<!DOCTYPE html><html lang=\"zh-CN\"><head><title>生成中</title></head><body>";
+    const secondDelta =
+      "<section class=\"slide\" data-slide-kind=\"cover\"><h1>武术五步拳</h1></section><section class=\"slide\" data-slide-kind=\"summary\"><h2>课堂小结</h2></section></body></html>";
+    const stream = createStructuredAuthoringStreamAdapter({
+      mode: "html",
+      originalMessages: [],
+      requestId: "request-html-streaming-artifact",
+      workflow,
+      stream: createChunkStream([
+        {
+          type: "text-delta",
+          id: "html-1",
+          delta: firstDelta,
+        },
+        {
+          type: "text-delta",
+          id: "html-1",
+          delta: secondDelta,
+        },
+        { type: "finish", finishReason: "stop" },
+      ] as UIMessageChunk[]),
+    });
+
+    const chunks = await readAll(stream);
+    const streamingArtifacts = chunks
+      .filter((chunk) => chunk.type === "data-artifact")
+      .map(getArtifactData)
+      .filter((artifact) => artifact?.status === "streaming");
+
+    expect(streamingArtifacts.length).toBeGreaterThanOrEqual(2);
+    expect(streamingArtifacts[0]).toMatchObject({
+      content: firstDelta,
+      contentType: "html",
+      isComplete: false,
+      status: "streaming",
+      htmlPages: [
+        expect.objectContaining({
+          pageIndex: 0,
+          pageRole: "singlePage",
+        }),
+      ],
+    });
+    const latestStreamingArtifact = streamingArtifacts.at(-1);
+
+    if (latestStreamingArtifact?.stage !== "html") {
+      throw new Error("Expected latest streaming artifact to be HTML.");
+    }
+
+    expect(latestStreamingArtifact).toMatchObject({
+      content: `${firstDelta}${secondDelta}`,
+    });
+    expect(latestStreamingArtifact?.htmlPages[0]).toMatchObject({
+      pageTitle: "武术五步拳",
+      sectionHtml: expect.stringContaining("武术五步拳"),
+    });
+    expect(latestStreamingArtifact?.htmlPages[1]).toMatchObject({
+      pageTitle: "课堂小结",
+      sectionHtml: expect.stringContaining("课堂小结"),
+    });
+    expect(
+      chunks
+        .map(getTraceData)
+        .some((trace) =>
+          trace?.trace.some(
+            (entry) =>
+              entry.step === "stream-html-draft" &&
+              entry.status === "running" &&
+              entry.detail.includes("已同步 2 次源码更新"),
+          ),
+        ),
+    ).toBe(true);
+    expect(
+      chunks
+        .map(getTraceData)
+        .some((trace) =>
+          trace?.trace.some(
+            (entry) =>
+              entry.step === "stream-html-draft" &&
+              entry.status === "success" &&
+              entry.detail.includes("共同步 2 次源码更新"),
+          ),
+        ),
+    ).toBe(true);
+  });
+
+  it("html 纯文本流会在结束时封装为多页 ready artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -421,7 +556,7 @@ describe("structured authoring stream adapter", () => {
         {
           type: "text-delta",
           id: "html-1",
-          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">课堂</section></body></html>",
+          delta: "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\">首页</section><section class=\"slide\">课堂</section></body></html>",
         },
         { type: "finish", finishReason: "stop" },
       ] as UIMessageChunk[]),
@@ -445,7 +580,8 @@ describe("structured authoring stream adapter", () => {
       throw new Error("Expected final HTML artifact.");
     }
 
-    expect(finalArtifact.htmlPages[0]?.sectionHtml).toContain("课堂");
+    expect(finalArtifact.htmlPages).toHaveLength(2);
+    expect(finalArtifact.htmlPages[1]?.sectionHtml).toContain("课堂");
   });
 
   it("html 上游 artifact 流会被原样透传并作为最终结果持久化，不再由 text-delta 重复合成", async () => {
@@ -457,7 +593,7 @@ describe("structured authoring stream adapter", () => {
         assistantTextPolicy: "suppress-html-text",
       },
     } as LessonWorkflowOutput;
-    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section>上游最终大屏</section></body></html>";
+    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\" data-slide-kind=\"cover\"><h1>上游最终大屏</h1></section><section class=\"slide\" data-slide-kind=\"summary\"><h2>总结页</h2></section></body></html>";
     const upstreamArtifact: StructuredArtifactData = {
       protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
       stage: "html",
@@ -469,6 +605,12 @@ describe("structured authoring stream adapter", () => {
           pageRole: "cover",
           pageTitle: "上游最终大屏",
           sectionHtml: '<section class="slide cover-slide active" data-slide-kind="cover"><h1>上游最终大屏</h1></section>',
+        },
+        {
+          pageIndex: 1,
+          pageRole: "summary",
+          pageTitle: "总结页",
+          sectionHtml: '<section class="slide summary-slide" data-slide-kind="summary"><h2>总结页</h2></section>',
         },
       ],
       isComplete: true,
@@ -488,11 +630,11 @@ describe("structured authoring stream adapter", () => {
       requestId: "request-html-upstream-artifact",
       workflow,
       stream: createChunkStream([
-        { type: "data-artifact", id: "lesson-authoring-artifact-html", data: upstreamArtifact } as UIMessageChunk,
-        { type: "text-delta", id: "html-1", delta: html },
-        { type: "finish", finishReason: "stop" },
-      ]),
-    });
+      { type: "data-artifact", id: "lesson-authoring-artifact-html", data: upstreamArtifact } as UIMessageChunk,
+      { type: "text-delta", id: "html-1", delta: html },
+      { type: "finish", finishReason: "stop" },
+    ]),
+  });
 
     const chunks = await readAll(stream);
     const artifacts = chunks
@@ -510,12 +652,15 @@ describe("structured authoring stream adapter", () => {
     expect(persistence.saveArtifactVersion).toHaveBeenCalledWith(
       expect.objectContaining({
         artifact: expect.objectContaining({
-          content: html,
+          content: expect.stringContaining(html.replace("</body></html>", "")),
           contentType: "html",
           isComplete: true,
           status: "ready",
         }),
       }),
+    );
+    expect(vi.mocked(persistence.saveArtifactVersion).mock.calls[0]?.[0].artifact.content).toContain(
+      "data-screen-engine",
     );
   });
 
@@ -528,7 +673,7 @@ describe("structured authoring stream adapter", () => {
         assistantTextPolicy: "suppress-html-text",
       },
     } as LessonWorkflowOutput;
-    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section>第 1 页</section></body></html>";
+    const html = "<!DOCTYPE html><html lang=\"zh-CN\"><head></head><body><section class=\"slide\" data-slide-kind=\"cover\"><h1>第 1 页</h1></section><section class=\"slide\" data-slide-kind=\"summary\"><h2>总结页</h2></section></body></html>";
     const upstreamArtifact: StructuredArtifactData = {
       protocolVersion: STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
       stage: "html",
@@ -540,6 +685,12 @@ describe("structured authoring stream adapter", () => {
           pageRole: "cover",
           pageTitle: "第 1 页",
           sectionHtml: '<section class="slide cover-slide active" data-slide-kind="cover"><h1>第 1 页</h1></section>',
+        },
+        {
+          pageIndex: 1,
+          pageRole: "summary",
+          pageTitle: "总结页",
+          sectionHtml: '<section class="slide summary-slide" data-slide-kind="summary"><h2>总结页</h2></section>',
         },
       ],
       isComplete: true,
@@ -560,15 +711,15 @@ describe("structured authoring stream adapter", () => {
           type: "tool-input-start",
           toolCallId: "request-html-document-1",
           toolName: "generateHtmlScreenDocument",
-          title: "生成单页 HTML",
+          title: "生成多页 HTML",
         },
         {
           type: "tool-input-available",
           toolCallId: "request-html-document-1",
           toolName: "generateHtmlScreenDocument",
-          title: "生成单页 HTML",
+          title: "生成多页 HTML",
           input: {
-            documentMode: "single-page",
+            documentMode: "multi-page",
             title: "首页",
           },
         },
@@ -578,7 +729,7 @@ describe("structured authoring stream adapter", () => {
           output: {
             title: "首页",
             characters: 1280,
-            documentMode: "single-page",
+            documentMode: "multi-page",
           },
         },
         { type: "data-artifact", id: "lesson-authoring-artifact-html", data: upstreamArtifact },

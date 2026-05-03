@@ -42,12 +42,22 @@ function NarrativeParagraphs({ lines }: { lines: string[] }) {
   );
 }
 
+function parseInlineMarkup(text: string) {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} className="competition-print-teaching-content-heading">{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 function CompactLines({ lines }: { lines: string[] }) {
   return (
     <>
       {lines.map((line, index) => (
         <p className="competition-print-compact-line" key={`${line}-${index}`}>
-          {displayLessonText(line)}
+          {parseInlineMarkup(displayLessonText(line))}
         </p>
       ))}
     </>

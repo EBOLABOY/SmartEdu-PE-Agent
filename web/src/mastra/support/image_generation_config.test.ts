@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { HtmlScreenPlan } from "@/lib/html-screen-plan-contract";
 
-import { enrichHtmlScreenPlanWithVisualAssets } from "../skills/runtime/html_screen_visual_asset_skill";
 import { getImageGenerationConfig } from "./image_generation_config";
 import { enrichLessonPlanWithDiagramAssets } from "../skills/runtime/lesson_diagram_generation_skill";
 
@@ -76,33 +74,6 @@ describe("image generation config", () => {
       baseUrl: "https://image.example/v1",
       model: "gpt-image-1",
     });
-  });
-
-  it("does not use embedding credentials for HTML screen visual assets", async () => {
-    process.env.AI_EMBEDDING_BASE_URL = "https://embedding.example/v1";
-    process.env.AI_EMBEDDING_API_KEY = "embedding-key";
-    process.env.AI_IMAGE_MODEL = "gpt-image-1";
-    const screenPlan: HtmlScreenPlan = {
-      visualSystem: "test visual system",
-      sections: [
-        {
-          imagePrompt: "生成一张跳跃动作示意图。",
-          pagePrompt: "生成页面。",
-          title: "跳跃学练",
-          visualMode: "image",
-        },
-      ],
-    };
-
-    const result = await enrichHtmlScreenPlanWithVisualAssets({
-      projectId: "project-1",
-      requestId: "request-1",
-      screenPlan,
-    });
-
-    expect(result.generatedCount).toBe(0);
-    expect(result.skippedReason).toContain("AI_IMAGE_BASE_URL");
-    expect(result.skippedReason).not.toContain("AI_EMBEDDING_BASE_URL");
   });
 
   it("does not use embedding credentials for lesson diagram assets", async () => {

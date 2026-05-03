@@ -12,7 +12,6 @@ const textListSchema = z.array(nonEmptyString).default([]);
 const FLOW_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
 const OMITTED_FLOW_SUMMARY_LABELS = new Set(["课堂评价", "课后作业"]);
-const BASIC_PART_REQUIRED_SEGMENTS = ["技术学习", "分组练习", "教学比赛", "体能练习"] as const;
 const LESSON_KEYS = new Set([
   "grade",
   "lessonNo",
@@ -503,56 +502,73 @@ function normalizeEvaluations(draft: LessonPlanProtocolDraft) {
 }
 
 function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRow[] {
-  const rowsByPart = new Map<(typeof FLOW_STRUCTURES)[number], LessonPlanProtocolDraft["flows"][number]>();
+  const results: CompetitionLessonPlanRow[] = [];
 
   draft.flows.forEach((flow, index) => {
-    const part = normalizeFlowPart(flow.part) ?? FLOW_STRUCTURES[index];
+    let structure = normalizeFlowPart(flow.part);
 
-    if (part && !rowsByPart.has(part)) {
-      rowsByPart.set(part, flow);
+    if (!structure) {
+      if (index === 0) {
+        structure = "准备部分";
+      } else if (index === draft.flows.length - 1) {
+        structure = "结束部分";
+      } else {
+        structure = "基本部分";
+      }
     }
-  });
 
-  return FLOW_STRUCTURES.map((structure) => {
-    const flow = rowsByPart.get(structure);
-
-    return {
-      content: requiredText(flow?.content ?? [], `${structure}课堂活动`),
+    results.push({
+      content: requiredText(flow.content ?? [], `${structure}课堂活动`),
       intensity:
-        flow?.intensity ??
+        flow.intensity ||
         (structure === "准备部分" ? "中" : structure === "基本部分" ? "中高" : "低"),
       methods: {
-        students: requiredText(flow?.students ?? [], "按教师要求完成练习，并保持安全距离。"),
-        teacher: requiredText(flow?.teacher ?? [], "讲解示范、巡视指导，并及时提示安全要求。"),
+        students: requiredText(flow.students ?? [], "按教师要求完成练习，并保持安全距离。"),
+        teacher: requiredText(flow.teacher ?? [], "讲解示范、巡视指导，并及时提示安全要求。"),
       },
       organization: requiredText(
-        flow?.organization ?? [],
+        flow.organization ?? [],
         structure === "基本部分" ? "分组轮换练习队形" : "集合队形",
       ),
       structure,
-      time: flow?.time ?? (structure === "准备部分" ? "8分钟" : structure === "基本部分" ? "27分钟" : "5分钟"),
-    };
+      time: flow.time || (structure === "准备部分" ? "8分钟" : structure === "基本部分" ? "27分钟" : "5分钟"),
+    });
   });
-}
 
-function enrichBasicPartSegments(rows: CompetitionLessonPlanRow[]) {
-  return rows.map((row) => {
-    if (row.structure !== "基本部分") {
-      return row;
-    }
+  const hasPart = (part: typeof FLOW_STRUCTURES[number]) => results.some((r) => r.structure === part);
 
-    const contentText = row.content.join("、");
-    const missingSegments = BASIC_PART_REQUIRED_SEGMENTS.filter((segment) => !contentText.includes(segment));
+  if (!hasPart("准备部分")) {
+    results.unshift({
+      content: ["准备部分课堂活动"],
+      intensity: "中",
+      methods: { students: ["遵守要求"], teacher: ["讲解示范"] },
+      organization: ["集合队形"],
+      structure: "准备部分",
+      time: "8分钟",
+    });
+  }
+  if (!hasPart("结束部分")) {
+    results.push({
+      content: ["结束部分课堂活动"],
+      intensity: "低",
+      methods: { students: ["遵守要求"], teacher: ["讲解示范"] },
+      organization: ["集合队形"],
+      structure: "结束部分",
+      time: "5分钟",
+    });
+  }
+  if (!hasPart("基本部分")) {
+    results.splice(1, 0, {
+      content: ["基本部分课堂活动"],
+      intensity: "中高",
+      methods: { students: ["遵守要求"], teacher: ["讲解示范"] },
+      organization: ["分组练习队形"],
+      structure: "基本部分",
+      time: "27分钟",
+    });
+  }
 
-    if (missingSegments.length === 0) {
-      return row;
-    }
-
-    return {
-      ...row,
-      content: [...row.content, missingSegments.join("、")],
-    };
-  });
+  return results;
 }
 
 function splitCompactActivityList(value: string) {
@@ -786,13 +802,12 @@ export function normalizeLessonProtocolDraftToCompetitionLessonPlan(
     throw new LessonPlanProtocolError(diagnostics);
   }
 
-  const sourceRows = normalizeFlows(draft);
-  const rows = enrichBasicPartSegments(sourceRows);
+  const rows = normalizeFlows(draft);
   const title = draft.lesson.title ?? draft.lesson.topic ?? "体育课时计划";
   const topic = draft.lesson.topic ?? title;
   const mainContent = rows.flatMap((row) => row.content);
   const basicRow = rows.find((row) => row.structure === "基本部分") ?? rows[1];
-  const flowSummary = sourceRows.flatMap((row) => summarizeFlowContent(row.content));
+  const flowSummary = rows.flatMap((row) => summarizeFlowContent(row.content));
 
   return competitionLessonPlanSchema.parse({
     evaluation: normalizeEvaluations(draft),

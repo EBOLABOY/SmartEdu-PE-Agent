@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isDataUIPart } from "ai";
 
 import {
   extractArtifactFromMessage,
@@ -14,6 +15,25 @@ import {
 } from "@/lib/lesson-authoring-contract";
 
 describe("artifact-protocol", () => {
+  it("使用 AI SDK v6 原生 data-${name} part 识别结构化数据", () => {
+    const artifactPart: SmartEduUIMessage["parts"][number] = {
+      type: "data-artifact",
+      id: "artifact",
+      data: {
+        protocolVersion: "structured-v1",
+        stage: "lesson",
+        contentType: "lesson-json",
+        content: JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN),
+        isComplete: false,
+        status: "streaming",
+        source: "data-part",
+        updatedAt: new Date().toISOString(),
+      },
+    };
+
+    expect(isDataUIPart(artifactPart)).toBe(true);
+  });
+
   it("chat 请求契约只保留课时计划相关输入，不再接收大屏分镜计划", () => {
     expect(
       chatRequestBodySchema.safeParse({
@@ -27,7 +47,7 @@ describe("artifact-protocol", () => {
         messages: [],
         mode: "html",
         lessonPlan: "## 十、课时计划",
-        screenPlan: { sections: [] },
+        unexpectedStoryboard: { pages: [] },
       }).success,
     ).toBe(false);
   });

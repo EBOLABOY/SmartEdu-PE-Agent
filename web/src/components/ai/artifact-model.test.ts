@@ -302,6 +302,46 @@ describe("artifact-model", () => {
     expect(lifecycle.htmlPreviewVersionId).toBeUndefined();
   });
 
+  it("即使本地确认状态丢失，也会优先展示实时 HTML 源码流", () => {
+    const assistantMessage = {
+      id: "assistant-html-streaming",
+      role: "assistant",
+      parts: [
+        {
+          type: "data-artifact",
+          id: "artifact",
+          data: {
+            protocolVersion: "structured-v1",
+            stage: "html",
+            contentType: "html",
+            content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>实时源码",
+            htmlPages: [
+              {
+                pageIndex: 0,
+                pageRole: "cover",
+                pageTitle: "实时源码",
+                sectionHtml:
+                  '<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>实时源码</h1></main></section>',
+              },
+            ],
+            isComplete: false,
+            status: "streaming",
+            source: "data-part",
+            updatedAt: "2026-04-25T12:06:00.000Z",
+          },
+        },
+      ],
+    } as SmartEduUIMessage;
+
+    const lifecycle = buildArtifactLifecycle([assistantMessage], "streaming", false, []);
+
+    expect(lifecycle.stage).toBe("html");
+    expect(lifecycle.status).toBe("streaming");
+    expect(lifecycle.streamingHtml).toContain("实时源码");
+    expect(lifecycle.isHtmlStreaming).toBe(true);
+    expect(lifecycle.html).toBe("");
+  });
+
   it("会在恢复到包含 html 的历史消息时直接展示互动大屏", () => {
     const historyMessages = [
       {

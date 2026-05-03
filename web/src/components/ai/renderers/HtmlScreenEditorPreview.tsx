@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildHtmlScreenEditorPreviewDocument,
@@ -22,23 +22,20 @@ export default function HtmlScreenEditorPreview({
   selectedPageIndex,
 }: HtmlScreenEditorPreviewProps) {
   const pages = useMemo(
-    () =>
-      [...(htmlPages ?? [])]
-        .sort((left, right) => left.pageIndex - right.pageIndex)
-        .map((page) => ({
-          ...page,
-          previewHtml: buildHtmlScreenEditorPreviewDocument({
-            htmlContent,
-            pageIndex: page.pageIndex,
-            sectionHtml: page.sectionHtml,
-          }),
-        })),
-    [htmlContent, htmlPages],
+    () => [...(htmlPages ?? [])].sort((left, right) => left.pageIndex - right.pageIndex),
+    [htmlPages],
   );
   const activePage =
     pages.find((page) => page.pageIndex === selectedPageIndex) ??
     pages.find((page) => page.pageIndex === pages[0]?.pageIndex) ??
     pages[0];
+  const previewHtml = activePage
+    ? buildHtmlScreenEditorPreviewDocument({
+      htmlContent,
+      pageIndex: activePage.pageIndex,
+      sectionHtml: activePage.sectionHtml,
+    })
+    : htmlContent;
 
   useEffect(() => {
     if (!activePage || !onSelectPage) {
@@ -52,23 +49,54 @@ export default function HtmlScreenEditorPreview({
     });
   }, [activePage, onSelectPage]);
 
-  if (pages.length === 0) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    if (!activePage) return;
+    
+    const updateScale = () => {
+      if (!containerRef.current) return;
+      const { width, height } = containerRef.current.getBoundingClientRect();
+      // 按照标准 1920x1080 分辨率进行安全自适应等比缩放
+      const scaleX = width / 1920;
+      const scaleY = height / 1080;
+      setScale(Math.min(scaleX, scaleY));
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    return () => observer.disconnect();
+  }, [activePage]);
+
+  if (pages.length === 0 && !htmlContent) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-950 text-sm text-white/70">
-        当前大屏缺少可预览内容，无法进入单页编辑视图。
+        当前大屏缺少可预览内容，无法进入展示视图。
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col items-center justify-center bg-muted/25 px-4 py-6 sm:p-8">
-      <div className="relative w-full max-w-[1320px] aspect-video overflow-hidden rounded-[24px] border border-border/70 bg-background shadow-[0_24px_64px_-50px_rgba(15,23,42,0.7)]">
+    <div ref={containerRef} className="flex h-full w-full flex-col items-center justify-center overflow-hidden bg-transparent">
+      <div 
+        style={{ 
+          width: 1920, 
+          height: 1080, 
+          transform: `scale(${scale})`, 
+          transformOrigin: "center" 
+        }} 
+        className="shrink-0 overflow-hidden bg-white shadow-xl ring-1 ring-border/20 sm:rounded-[24px]"
+      >
         <iframe
-          className="absolute inset-0 h-full w-full border-none bg-white"
+          className="h-full w-full border-none"
           loading="lazy"
           sandbox="allow-same-origin allow-scripts"
-          srcDoc={activePage.previewHtml}
-          title="互动大屏单页预览"
+          srcDoc={previewHtml}
+          title={activePage?.pageTitle ? `互动大屏预览：${activePage.pageTitle}` : "互动大屏预览"}
         />
       </div>
     </div>

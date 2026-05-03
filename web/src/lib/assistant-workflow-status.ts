@@ -47,6 +47,7 @@ const CURRENT_STEP_TITLES: Record<string, string> = {
   "server-standards-retrieval": "查找课程标准",
   "server-standards-retrieval-warning": "课程标准提示",
   "agent-stream-started": "开始生成内容",
+  "stream-html-draft": "生成大屏源码",
   "stream-lesson-draft": "生成教案初稿",
   "validate-lesson-output": "检查教案内容",
   "convert-lesson-json-artifact": "整理教案预览",
@@ -163,6 +164,10 @@ export function formatWorkflowTraceDetailForTeacher(entry: WorkflowTraceEntry) {
         : detail;
     case "agent-stream-started":
       return entry.status === "running" ? "正在生成内容，请稍等。" : "内容生成已完成。";
+    case "stream-html-draft":
+      return entry.status === "running"
+        ? "右侧正在同步互动大屏源码。"
+        : "互动大屏源码已同步完成。";
     case "stream-lesson-draft":
       return entry.status === "running"
         ? "右侧正在同步教案初稿。"

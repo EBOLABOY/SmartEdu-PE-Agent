@@ -4,42 +4,56 @@ import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contra
 
 import { performLessonBusinessValidation } from "./lesson_generation_validation";
 
-function createValidLessonPlan() {
+function replacePlaceholders<T>(value: T): T {
+  if (typeof value === "string") {
+    return (value === "XXX" ? "完整文本" : value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => replacePlaceholders(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, childValue]) => [key, replacePlaceholders(childValue)]),
+    ) as T;
+  }
+
+  return value;
+}
+
+function createCompleteLessonPlan() {
   const plan = structuredClone(DEFAULT_COMPETITION_LESSON_PLAN);
+  const completePlan = replacePlaceholders(plan);
 
-  plan.title = "篮球行进间运球";
-  plan.meta.topic = "篮球行进间运球";
-  plan.periodPlan.rows[0]!.content = ["课堂常规、体能唤醒、速度折返"];
-  plan.periodPlan.rows[1]!.content = ["观察示范、伙伴练习、闯关挑战"];
-  plan.periodPlan.rows[2]!.content = ["放松拉伸"];
+  completePlan.periodPlan.rows[0]!.content = ["环节一"];
+  completePlan.periodPlan.rows[1]!.content = ["环节二"];
+  completePlan.periodPlan.rows[2]!.content = ["环节三"];
 
-  return plan;
+  return completePlan;
 }
 
 describe("lesson_generation_validation", () => {
-  it("requires learning, practice, competition, and fitness segments across the whole lesson", () => {
-    const plan = createValidLessonPlan();
-    const incomplete = structuredClone(plan);
+  it("accepts a complete lesson without validating specific teaching content keywords", () => {
+    const plan = createCompleteLessonPlan();
+    const validation = performLessonBusinessValidation(plan);
 
-    incomplete.periodPlan.rows[0]!.content = ["课堂常规、专项热身"];
-    incomplete.periodPlan.rows[1]!.content = ["观察示范、伙伴练习"];
+    expect(validation.isValid).toBe(true);
+  });
 
-    const validation = performLessonBusinessValidation(incomplete);
+  it("still rejects lessons with missing required period structures", () => {
+    const plan = createCompleteLessonPlan();
+    plan.periodPlan.rows = plan.periodPlan.rows.filter((row) => row.structure !== "基本部分");
+
+    const validation = performLessonBusinessValidation(plan);
 
     expect(validation.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: "lesson-core-segments",
-          message: expect.stringContaining("竞赛或展示、体能发展活动"),
+          code: "section-missing",
+          message: expect.stringContaining("基本部分"),
         }),
       ]),
     );
-  });
-
-  it("accepts a lesson that distributes the four required segments across lesson rows", () => {
-    const plan = createValidLessonPlan();
-    const validation = performLessonBusinessValidation(plan);
-
-    expect(validation.issues.map((issue) => issue.code)).not.toContain("lesson-core-segments");
   });
 });

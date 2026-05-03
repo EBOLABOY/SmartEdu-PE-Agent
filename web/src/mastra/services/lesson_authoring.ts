@@ -415,6 +415,7 @@ async function executeLessonAuthoringStream(input: {
         requestId,
         workflow,
         stream: generation.stream,
+        lessonDraftStream: generation.lessonDraftStream,
       }),
     );
     return;

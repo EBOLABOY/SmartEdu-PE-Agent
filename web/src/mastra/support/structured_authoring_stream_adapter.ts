@@ -35,9 +35,11 @@ const DRAFT_TRACE_UPDATE_INTERVAL = 20;
 const TERMINAL_RUNNING_TRACE_STEPS = new Set([
   "agent-stream-started",
   "generate-lesson-diagrams",
+  "stream-html-draft",
   "stream-lesson-draft",
   "validate-lesson-output",
 ]);
+const MIN_READY_HTML_SLIDE_COUNT = 2;
 
 function nowIsoString() {
   return new Date().toISOString();
@@ -226,8 +228,7 @@ function buildLessonJsonArtifactContent(structuredOutput: unknown) {
 
 function shouldForwardAssistantText(mode: GenerationMode, workflow: LessonWorkflowOutput) {
   return (
-    mode === "html" ||
-    (mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text")
+    mode === "lesson" && workflow.generationPlan.assistantTextPolicy === "mirror-json-text"
   );
 }
 
@@ -268,6 +269,134 @@ function readArtifactDataPart(part: UIMessageChunk): StructuredArtifactData | un
   return parsed.success ? parsed.data : undefined;
 }
 
+function buildHtmlDraftArtifact(
+  workflow: LessonWorkflowOutput,
+  rawHtml: string,
+): StructuredArtifactData {
+  const draftHtml = ensureCompleteHtmlDocument(rawHtml);
+
+  return buildArtifactData(workflow, {
+    content: rawHtml,
+    contentType: "html",
+    htmlPages: createHtmlArtifactPages(draftHtml),
+    isComplete: false,
+    status: "streaming",
+  });
+}
+
+function createReadyHtmlPages(htmlContent: string) {
+  return createHtmlArtifactPages(htmlContent, { allowSinglePageFallback: false });
+}
+
+function formatHtmlPageCountError(pageCount: number) {
+  return `互动大屏必须拆分为至少 ${MIN_READY_HTML_SLIDE_COUNT} 个 <section class="slide"> 页面，当前仅识别到 ${pageCount} 个，已拒绝保存单页结果。`;
+}
+
+function countMatches(value: string, pattern: RegExp) {
+  return Array.from(value.matchAll(pattern)).length;
+}
+
+function stripHtmlComments(value: string) {
+  return value.replace(/<!--[\s\S]*?-->/g, "");
+}
+
+function hasCompleteHtmlDocumentShell(rawHtml: string) {
+  return (
+    /<!doctype\s+html\b/i.test(rawHtml) &&
+    /<html\b[\s\S]*<\/html>\s*$/i.test(rawHtml) &&
+    /<head\b[\s\S]*<\/head>/i.test(rawHtml) &&
+    /<body\b[\s\S]*<\/body>/i.test(rawHtml)
+  );
+}
+
+function findNestedSlidePageIndex(sectionHtml: string) {
+  const nestedMatches = Array.from(sectionHtml.matchAll(/<section\b(?=[^>]*\bclass\s*=\s*(?:"[^"]*\bslide\b[^"]*"|'[^']*\bslide\b[^']*'))/gi));
+
+  return nestedMatches.length > 1;
+}
+
+function validateReadyHtmlDocument(input: {
+  htmlPages: HtmlStructuredArtifactData["htmlPages"];
+  rawHtml: string;
+}) {
+  const html = stripHtmlComments(input.rawHtml.trim());
+  const errors: string[] = [];
+
+  if (!hasCompleteHtmlDocumentShell(html)) {
+    errors.push("HTML 文档必须包含完整的 <!DOCTYPE html>、<html>、<head>、<body>、</body>、</html> 结构，当前结果疑似被截断。");
+  }
+
+  const slideStartCount = countMatches(
+    html,
+    /<section\b(?=[^>]*\bclass\s*=\s*(?:"[^"]*\bslide\b[^"]*"|'[^']*\bslide\b[^']*'))/gi,
+  );
+  const sectionEndCount = countMatches(html, /<\/section>/gi);
+
+  if (slideStartCount !== input.htmlPages.length) {
+    errors.push(`检测到 ${slideStartCount} 个 slide 起始标签，但只解析出 ${input.htmlPages.length} 个完整页面，请检查是否存在嵌套或未闭合的 <section>。`);
+  }
+
+  if (sectionEndCount < slideStartCount) {
+    errors.push(`检测到 ${slideStartCount} 个 slide 起始标签，但只有 ${sectionEndCount} 个 </section> 结束标签，当前结果疑似未生成完成。`);
+  }
+
+  const nestedPageIndex = input.htmlPages.findIndex((page) => findNestedSlidePageIndex(page.sectionHtml));
+
+  if (nestedPageIndex >= 0) {
+    errors.push(`第 ${nestedPageIndex + 1} 页内部嵌套了另一个 class="slide" 的 section，请保持每页 slide 为同级兄弟节点。`);
+  }
+
+  return errors;
+}
+
+type ReadyHtmlArtifactValidationResult =
+  | {
+      artifact: StructuredArtifactData;
+      ok: true;
+    }
+  | {
+      errorText: string;
+      ok: false;
+    };
+
+function validateAndCreateReadyHtmlArtifact(input: {
+  completedHtml: string;
+  rawHtml: string;
+  workflow: LessonWorkflowOutput;
+}): ReadyHtmlArtifactValidationResult {
+  const htmlPages = createReadyHtmlPages(input.completedHtml);
+
+  if (htmlPages.length < MIN_READY_HTML_SLIDE_COUNT) {
+    return {
+      ok: false,
+      errorText: formatHtmlPageCountError(htmlPages.length),
+    };
+  }
+
+  const validationErrors = validateReadyHtmlDocument({
+    htmlPages,
+    rawHtml: input.rawHtml,
+  });
+
+  if (validationErrors.length > 0) {
+    return {
+      ok: false,
+      errorText: validationErrors.join("；"),
+    };
+  }
+
+  return {
+    ok: true,
+    artifact: buildArtifactData(input.workflow, {
+      content: input.completedHtml,
+      contentType: "html",
+      htmlPages,
+      isComplete: true,
+      status: "ready",
+    }),
+  };
+}
+
 export function createStructuredAuthoringStreamAdapter({
   allowTextOnlyResponse = false,
   finalLessonPlanPromise,
@@ -306,6 +435,7 @@ export function createStructuredAuthoringStreamAdapter({
       let structuredLessonOutput: unknown;
       let hasStructuredActivity = false;
       let lessonDraftChunkCount = 0;
+      let htmlDraftChunkCount = 0;
       let latestUpstreamHtmlArtifact: StructuredArtifactData | undefined;
       const forwardAssistantText = allowTextOnlyResponse || shouldForwardAssistantText(mode, workflow);
       const reader = stream.getReader();
@@ -374,6 +504,15 @@ export function createStructuredAuthoringStreamAdapter({
             continue;
           }
 
+          if (entry.step === "stream-html-draft") {
+            pushOrReplaceTraceEntry(
+              "stream-html-draft",
+              "success",
+              `互动大屏源码流已完成，共同步 ${htmlDraftChunkCount} 次源码更新。`,
+            );
+            continue;
+          }
+
           if (entry.step === "validate-lesson-output") {
             pushOrReplaceTraceEntry(
               "validate-lesson-output",
@@ -435,6 +574,9 @@ export function createStructuredAuthoringStreamAdapter({
 
       const shouldWriteDraftTrace = () =>
         lessonDraftChunkCount <= 2 || lessonDraftChunkCount % DRAFT_TRACE_UPDATE_INTERVAL === 0;
+
+      const shouldWriteHtmlDraftTrace = () =>
+        htmlDraftChunkCount <= 2 || htmlDraftChunkCount % 10 === 0;
 
       const writeLessonDraftArtifact = (partial?: DeepPartial<CompetitionLessonPlan>) => {
         latestLessonDraft = buildCompetitionLessonDraft(partial, latestLessonDraft);
@@ -638,13 +780,25 @@ export function createStructuredAuthoringStreamAdapter({
 
       const finalizeHtmlArtifact = async () => {
         if (latestUpstreamHtmlArtifact?.isComplete && latestUpstreamHtmlArtifact.status === "ready") {
+          const completedHtml = ensureCompleteHtmlDocument(latestUpstreamHtmlArtifact.content);
+          const readyArtifactResult = validateAndCreateReadyHtmlArtifact({
+            completedHtml,
+            rawHtml: latestUpstreamHtmlArtifact.content,
+            workflow,
+          });
+
+          if (!readyArtifactResult.ok) {
+            writeStreamError("validate-html-pages", readyArtifactResult.errorText);
+            return false;
+          }
+
           completeRunningTraceStep(
             "agent-stream-started",
             "互动大屏 HTML 模型生成流已结束。",
           );
           await persistArtifact({
-            ...latestUpstreamHtmlArtifact,
-            content: ensureCompleteHtmlDocument(latestUpstreamHtmlArtifact.content),
+            ...readyArtifactResult.artifact,
+            title: latestUpstreamHtmlArtifact.title,
           });
           return true;
         }
@@ -653,25 +807,24 @@ export function createStructuredAuthoringStreamAdapter({
 
         if (trimmedRawText) {
           const completedHtml = ensureCompleteHtmlDocument(trimmedRawText);
-          const htmlPages = createHtmlArtifactPages(completedHtml);
+          const readyArtifactResult = validateAndCreateReadyHtmlArtifact({
+            completedHtml,
+            rawHtml: trimmedRawText,
+            workflow,
+          });
 
-          if (htmlPages.length > 0) {
-            const artifact = buildArtifactData(workflow, {
-              content: completedHtml,
-              contentType: "html",
-              htmlPages,
-              isComplete: true,
-              status: "ready",
-            });
-
-            completeRunningTraceStep(
-              "agent-stream-started",
-              "互动大屏 HTML 模型生成流已结束。",
-            );
-            writeArtifact(artifact);
-            await persistArtifact(artifact);
-            return true;
+          if (!readyArtifactResult.ok) {
+            writeStreamError("validate-html-pages", readyArtifactResult.errorText);
+            return false;
           }
+
+          completeRunningTraceStep(
+            "agent-stream-started",
+            "互动大屏 HTML 模型生成流已结束。",
+          );
+          writeArtifact(readyArtifactResult.artifact);
+          await persistArtifact(readyArtifactResult.artifact);
+          return true;
         }
 
         if (allowTextOnlyResponse && trimmedRawText) {
@@ -680,7 +833,7 @@ export function createStructuredAuthoringStreamAdapter({
 
         writeStreamError(
           "extract-html-document",
-          "当前 HTML 结果缺少结构化页数据 htmlPages，已拒绝写入。",
+          "当前 HTML 结果缺少可识别的 <section class=\"slide\"> 分页结构，已拒绝写入。",
         );
         return false;
       };
@@ -789,6 +942,20 @@ export function createStructuredAuthoringStreamAdapter({
 
               if (mode === "lesson") {
                 break;
+              }
+
+              if (mode === "html" && !latestUpstreamHtmlArtifact) {
+                htmlDraftChunkCount += 1;
+                // 每 10 次 text-delta 发送一次更新，或在前几次立即更新，避免包过多影响性能
+                if (shouldWriteHtmlDraftTrace()) {
+                  pushOrReplaceTraceEntry(
+                    "stream-html-draft",
+                    "running",
+                    `正在流式生成互动大屏源码，已同步 ${htmlDraftChunkCount} 次源码更新。`,
+                  );
+                  writeArtifact(buildHtmlDraftArtifact(workflow, rawText));
+                  writeTrace("generation");
+                }
               }
               break;
             }
