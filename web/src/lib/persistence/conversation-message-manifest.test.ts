@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 import {
   buildConversationMessagesKey,

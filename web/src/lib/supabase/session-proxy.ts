@@ -1,3 +1,11 @@
+/**
+ * @file Supabase Middleware 会话代理
+ *
+ * 在 Next.js Middleware 中刷新 Supabase Auth 会话并同步 cookie。
+ * 用于确保每个请求都携带有效的认证状态。
+ *
+ * 依赖：database.types.ts（Database 类型）、env.ts（配置读取）
+ */
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 

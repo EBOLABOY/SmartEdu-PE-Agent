@@ -2,7 +2,7 @@
 
 import { SmartEduMessageParts } from "@/components/ai/SmartEduMessageParts";
 import { Message, MessageContent } from "@/components/ai-elements/message";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import { cn } from "@/lib/utils";
 
 export function SmartEduChatMessage({ message }: { message: SmartEduUIMessage }) {

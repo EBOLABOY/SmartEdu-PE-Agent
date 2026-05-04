@@ -1,7 +1,18 @@
+/**
+ * @module lesson-authoring-contract
+ * @description 面向 AI 工作流的接口层。定义 authoring 流程的输入/输出类型：
+ *              - 用户上下文（PeTeacherContext）、意图采集（LessonIntake*）
+ *              - 工作流追踪（WorkflowTrace*）、结构化产物（StructuredArtifact*）
+ *              - 持久化与 API 请求/响应类型
+ *              本模块按需 import competition-lesson-contract 的 schema（如
+ *              competitionLessonPlanSchema），但不再 re-export，消费者应直接从
+ *              各原始模块导入业务/协议类型。
+ */
 import type { UIMessage } from "ai";
 import { z } from "zod";
 
-import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
+// ---- 业务数据类型（来自 competition-lesson-contract）----
+import { competitionLessonPlanSchema } from "@/lib/lesson/contract";
 
 export const STRUCTURED_ARTIFACT_PROTOCOL_VERSION = "structured-v1" as const;
 
@@ -251,7 +262,7 @@ export const structuredArtifactDataSchema = z.discriminatedUnion("stage", [
   structuredArtifactDataBaseSchema.extend({
     stage: z.literal("html"),
     contentType: z.literal("html"),
-    htmlPages: htmlArtifactPagesSchema,
+    htmlPages: htmlArtifactPagesSchema.optional(),
   }).strict(),
 ]);
 
@@ -305,7 +316,7 @@ export const persistedArtifactVersionSchema = z.discriminatedUnion("stage", [
   persistedArtifactVersionBaseSchema.extend({
     stage: z.literal("html"),
     contentType: z.literal("html"),
-    htmlPages: htmlArtifactPagesSchema,
+    htmlPages: htmlArtifactPagesSchema.optional(),
   }).strict(),
 ]);
 
@@ -501,24 +512,12 @@ export const smartEduDataSchemas = {
   trace: workflowTraceDataSchema,
 } as const;
 
-export const htmlFocusTargetSchema = z
-  .object({
-    currentHtml: z.string().max(1_000_000),
-    pageIndex: z.number().int().nonnegative(),
-    pageRole: z.string().trim().min(1).max(64).optional(),
-    pageTitle: z.string().trim().min(1).max(160).optional(),
-  })
-  .strict();
-
-export type HtmlFocusTarget = z.infer<typeof htmlFocusTargetSchema>;
-
 export const chatRequestBodySchema = z
   .object({
     messages: z.array(z.unknown()).max(60),
     projectId: projectIdSchema.optional(),
     context: peTeacherContextSchema.optional(),
     mode: generationModeSchema.optional(),
-    htmlFocus: htmlFocusTargetSchema.optional(),
     lessonPlan: z.string().max(1_000_000).optional(),
     market: standardsMarketSchema.optional(),
   })

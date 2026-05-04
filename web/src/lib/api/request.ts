@@ -1,3 +1,8 @@
+/**
+ * @module request
+ * API 请求的 JSON 读写与大小限制。提供请求体读取、
+ * 字节限制检查和错误响应构建，保护 API 免受超大请求攻击。
+ */
 export class JsonRequestError extends Error {
   constructor(
     message: string,

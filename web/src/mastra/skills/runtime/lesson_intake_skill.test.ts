@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 import { runLessonIntakeSkill } from "./lesson_intake_skill";
 

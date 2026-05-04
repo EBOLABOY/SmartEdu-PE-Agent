@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
 import {
   CompetitionLessonPatchError,
   applyCompetitionLessonPatch,
   applySemanticLessonUpdates,
   applySemanticLessonUpdatesWithTrace,
-} from "@/lib/competition-lesson-patch";
+} from "@/lib/lesson/patch";
 
 describe("competition-lesson-patch", () => {
   it("按 JSON Pointer 替换单个课时计划字段且不修改原对象", () => {

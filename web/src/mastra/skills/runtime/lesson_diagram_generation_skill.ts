@@ -7,7 +7,7 @@ import {
   type CompetitionLessonDiagramAsset,
   type CompetitionLessonPlan,
   type CompetitionLessonPlanRow,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 import {
   buildArtifactImageObjectKey,
   buildArtifactImageProxyUrl,
@@ -96,7 +96,7 @@ function buildPanelPrompt(input: {
       ...input.lessonPlan.venueEquipment.venue,
       ...input.lessonPlan.venueEquipment.equipment,
     ])}`,
-    input.focusContent ? "请只表现本图重点内容对应的组织队形、移动路线和安全边界，不要把本阶段全部内容挤在同一张图里。" : null,
+    input.focusContent ? "请聚焦本图重点内容对应的组织队形、移动路线和安全边界，保留本阶段最关键的图解信息。" : null,
   ].filter(Boolean).join("\n");
 
   return prompt;
@@ -148,10 +148,10 @@ function buildNineGridPrompt(input: {
 }) {
   return [
     "生成一张 3x3 九宫格体育课教学组织站位示意图。",
-    "每个宫格必须是俯视平面示意图，不要写大段文字，只允许清晰编号 1-9 和极短中文标题。",
+    "每个宫格必须是俯视平面示意图，使用清晰编号 1-9 和极短中文标题。",
     "统一图例：教师用橙色圆点并标注 T，学生用蓝色小圆点，器材用绿色方块，移动路线用红色箭头，安全边界用灰色虚线。",
     "每个宫格必须有明确边框，便于后续按 3x3 自动切图。",
-    "画风要求：简洁、平面、白底、教学图解风格，不能生成真实人脸或照片风格。",
+    "画风要求：简洁、平面、白底、教学图解风格，人物使用抽象圆点或简化符号。",
     `课题：${input.lessonPlan.meta.topic}`,
     `学生人数：${input.lessonPlan.meta.studentCount}`,
     `场地器材：${compactLines([

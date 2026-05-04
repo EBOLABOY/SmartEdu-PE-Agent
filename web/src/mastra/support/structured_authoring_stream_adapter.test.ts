@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
   competitionLessonPlanSchema,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   type StructuredArtifactData,
   type WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
@@ -346,7 +346,7 @@ describe("structured authoring stream adapter", () => {
     });
   });
 
-  it("html 纯文本整文档会直接抽取多页 htmlPages 并生成 artifact", async () => {
+  it("html 纯文本整文档会直接生成完整 HTML artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -381,17 +381,8 @@ describe("structured authoring stream adapter", () => {
       contentType: "html",
       status: "ready",
       isComplete: true,
-      htmlPages: [
-        expect.objectContaining({
-          pageIndex: 0,
-          sectionHtml: expect.stringContaining("首页"),
-        }),
-        expect.objectContaining({
-          pageIndex: 1,
-          sectionHtml: expect.stringContaining("普通页面"),
-        }),
-      ],
     });
+    expect(finalArtifact?.content).toContain("普通页面");
     expect(chunks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -402,7 +393,7 @@ describe("structured authoring stream adapter", () => {
     );
   });
 
-  it("html 纯文本整文档只有单个 slide 时会拒绝保存 ready artifact", async () => {
+  it("html 纯文本整文档不再因单个 iframe 画布而拒绝保存 ready artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -428,18 +419,11 @@ describe("structured authoring stream adapter", () => {
 
     const chunks = await readAll(stream);
 
-    expect(chunks.some((chunk) => getArtifactData(chunk)?.status === "ready")).toBe(false);
-    expect(chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "error",
-          errorText: expect.stringContaining("至少 2 个"),
-        }),
-      ]),
-    );
+    expect(chunks.some((chunk) => getArtifactData(chunk)?.status === "ready")).toBe(true);
+    expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
   });
 
-  it("html text-delta 到达时会同步输出包含 htmlPages 的 streaming artifact", async () => {
+  it("html text-delta 到达时会同步输出完整 HTML streaming artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -479,16 +463,10 @@ describe("structured authoring stream adapter", () => {
 
     expect(streamingArtifacts.length).toBeGreaterThanOrEqual(2);
     expect(streamingArtifacts[0]).toMatchObject({
-      content: firstDelta,
+      content: expect.stringContaining(firstDelta),
       contentType: "html",
       isComplete: false,
       status: "streaming",
-      htmlPages: [
-        expect.objectContaining({
-          pageIndex: 0,
-          pageRole: "singlePage",
-        }),
-      ],
     });
     const latestStreamingArtifact = streamingArtifacts.at(-1);
 
@@ -496,17 +474,10 @@ describe("structured authoring stream adapter", () => {
       throw new Error("Expected latest streaming artifact to be HTML.");
     }
 
-    expect(latestStreamingArtifact).toMatchObject({
-      content: `${firstDelta}${secondDelta}`,
-    });
-    expect(latestStreamingArtifact?.htmlPages[0]).toMatchObject({
-      pageTitle: "武术五步拳",
-      sectionHtml: expect.stringContaining("武术五步拳"),
-    });
-    expect(latestStreamingArtifact?.htmlPages[1]).toMatchObject({
-      pageTitle: "课堂小结",
-      sectionHtml: expect.stringContaining("课堂小结"),
-    });
+    expect(latestStreamingArtifact.content).toContain(firstDelta);
+    expect(latestStreamingArtifact.content).toContain("武术五步拳");
+    expect(latestStreamingArtifact.content).toContain("课堂小结");
+    expect(latestStreamingArtifact.content).toContain("data-screen-engine");
     expect(
       chunks
         .map(getTraceData)
@@ -533,7 +504,7 @@ describe("structured authoring stream adapter", () => {
     ).toBe(true);
   });
 
-  it("html 纯文本流会在结束时封装为多页 ready artifact", async () => {
+  it("html 纯文本流会在结束时封装为完整 HTML ready artifact", async () => {
     const workflow = {
       ...baseWorkflow,
       generationPlan: {
@@ -580,8 +551,7 @@ describe("structured authoring stream adapter", () => {
       throw new Error("Expected final HTML artifact.");
     }
 
-    expect(finalArtifact.htmlPages).toHaveLength(2);
-    expect(finalArtifact.htmlPages[1]?.sectionHtml).toContain("课堂");
+    expect(finalArtifact.content).toContain("课堂");
   });
 
   it("html 上游 artifact 流会被原样透传并作为最终结果持久化，不再由 text-delta 重复合成", async () => {

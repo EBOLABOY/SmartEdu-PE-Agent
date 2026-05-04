@@ -1,4 +1,4 @@
-import type { StandardsMarket } from "@/lib/lesson-authoring-contract";
+import type { StandardsMarket } from "@/lib/lesson/authoring-contract";
 
 export type StandardReference = {
   id: string;

@@ -5,7 +5,7 @@ import {
   deriveConversationTitle,
   getPersistedMessageContent,
 } from "@/lib/persistence/project-chat-store";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 const { saveConversationMessagesToS3Mock } = vi.hoisted(() => ({
   saveConversationMessagesToS3Mock: vi.fn(),

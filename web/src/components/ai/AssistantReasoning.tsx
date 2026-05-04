@@ -7,7 +7,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import { cn } from "@/lib/utils";
 
 type ReasoningPart = Extract<SmartEduUIMessage["parts"][number], { type: "reasoning" }>;

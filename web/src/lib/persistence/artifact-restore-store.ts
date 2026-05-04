@@ -1,3 +1,8 @@
+/**
+ * @module artifact-restore-store
+ * 产物版本恢复。根据项目 ID 和版本 ID，从 S3 版本清单中
+ * 恢复历史产物版本为当前版本，提供恢复错误处理。
+ */
 import { listArtifactVersionsByProject } from "@/lib/persistence/artifact-version-history";
 import { restoreArtifactVersionInS3Manifest } from "@/lib/persistence/artifact-version-manifest";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";

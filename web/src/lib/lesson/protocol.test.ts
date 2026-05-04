@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { competitionLessonPlanSchema } from "@/lib/competition-lesson-contract";
+import { competitionLessonPlanSchema } from "@/lib/lesson/contract";
 import {
   LessonPlanProtocolError,
   normalizeLessonProtocolDraftToCompetitionLessonPlan,
   parseLessonPlanProtocolText,
   parseLessonPlanProtocolToCompetitionLessonPlan,
-} from "@/lib/competition-lesson-protocol";
+} from "@/lib/lesson/protocol";
 
 const completeProtocol = `
 @lesson

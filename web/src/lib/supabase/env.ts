@@ -1,3 +1,12 @@
+/**
+ * @file Supabase 环境配置读取
+ *
+ * 从 process.env 读取 Supabase 连接配置：
+ *   - getSupabasePublicConfig()  — NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+ *   - getSupabaseAdminConfig()   — 上述 + SUPABASE_SECRET_KEY（service_role）
+ *
+ * 所有配置缺失时返回 null，由调用方决定降级策略。
+ */
 export type SupabasePublicConfig = {
   publishableKey: string;
   url: string;

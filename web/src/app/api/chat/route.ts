@@ -6,7 +6,7 @@ import {
   smartEduDataSchemas,
   type PeTeacherContext,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import {
   allowsAnonymousAiRequests,
   getAiRequestAuth,
@@ -195,7 +195,6 @@ export async function POST(request: Request) {
       memoryPersistence,
       projectId: parsedBody.data.projectId,
       mode: parsedBody.data.mode,
-      htmlFocus: parsedBody.data.htmlFocus,
       context: mergedContext,
       lessonPlan,
       market: parsedBody.data.market,

@@ -1,6 +1,6 @@
 import {
   acceptWorkspaceInvitationRequestBodySchema,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import {
   SMALL_JSON_REQUEST_MAX_BYTES,
   jsonRequestErrorResponse,

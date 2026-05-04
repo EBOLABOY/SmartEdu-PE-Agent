@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StateLoading, StateNotice } from "@/components/ui/state-surface";
-import type { AccountWorkspace, MemberRole } from "@/lib/lesson-authoring-contract";
+import type { AccountWorkspace, MemberRole } from "@/lib/lesson/authoring-contract";
 
 interface WorkspaceTabProps {
   createInvitation: (workspaceId: string) => Promise<void>;

@@ -8,7 +8,7 @@ import {
   workspaceInvitationActionResponseSchema,
   type AccountWorkspace,
   type MemberRole,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 interface UseAccountWorkspacesInput {
   inviteToken?: string | null;

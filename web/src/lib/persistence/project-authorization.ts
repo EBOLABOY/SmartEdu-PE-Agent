@@ -1,3 +1,8 @@
+/**
+ * @module project-authorization
+ * 项目写权限校验。通过 Supabase RPC 检查用户对项目的写权限，
+ * 提供权限错误归一化和缺失数据库函数的友好提示。
+ */
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 export class ProjectAuthorizationError extends Error {

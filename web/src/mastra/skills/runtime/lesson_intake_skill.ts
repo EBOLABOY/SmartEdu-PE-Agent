@@ -1,4 +1,4 @@
-import {
+﻿import {
   convertToModelMessages,
   generateText,
   Output,
@@ -8,7 +8,7 @@ import {
 import {
   fillLessonIntakeWithMemory,
   formatLessonAuthoringMemoryForPrompt,
-} from "@/lib/lesson-authoring-memory";
+} from "@/lib/lesson/authoring-memory";
 import {
   type LessonAuthoringMemory,
   lessonIntakeResultSchema,
@@ -16,7 +16,7 @@ import {
   type LessonIntakeResult,
   type PeTeacherContext,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 import { buildLessonIntakeSystemPrompt } from "../../agents/lesson_intake";
 import { createChatModel } from "../../models";
@@ -100,8 +100,8 @@ async function buildIntakeModelMessages(input: {
       role: "user" as const,
       content: [
         "请基于以上完整对话、用户资料和项目教学记忆，判断现在是否可以生成正式体育课时计划。",
-        "如果信息不足，只提出必要追问；不要生成课时计划。",
-        "项目教学记忆只能补齐默认值，本轮用户明确说明必须优先。",
+        "如果信息不足，只做信息判断并提出必要追问。",
+        "项目教学记忆作为默认值补齐，本轮用户明确说明必须优先。",
         "",
         contextToPrompt(input.context, input.memory),
       ].join("\n"),
@@ -130,7 +130,7 @@ function buildSafeFallbackIntake(
           question: "请选择本次课程内容，或直接改写：1. 篮球行进间运球；2. 足球脚内侧传接球；3. 立定跳远起跳与落地；4. 接力跑交接棒；5. 跳绳节奏与组合练习。",
         },
       ],
-      reason: "信息收集 Agent 不可用时，系统不能猜测年级和课程内容，必须先追问。",
+      reason: "信息收集 Agent 不可用时，系统需要先确认年级和课程内容。",
     },
     memory,
     context,

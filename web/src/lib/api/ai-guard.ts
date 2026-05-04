@@ -1,3 +1,8 @@
+/**
+ * @module ai-guard
+ * AI 请求的认证与限流守卫。检查用户认证状态，
+ * 分配速率限制令牌，为 AI 路由提供统一的鉴权和限流入口。
+ */
 import type { User } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";

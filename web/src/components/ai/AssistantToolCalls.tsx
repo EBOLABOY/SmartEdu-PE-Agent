@@ -17,7 +17,7 @@ import {
   type ToolPart,
 } from "@/components/ai-elements/tool";
 import { CollapsibleTrigger } from "@/components/ui/collapsible";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import { cn } from "@/lib/utils";
 import {
   CheckCircle2,

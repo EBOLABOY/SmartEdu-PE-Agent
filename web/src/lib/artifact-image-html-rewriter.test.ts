@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { rewriteArtifactImageUrlsInHtml } from "./artifact-image-html-rewriter";
+import { rewriteArtifactImageUrlsInHtml } from "./artifact/image-html-rewriter";
 
 const ARTIFACT_IMAGE_URL =
   "/api/projects/33333333-3333-3333-3333-333333333333/artifact-images/html-screen-visuals/request-1/01-image.png";

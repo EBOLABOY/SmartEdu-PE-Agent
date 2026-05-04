@@ -10,13 +10,14 @@ import {
   type CompetitionLessonPatchRequestBody,
   type CompetitionLessonPatchResponse,
   type CompetitionLessonSemanticUpdate,
-} from "@/lib/competition-lesson-patch";
+} from "@/lib/lesson/patch";
 
 import {
   buildLessonPatchSystemPrompt,
   buildLessonPatchUserPrompt,
 } from "../../agents/lesson_patch";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
+import { isPlainObject } from "@/lib/utils/type-guards";
 
 type AgentModelMessages = Awaited<ReturnType<typeof convertToModelMessages>>;
 
@@ -44,18 +45,15 @@ function buildPatchModelMessages(input: CompetitionLessonPatchRequestBody) {
   ] as AgentModelMessages;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function extractToolResultCandidate(toolResult: unknown) {
-  if (!isRecord(toolResult)) {
+  if (!isPlainObject(toolResult)) {
     return toolResult;
   }
 
   const payload = toolResult.payload;
 
-  if (isRecord(payload)) {
+  if (isPlainObject(payload)) {
     if (payload.isError) {
       throw new CompetitionLessonPatchError("课时计划修改工具执行失败。");
     }
@@ -86,7 +84,7 @@ function extractToolResultCandidates(result: FullOutput<unknown>) {
   const steps = Array.isArray(result.steps) ? result.steps : [];
 
   return steps.flatMap((step) => {
-    if (!isRecord(step) || !Array.isArray(step.toolResults)) {
+    if (!isPlainObject(step) || !Array.isArray(step.toolResults)) {
       return [];
     }
 

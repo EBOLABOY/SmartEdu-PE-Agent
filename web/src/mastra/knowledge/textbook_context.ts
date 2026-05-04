@@ -8,7 +8,7 @@ function formatList(items: string[]) {
 
 export function buildTextbookContextFromReferences(references: TextbookReference[]) {
   if (references.length === 0) {
-    return "未检索到匹配的教材正文条目；教材分析请基于课程主题、学生学情和体育教学规律生成，不要虚构教材出处。";
+    return "未检索到匹配的教材正文条目；教材分析请基于课程主题、学生学情和体育教学规律生成，教材出处仅使用系统实际提供的来源。";
   }
 
   return references

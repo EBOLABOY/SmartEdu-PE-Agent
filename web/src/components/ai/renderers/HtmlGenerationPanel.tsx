@@ -5,7 +5,7 @@ import React, { useMemo } from "react";
 
 import { AutoScrollArea } from "@/components/ai-elements/auto-scroll";
 import { formatWorkflowTraceDetailForTeacher } from "@/lib/assistant-workflow-status";
-import type { WorkflowTraceData } from "@/lib/lesson-authoring-contract";
+import type { WorkflowTraceData } from "@/lib/lesson/authoring-contract";
 
 interface HtmlGenerationPanelProps {
   code: string;

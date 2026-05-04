@@ -1,3 +1,8 @@
+/**
+ * @module lesson-authoring-memory
+ * 教案创作记忆的构建与合并。管理用户上下文和意图采集结果的
+ * 增量记忆，支持跨轮次对话的上下文累积和字段归一化。
+ */
 import {
   lessonAuthoringMemorySchema,
   lessonIntakeResultSchema,
@@ -7,7 +12,7 @@ import {
   type LessonIntakeKnownInfo,
   type LessonIntakeResult,
   type PeTeacherContext,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 const REQUIRED_LESSON_FIELDS: LessonIntakeField[] = [
   "grade",
@@ -197,7 +202,7 @@ export function formatLessonAuthoringMemoryForPrompt(memory?: LessonAuthoringMem
   }
 
   const lines = [
-    "项目教学记忆（只能作为默认值；本轮用户明确说明优先）：",
+    "项目教学记忆（作为默认值使用；本轮用户明确说明优先）：",
     defaults.grade ? `- 常用年级/本项目年级：${defaults.grade}` : null,
     defaults.teachingLevel ? `- 常用水平段：${defaults.teachingLevel}` : null,
     defaults.topic ? `- 本项目课程内容：${defaults.topic}` : null,

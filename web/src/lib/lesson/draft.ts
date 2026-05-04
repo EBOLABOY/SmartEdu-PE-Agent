@@ -1,10 +1,16 @@
+/**
+ * @module competition-lesson-draft
+ * 竞赛课教案的流式草稿构建器。在 AI 流式生成过程中，
+ * 将部分 JSON 合并到默认教案模板，产出可渲染的中间草稿。
+ */
 import type { DeepPartial } from "ai";
 
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
+import { isPlainObject } from "@/lib/utils/type-guards";
 
 const STREAMING_TEXT = "正在生成";
 
@@ -85,10 +91,6 @@ const STREAMING_COMPETITION_LESSON_DRAFT: CompetitionLessonPlan = {
     reflection: [STREAMING_TEXT],
   },
 };
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function pickLastDefinedValue(values: unknown[]) {
   for (let index = values.length - 1; index >= 0; index -= 1) {

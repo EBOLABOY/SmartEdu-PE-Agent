@@ -1,4 +1,4 @@
-import type { StandardsMarket } from "@/lib/lesson-authoring-contract";
+import type { StandardsMarket } from "@/lib/lesson/authoring-contract";
 
 import { searchStandards } from "../../tools/search_standards";
 

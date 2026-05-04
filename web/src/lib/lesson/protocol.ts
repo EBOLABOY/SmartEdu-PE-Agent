@@ -1,16 +1,25 @@
+/**
+ * @module competition-lesson-protocol
+ * @description 面向协议/序列化的类型层。定义教案文本协议的解析（parse）、
+ *              中间草稿结构（LessonPlanProtocolDraft）以及从草稿到
+ *              CompetitionLessonPlan 的标准化转换（normalize）。
+ *              依赖 competition-lesson-contract 获取目标 schema 和类型，
+ *              不依赖 lesson-authoring-contract。
+ */
 import { z } from "zod";
 
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
   type CompetitionLessonPlanRow,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 
 const nonEmptyString = z.string().trim().min(1);
 const textListSchema = z.array(nonEmptyString).default([]);
 
 const FLOW_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
+const FLOW_STRUCTURE_ORDER = new Map(FLOW_STRUCTURES.map((part, index) => [part, index] as const));
 const OMITTED_FLOW_SUMMARY_LABELS = new Set(["课堂评价", "课后作业"]);
 const LESSON_KEYS = new Set([
   "grade",
@@ -502,7 +511,11 @@ function normalizeEvaluations(draft: LessonPlanProtocolDraft) {
 }
 
 function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRow[] {
-  const results: CompetitionLessonPlanRow[] = [];
+  const results: Array<{
+    order: number;
+    row: CompetitionLessonPlanRow;
+    sourceIndex: number;
+  }> = [];
 
   draft.flows.forEach((flow, index) => {
     let structure = normalizeFlowPart(flow.part);
@@ -517,28 +530,37 @@ function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRo
       }
     }
 
+    const order = FLOW_STRUCTURE_ORDER.get(structure) ?? index;
+
     results.push({
-      content: requiredText(flow.content ?? [], `${structure}课堂活动`),
-      intensity:
-        flow.intensity ||
-        (structure === "准备部分" ? "中" : structure === "基本部分" ? "中高" : "低"),
-      methods: {
-        students: requiredText(flow.students ?? [], "按教师要求完成练习，并保持安全距离。"),
-        teacher: requiredText(flow.teacher ?? [], "讲解示范、巡视指导，并及时提示安全要求。"),
+      order,
+      row: {
+        content: requiredText(flow.content ?? [], `${structure}课堂活动`),
+        intensity:
+          flow.intensity ||
+          (structure === "准备部分" ? "中" : structure === "基本部分" ? "中高" : "低"),
+        methods: {
+          students: requiredText(flow.students ?? [], "按教师要求完成练习，并保持安全距离。"),
+          teacher: requiredText(flow.teacher ?? [], "讲解示范、巡视指导，并及时提示安全要求。"),
+        },
+        organization: requiredText(
+          flow.organization ?? [],
+          structure === "基本部分" ? "分组轮换练习队形" : "集合队形",
+        ),
+        structure,
+        time: flow.time || (structure === "准备部分" ? "8分钟" : structure === "基本部分" ? "27分钟" : "5分钟"),
       },
-      organization: requiredText(
-        flow.organization ?? [],
-        structure === "基本部分" ? "分组轮换练习队形" : "集合队形",
-      ),
-      structure,
-      time: flow.time || (structure === "准备部分" ? "8分钟" : structure === "基本部分" ? "27分钟" : "5分钟"),
+      sourceIndex: index,
     });
   });
 
-  const hasPart = (part: typeof FLOW_STRUCTURES[number]) => results.some((r) => r.structure === part);
+  results.sort((left, right) => left.order - right.order || left.sourceIndex - right.sourceIndex);
+
+  const rows = results.map((item) => item.row);
+  const hasPart = (part: typeof FLOW_STRUCTURES[number]) => rows.some((r) => r.structure === part);
 
   if (!hasPart("准备部分")) {
-    results.unshift({
+    rows.unshift({
       content: ["准备部分课堂活动"],
       intensity: "中",
       methods: { students: ["遵守要求"], teacher: ["讲解示范"] },
@@ -548,7 +570,7 @@ function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRo
     });
   }
   if (!hasPart("结束部分")) {
-    results.push({
+    rows.push({
       content: ["结束部分课堂活动"],
       intensity: "低",
       methods: { students: ["遵守要求"], teacher: ["讲解示范"] },
@@ -558,7 +580,7 @@ function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRo
     });
   }
   if (!hasPart("基本部分")) {
-    results.splice(1, 0, {
+    rows.splice(1, 0, {
       content: ["基本部分课堂活动"],
       intensity: "中高",
       methods: { students: ["遵守要求"], teacher: ["讲解示范"] },
@@ -568,7 +590,7 @@ function normalizeFlows(draft: LessonPlanProtocolDraft): CompetitionLessonPlanRo
     });
   }
 
-  return results;
+  return rows;
 }
 
 function splitCompactActivityList(value: string) {

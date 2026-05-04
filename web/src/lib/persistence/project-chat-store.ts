@@ -1,5 +1,10 @@
-import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact-protocol";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+/**
+ * @module project-chat-store
+ * 项目聊天消息的持久化。保存对话消息到 S3，
+ * 提取消息摘要和标题，创建聊天持久化服务实例。
+ */
+import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact/protocol";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 import { saveConversationMessagesToS3 } from "./conversation-message-manifest";

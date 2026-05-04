@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
 
 import { getImageGenerationConfig } from "./image_generation_config";
 import { enrichLessonPlanWithDiagramAssets } from "../skills/runtime/lesson_diagram_generation_skill";

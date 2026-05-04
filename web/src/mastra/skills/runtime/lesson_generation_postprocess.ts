@@ -1,8 +1,8 @@
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
-} from "@/lib/competition-lesson-contract";
-import type { WorkflowTraceEntry } from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/contract";
+import type { WorkflowTraceEntry } from "@/lib/lesson/authoring-contract";
 
 import {
   formatLessonValidationIssues,

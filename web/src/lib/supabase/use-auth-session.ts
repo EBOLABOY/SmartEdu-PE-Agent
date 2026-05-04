@@ -1,3 +1,8 @@
+/**
+ * @module use-auth-session
+ * Supabase 认证会话的 React Hook。在客户端组件中
+ * 监听 Supabase Auth 会话状态变化，提供 loading/authenticated/unauthenticated 状态。
+ */
 "use client";
 
 import type { Session } from "@supabase/supabase-js";

@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   projectIdSchema,
   workspaceInvitationActionResponseSchema,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import {
   createSupabaseAdminClient,
   createSupabaseServerClient,

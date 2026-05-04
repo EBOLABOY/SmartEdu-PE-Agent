@@ -1,9 +1,14 @@
+/**
+ * @module project-directory-manifest
+ * 项目目录清单的 S3 存取。管理 S3 上的用户工作区项目目录，
+ * 支持读取、写入和可用性检查，供项目列表聚合使用。
+ */
 import { z } from "zod";
 
 import {
   persistedProjectSummarySchema,
   type PersistedProjectSummary,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import {
   getS3ObjectText,

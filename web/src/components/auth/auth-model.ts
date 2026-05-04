@@ -1,4 +1,4 @@
-import type { AccountWorkspace, MemberRole } from "@/lib/lesson-authoring-contract";
+import type { AccountWorkspace, MemberRole } from "@/lib/lesson/authoring-contract";
 
 export type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 export type AccountTab = "profile" | "email" | "security" | "workspace";

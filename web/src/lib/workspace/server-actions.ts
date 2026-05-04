@@ -9,12 +9,12 @@ import { z } from "zod";
 
 import { allowsAnonymousAiRequests } from "@/lib/api/ai-guard";
 import { takeRateLimitToken } from "@/lib/api/rate-limit";
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
 import {
   competitionLessonPatchRequestBodySchema,
   competitionLessonPatchResponseSchema,
   type CompetitionLessonPatchResponse,
-} from "@/lib/competition-lesson-patch";
+} from "@/lib/lesson/patch";
 import {
   DEFAULT_STANDARDS_MARKET,
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
@@ -23,7 +23,7 @@ import {
   type PersistedArtifactVersion,
   type PersistedProjectSummary,
   type UiHint,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { listArtifactVersionsByProject } from "@/lib/persistence/artifact-version-history";
 import {
   ArtifactRestoreError,
@@ -327,6 +327,7 @@ export async function createProjectAction(
   } catch (error) {
     const normalizedError = normalizeCreateProjectError(error);
 
+    // TODO: replace with structured logger
     console.warn("[workspace-action] create-project-failed", {
       ...getErrorDiagnostic(error),
       userId: user.id,

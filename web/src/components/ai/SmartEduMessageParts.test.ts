@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { getAssistantChronologicalRenderItems } from "@/components/ai/SmartEduMessageParts";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 function createMessage(parts: SmartEduUIMessage["parts"]): SmartEduUIMessage {
   return {

@@ -3,7 +3,7 @@ import type {
   UiHint,
   UiHintToastLevel,
   WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 export type ArtifactUiHintHandlers = {
   scrollToTarget?: (target: "artifact-top" | "artifact-content" | "versions-panel") => void;

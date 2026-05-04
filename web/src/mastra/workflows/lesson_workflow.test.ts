@@ -62,7 +62,7 @@ describe("lesson-workflow", () => {
     expect(result.result.decision.type).toBe("generate");
     expect(result.result.decision.intentResult.intent).toBe("generate_lesson");
     expect(result.result.system).toContain("服务端");
-    expect(result.result.system).toContain("不要调用课时计划生成或提交工具");
+    expect(result.result.system).toContain("课时计划正式生成和提交由服务端管线完成");
     expect(result.result.system).not.toContain("submitHtmlScreenSection");
     expect(result.result.system).toContain("正式 lesson 生成由服务端在生成前检索并注入课标依据");
     expect(result.result.generationPlan.responseTransport).toBe("structured-data-part");
@@ -115,7 +115,7 @@ describe("lesson-workflow", () => {
       intentResult: expect.objectContaining({
         intent: "clarify",
       }),
-      text: expect.stringContaining("请明确你是要"),
+      text: expect.stringContaining("请先明确本轮任务方向"),
     });
     expect(result.result.trace).toEqual(
       expect.arrayContaining([
@@ -146,7 +146,7 @@ describe("lesson-workflow", () => {
     }
   });
 
-  it("HTML 阶段系统提示词不再要求固定大屏模块契约", async () => {
+  it("HTML 阶段系统提示词要求完整 HTML 文档契约", async () => {
     const runLessonIntent = vi.fn().mockResolvedValue(createIntentResult("generate_html"));
     const workflow = createLessonAuthoringWorkflow({ runLessonIntent });
     const run = await workflow.createRun();
@@ -176,10 +176,14 @@ describe("lesson-workflow", () => {
       },
     ]);
     expect(result.result.system).toContain("服务端");
-    expect(result.result.system).toContain("不要调用提交工具");
+    expect(result.result.system).toContain("HTML 正式生成和提交由服务端管线完成");
     expect(result.result.system).not.toContain("submitHtmlScreenSection");
-    expect(result.result.system).toContain("大屏直接生成契约");
-    expect(result.result.system).toContain("不再存在独立分镜规划层");
+    expect(result.result.system).toContain("完整 HTML 文件");
+    expect(result.result.system).toContain("iframe srcDoc");
+    expect(result.result.system).toContain("1920×1080");
+    expect(result.result.system).toContain("16:9 投屏画布");
+    expect(result.result.system).toContain("输出内容专注完整 HTML 文档本体");
+    expect(result.result.system).not.toContain("多页幻灯片序列");
     expect(result.result.system).not.toContain("data-support-module");
     expect(result.result.system).not.toContain("support module 只能是");
   });

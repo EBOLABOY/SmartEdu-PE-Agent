@@ -1,4 +1,4 @@
-import type { StandardsMarket, WorkflowTraceEntry } from "@/lib/lesson-authoring-contract";
+import type { StandardsMarket, WorkflowTraceEntry } from "@/lib/lesson/authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import { runTextbookRetrievalSkill } from "./textbook_retrieval_skill";
@@ -46,9 +46,9 @@ function createTraceEntry(
 
 function formatReferencesForPrompt(textbookContext: string) {
   return [
-    "服务端已在正式生成前检索体育与健康教材正文。请只把以下教材信息转化为“教材分析”的依据，同时可适度用于动作要点、教学组织和安全提示。",
+    "服务端已在正式生成前检索体育与健康教材正文。请把以下教材信息转化为“教材分析”的依据，同时可适度用于动作要点、教学组织和安全提示。",
     "教材分析必须在末尾单独写出“教材依据：……”，列出实际命中的教材版本、册次、页码或章节来源。",
-    "不得大段复述教材原文；不得编造未出现的教材出处；如果教材条目与本课主题不匹配，以本课主题和课标要求为准。",
+    "教材分析使用概括性转述，并只引用实际命中的教材出处；如果教材条目与本课主题不匹配，以本课主题和课标要求为准。",
     "",
     textbookContext,
   ].join("\n");
@@ -57,7 +57,7 @@ function formatReferencesForPrompt(textbookContext: string) {
 function formatRetrievalFailureForPrompt(message: string) {
   return [
     "服务端已在正式生成前尝试检索教材正文，但本轮检索失败。",
-    "请退回通用教材分析原则生成：围绕运动项目特征、动作技术结构、教学价值、学生已有经验和安全风险进行分析，不要虚构教材出处。",
+    "请退回通用教材分析原则生成：围绕运动项目特征、动作技术结构、教学价值、学生已有经验和安全风险进行分析；教材出处仅使用系统实际提供的来源。",
     `检索失败原因：${message}`,
   ].join("\n");
 }

@@ -1,5 +1,5 @@
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import {
   listConversationMessagesFromS3,
   saveConversationMessagesToS3,

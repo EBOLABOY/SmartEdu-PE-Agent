@@ -1,13 +1,18 @@
+/**
+ * @module assistant-workflow-status
+ * AI 助手工作流状态的 UI 状态计算。从 UIMessage 中提取
+ * 工作流执行状态，生成可用于 UI 渲染的徽章和详情描述。
+ */
 import {
   extractArtifactFromMessage,
   getMessageReasoningText,
-} from "@/lib/artifact-protocol";
+} from "@/lib/artifact/protocol";
 import type {
   GenerationMode,
   SmartEduUIMessage,
   WorkflowTraceData,
   WorkflowTraceEntry,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 export type AssistantWorkflowDetailStatus = "complete" | "active" | "blocked" | "failed";
 

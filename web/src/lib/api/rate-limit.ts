@@ -1,3 +1,8 @@
+/**
+ * @module rate-limit
+ * 通用请求速率限制。基于 Redis（Upstash）或内存桶实现
+ * 滑动窗口限流，提供令牌获取和请求方标识提取。
+ */
 import { Ratelimit, type Duration } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
@@ -97,6 +102,7 @@ function warnMissingDistributedRateLimitOnce() {
   }
 
   missingRedisWarningLogged = true;
+  // TODO: replace with structured logger
   console.warn(
     "[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN are missing; production requests are not rate-limited.",
   );
@@ -159,6 +165,7 @@ export async function takeRateLimitToken({
   if (upstashRateLimiter) {
     const response = await upstashRateLimiter.limit(key);
     void response.pending.catch((error: unknown) => {
+      // TODO: replace with structured logger
       console.warn("[rate-limit] async upstash task failed", {
         message: error instanceof Error ? error.message : "unknown-error",
       });

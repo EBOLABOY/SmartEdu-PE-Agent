@@ -10,7 +10,7 @@ import {
   peTeacherContextSchema,
   standardsMarketSchema,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 import { runLessonIntakeSkill } from "../skills/runtime/lesson_intake_skill";
 
@@ -139,7 +139,7 @@ export const lessonGenerationToolInputSchema = z
     ),
     standardsContext: z.string().trim().max(12000).optional(),
     context: flexiblePeTeacherContextSchema.describe(
-      "用户资料上下文对象。不要传自然语言字符串；若误传字符串，工具会忽略该字段。",
+      "用户资料上下文对象。传入结构化对象；字符串输入会被工具忽略。",
     ),
     market: standardsMarketSchema.default(DEFAULT_STANDARDS_MARKET),
   })

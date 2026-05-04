@@ -14,13 +14,12 @@ import {
   STRUCTURED_ARTIFACT_PROTOCOL_VERSION,
   smartEduDataSchemas,
   type GenerationMode,
-  type HtmlFocusTarget,
   type LessonAuthoringMemory,
   type PeTeacherContext,
   type SmartEduUIMessage,
   type StandardsMarket,
   type UiHint,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import type { LessonAuthoringPersistence } from "@/lib/persistence/lesson-authoring-store";
 import type { LessonMemoryPersistence } from "@/lib/persistence/lesson-memory-store";
 import type { ProjectChatPersistence } from "@/lib/persistence/project-chat-store";
@@ -28,13 +27,13 @@ import { mastra } from "@/mastra";
 import { createMastraAgentUiMessageStream } from "@/mastra/ai_sdk_stream";
 import { buildPeTeacherSystemPrompt } from "@/mastra/agents/pe_teacher";
 import * as authoringSkills from "@/mastra/skills";
-import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
+import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 import {
   buildWorkflowTraceData,
   buildWorkflowTraceDataFromWorkflow,
   createLessonWorkflowTraceState,
   createWorkflowTraceEntry,
-} from "./lesson_workflow_stream";
+} from "./lesson_workflow_trace";
 
 export type LessonAuthoringRequest = {
   messages: SmartEduUIMessage[];
@@ -46,7 +45,6 @@ export type LessonAuthoringRequest = {
   projectId?: string;
   context?: PeTeacherContext;
   mode?: GenerationMode;
-  htmlFocus?: HtmlFocusTarget;
   lessonPlan?: string;
   market?: StandardsMarket;
 };
@@ -79,14 +77,6 @@ function getLatestUserText(messages: UIMessage[]) {
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
-}
-
-function getWorkflowFailureMessage(result: { status: string; error?: unknown }) {
-  if (result.error instanceof Error) {
-    return result.error.message;
-  }
-
-  return `体育课时计划工作流执行失败，状态：${result.status}。`;
 }
 
 function writeTracePart(
@@ -223,8 +213,8 @@ function createServerGenerationTraceEntry(mode: GenerationMode) {
     "server-deterministic-entry",
     "success",
     mode === "html"
-      ? "已进入服务端 HTML 流式生成管线，不再通过 Agent 工具提交 HTML。"
-      : "已进入服务端课时计划结构化生成管线，不再通过 Agent 工具提交课时计划。",
+      ? "已进入服务端 HTML 流式生成管线，正式 HTML 由服务端结构化提交。"
+      : "已进入服务端课时计划结构化生成管线，正式课时计划由服务端结构化提交。",
   );
 }
 
@@ -333,18 +323,6 @@ async function buildExecutionMessages(request: LessonAuthoringRequest): Promise<
   }
 }
 
-export async function runLessonAuthoringWorkflow(input: LessonWorkflowInput) {
-  const workflow = mastra.getWorkflow("lessonAuthoringWorkflow");
-  const run = await workflow.createRun();
-  const result = await run.start({ inputData: input });
-
-  if (result.status !== "success") {
-    throw new LessonAuthoringError(getWorkflowFailureMessage(result));
-  }
-
-  return result.result;
-}
-
 async function executeLessonAuthoringStream(input: {
   mode: GenerationMode;
   query: string;
@@ -357,7 +335,6 @@ async function executeLessonAuthoringStream(input: {
   const agenticMode = inferAgenticMode({ explicitMode: mode, query });
   const shouldUseStructuredAdapter = !isPlainConversationQuery(query);
   let system = buildPeTeacherSystemPrompt(request.context, {
-    htmlFocus: request.htmlFocus,
     lessonPlan: request.lessonPlan,
     mode: agenticMode,
     responseStage: agenticMode === "lesson" && shouldUseStructuredAdapter ? "generation" : "tool-use",
@@ -406,16 +383,14 @@ async function executeLessonAuthoringStream(input: {
     });
 
     writer.merge(
-      authoringSkills.createStructuredAuthoringStreamAdapter({
+      authoringSkills.createLessonStreamAdapter({
         finalLessonPlanPromise: generation.finalLessonPlanPromise,
-        mode: "lesson",
+        lessonDraftStream: generation.lessonDraftStream,
         originalMessages: executionMessages,
         persistence: request.persistence,
         projectId: request.projectId,
         requestId,
         workflow,
-        stream: generation.stream,
-        lessonDraftStream: generation.lessonDraftStream,
       }),
     );
     return;
@@ -424,48 +399,7 @@ async function executeLessonAuthoringStream(input: {
   if (agenticMode === "html" && shouldUseStructuredAdapter) {
     workflow.trace.push(createServerGenerationTraceEntry("html"));
 
-    if (request.htmlFocus) {
-      system = buildPeTeacherSystemPrompt(request.context, {
-        htmlFocus: request.htmlFocus,
-        lessonPlan: request.lessonPlan,
-        mode: "html",
-      });
-      workflow = {
-        ...workflow,
-        system,
-        trace: [
-          ...workflow.trace,
-          createWorkflowTraceEntry(
-            "html-focused-page-context",
-            "success",
-            `已锁定第 ${request.htmlFocus.pageIndex + 1} 页，后续修改默认只作用于当前页。`,
-          ),
-        ],
-      };
-      const htmlStream = await authoringSkills.runServerHtmlFocusedPageEditSkill({
-        htmlFocus: request.htmlFocus,
-        lessonPlan: request.lessonPlan ?? "",
-        messages: executionMessages,
-        requestId,
-        workflow,
-      });
-
-      writer.merge(
-        authoringSkills.createStructuredAuthoringStreamAdapter({
-          mode: "html",
-          originalMessages: executionMessages,
-          persistence: request.persistence,
-          projectId: request.projectId,
-          requestId,
-          workflow,
-          stream: htmlStream,
-        }),
-      );
-      return;
-    }
-
     system = buildPeTeacherSystemPrompt(request.context, {
-      htmlFocus: request.htmlFocus,
       lessonPlan: request.lessonPlan,
       mode: "html",
     });
@@ -485,14 +419,14 @@ async function executeLessonAuthoringStream(input: {
     });
 
     writer.merge(
-      authoringSkills.createStructuredAuthoringStreamAdapter({
+      authoringSkills.createUpstreamUiStreamAdapter({
         mode: "html",
         originalMessages: executionMessages,
         persistence: request.persistence,
         projectId: request.projectId,
         requestId,
-        workflow,
         stream: htmlStream,
+        workflow,
       }),
     );
     return;
@@ -520,15 +454,15 @@ async function executeLessonAuthoringStream(input: {
   }
 
   writer.merge(
-    authoringSkills.createStructuredAuthoringStreamAdapter({
+    authoringSkills.createUpstreamUiStreamAdapter({
       allowTextOnlyResponse: true,
-      originalMessages: executionMessages,
       mode: workflow.generationPlan.mode,
+      originalMessages: executionMessages,
       persistence: request.persistence,
       projectId: request.projectId,
       requestId,
-      workflow,
       stream: generationStream,
+      workflow,
     }),
   );
 }

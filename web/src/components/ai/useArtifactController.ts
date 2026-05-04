@@ -18,8 +18,8 @@ import type { CompetitionLessonPrintFrameHandle } from "@/components/lesson-prin
 import {
   exportHtmlResponseSchema,
   type ArtifactView,
-} from "@/lib/lesson-authoring-contract";
-import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact-image-browser-inline";
+} from "@/lib/lesson/authoring-contract";
+import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact/image-browser-inline";
 
 type UseArtifactControllerInput = {
   isHtmlGenerationPending: boolean;

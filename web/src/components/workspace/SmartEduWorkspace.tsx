@@ -47,8 +47,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
-import { getCompetitionLessonEditableField } from "@/lib/competition-lesson-fields";
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
+import { getCompetitionLessonEditableField } from "@/lib/lesson/fields";
 import { withSmartEduProjectHeader } from "@/lib/api/smartedu-request-headers";
 import {
   DEFAULT_STANDARDS_MARKET,
@@ -58,8 +58,7 @@ import {
   type PersistedArtifactVersion,
   type PersistedProjectSummary,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
-import type { HtmlScreenPageSelection } from "@/lib/html-screen-editor";
+} from "@/lib/lesson/authoring-contract";
 import {
   buildHtmlChatRequestBody,
   buildLessonChatRequestBody,
@@ -204,7 +203,6 @@ function AppContent({
   const [isProjectSheetOpen, setIsProjectSheetOpen] = useState(false);
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(false);
   const [artifactView, setArtifactView] = useState<ArtifactView>("lesson");
-  const [selectedHtmlPage, setSelectedHtmlPage] = useState<HtmlScreenPageSelection | null>(null);
   const previousProjectIdRef = useRef(projectId);
 
   const chatTransport = useMemo(
@@ -344,7 +342,6 @@ function AppContent({
           setHasLiveArtifactAuthority(false);
           setIsArtifactSyncPendingState(false);
           setArtifactView("lesson");
-          setSelectedHtmlPage(null);
         });
       }
       return;
@@ -357,7 +354,6 @@ function AppContent({
         setHasLiveArtifactAuthority(false);
         setIsArtifactSyncPendingState(false);
         setArtifactView("lesson");
-        setSelectedHtmlPage(null);
       });
     }
   }, [initialMessages.length, projectId]);
@@ -494,7 +490,7 @@ function AppContent({
       setIsArtifactSyncPendingState(true);
     }
 
-    const shouldEditCurrentHtmlPage =
+    const shouldGenerateHtml =
       artifactView === "canvas" &&
       currentHtml.length > 0;
 
@@ -504,11 +500,9 @@ function AppContent({
         : { text: normalizedQuery },
       {
         body: withProjectContext(
-          shouldEditCurrentHtmlPage
+          shouldGenerateHtml
             ? buildHtmlChatRequestBody({
-              currentHtml,
               currentLessonPlan,
-              selectedPage: selectedHtmlPage,
             })
             : buildLessonChatRequestBody({
               currentLessonPlan,
@@ -583,7 +577,6 @@ function AppContent({
     setHasLiveArtifactAuthority(false);
     setIsArtifactSyncPendingState(false);
     setArtifactView("lesson");
-    setSelectedHtmlPage(null);
     setCurrentProject(project);
     setPersistedVersions([]);
     setMessages([]);
@@ -633,7 +626,6 @@ function AppContent({
     setHasLiveArtifactAuthority(false);
     setIsArtifactSyncPendingState(false);
     setArtifactView("lesson");
-    setSelectedHtmlPage(null);
     setMessages([]);
     setPersistedVersions([]);
     setCurrentProject(null);
@@ -947,7 +939,6 @@ function AppContent({
                   messages={messages}
                   onSubmitPrompt={(query) => void submitPrompt(query)}
                   projectTitle={currentProject?.title}
-                  selectedHtmlPage={selectedHtmlPage}
                   status={status}
                   stop={stop}
                 />
@@ -975,7 +966,6 @@ function AppContent({
                     messages={messages}
                     onSubmitPrompt={(query) => void submitPrompt(query)}
                     projectTitle={currentProject?.title}
-                    selectedHtmlPage={selectedHtmlPage}
                     status={status}
                     stop={stop}
                   />
@@ -1003,9 +993,7 @@ function AppContent({
                   onRestoreArtifactVersion={(snapshot) => {
                     void handleRestoreArtifactVersion(snapshot);
                   }}
-                  onSelectHtmlPage={setSelectedHtmlPage}
                   projectId={projectId}
-                  selectedHtmlPage={selectedHtmlPage}
                 />
               </main>
             </motion.div>

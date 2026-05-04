@@ -1,6 +1,6 @@
 import {
   accountWorkspacesResponseSchema,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { toIsoDateTime } from "@/lib/date-time";
 import {
   createSupabaseServerClient,

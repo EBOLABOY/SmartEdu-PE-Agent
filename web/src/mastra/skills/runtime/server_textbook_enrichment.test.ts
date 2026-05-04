@@ -167,7 +167,7 @@ describe("server textbook enrichment", () => {
 
     expect(result.outcome).toBe("failure");
     expect(workflow.system).toContain("本轮检索失败");
-    expect(workflow.system).toContain("不要虚构教材出处");
+    expect(workflow.system).toContain("教材出处仅使用系统实际提供的来源");
     expect(workflow.system).toContain("textbook vector store unavailable");
     expect(workflow.trace).toEqual(
       expect.arrayContaining([

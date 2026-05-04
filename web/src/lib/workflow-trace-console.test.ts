@@ -5,7 +5,7 @@ import {
   formatWorkflowTraceMarket,
   formatWorkflowTracePhase,
 } from "@/lib/workflow-trace-console";
-import type { WorkflowTraceData } from "@/lib/lesson-authoring-contract";
+import type { WorkflowTraceData } from "@/lib/lesson/authoring-contract";
 
 const TRACE_FIXTURE: WorkflowTraceData = {
   protocolVersion: "structured-v1",

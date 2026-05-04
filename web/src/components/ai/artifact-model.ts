@@ -5,16 +5,15 @@ import {
   getMessageReasoningText,
   getMessageText,
   lessonContentToPlan,
-} from "@/lib/artifact-protocol";
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+} from "@/lib/artifact/protocol";
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
 import type {
   ArtifactContentType,
-  HtmlArtifactPage,
   PersistedArtifactVersion,
   SmartEduUIMessage,
   UiHint,
   WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 export type ArtifactLifecycleStatus = "idle" | "streaming" | "ready" | "editing" | "error";
 export type ArtifactStage = "lesson" | "html";
@@ -25,7 +24,6 @@ export type ArtifactSnapshot = {
   title: string;
   content: string;
   contentType?: ArtifactContentType;
-  htmlPages?: HtmlArtifactPage[];
   lessonPlan?: CompetitionLessonPlan;
   status: ArtifactLifecycleStatus;
   version: number;
@@ -39,7 +37,6 @@ export type ArtifactSnapshot = {
 export type ArtifactLifecycle = {
   lessonContent: string;
   html: string;
-  htmlPages?: HtmlArtifactPage[];
   streamingHtml: string;
   isHtmlStreaming: boolean;
   htmlPreviewVersionId?: string;
@@ -79,14 +76,8 @@ function normalizeLessonVersionContent(content: string, contentType?: ArtifactCo
   return lessonPlan ? JSON.stringify(lessonPlan) : content;
 }
 
-function hasHtmlPages(htmlPages?: HtmlArtifactPage[]): htmlPages is HtmlArtifactPage[] {
-  return Array.isArray(htmlPages) && htmlPages.length > 0;
-}
-
 function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): ArtifactSnapshot {
   const lessonPlan = lessonContentToPlan(version.content, version.contentType);
-  const htmlPages =
-    version.stage === "html" && hasHtmlPages(version.htmlPages) ? version.htmlPages : undefined;
 
   return {
     id: `persisted-${version.id}`,
@@ -98,7 +89,6 @@ function mapPersistedVersionToSnapshot(version: PersistedArtifactVersion): Artif
         : `课时计划版本 ${version.versionNumber}`),
     content: normalizeLessonVersionContent(version.content, version.contentType),
     contentType: version.contentType,
-    htmlPages,
     lessonPlan,
     status: version.status,
     version: version.versionNumber,
@@ -156,9 +146,7 @@ export function buildArtifactLifecycle(
   const assistantMessages = messages.filter((message) => message.role === "assistant");
   const isStreaming = chatStatus === "submitted" || chatStatus === "streaming";
   const liveVersions: ArtifactSnapshot[] = [];
-  const persistedSnapshots = persistedVersions
-    .map((version) => mapPersistedVersionToSnapshot(version))
-    .filter((snapshot) => snapshot.stage !== "html" || hasHtmlPages(snapshot.htmlPages));
+  const persistedSnapshots = persistedVersions.map((version) => mapPersistedVersionToSnapshot(version));
   let latestTrace: WorkflowTraceData | undefined;
 
   assistantMessages.forEach((message, index) => {
@@ -188,10 +176,6 @@ export function buildArtifactLifecycle(
     }
 
     if (extracted.html) {
-      if (!hasHtmlPages(extracted.htmlPages)) {
-        return;
-      }
-
       const version = liveVersions.filter((item) => item.stage === "html").length + 1;
       const fallbackStatus: ArtifactLifecycleStatus =
         extracted.htmlComplete && !isStreaming ? "ready" : "streaming";
@@ -202,7 +186,6 @@ export function buildArtifactLifecycle(
         title: extracted.title ?? `大屏版本 ${version}`,
         content: extracted.html,
         contentType: extracted.artifact?.contentType,
-        htmlPages: extracted.htmlPages,
         status: resolveSnapshotStatus(extracted.status, fallbackStatus),
         version,
         trace: extracted.trace,
@@ -245,7 +228,6 @@ export function buildArtifactLifecycle(
   return {
     lessonContent: latestLesson?.content ?? "",
     html: shouldPreferHtml ? latestReadyHtml?.content ?? "" : "",
-    htmlPages: shouldPreferHtml ? latestReadyHtml?.htmlPages : undefined,
     streamingHtml:
       shouldPreferHtml && latestHtml?.status === "streaming" ? latestHtml.content : "",
     isHtmlStreaming: Boolean(

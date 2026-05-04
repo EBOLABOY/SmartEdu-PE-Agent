@@ -6,7 +6,7 @@ import {
 } from "ai";
 import { z } from "zod";
 
-import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { GenerationMode, SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 import { createChatModel } from "../../models";
 import { runModelOperationWithRetry } from "./lesson_generation_skill";
@@ -91,12 +91,12 @@ function resolveDeterministicIntent(input: {
 function buildIntentSystemPrompt() {
   return [
     "你是体育教学智能体的入口意图分类器。",
-    "你只能在以下意图中选择一个并返回结构化对象：clarify、generate_lesson、patch_lesson、generate_html、consult_standards。",
+    "你在以下意图中选择一个并返回结构化对象：clarify、generate_lesson、patch_lesson、generate_html、consult_standards。",
     "判定规则：",
     "1. 用户要新写、补全、重写课时计划或教案时，返回 generate_lesson。",
     "2. 用户要修改、调整、补充现有课时计划，且当前已有 lessonPlan 时，返回 patch_lesson。",
     "3. 用户要生成互动大屏、投屏 HTML、页面或课件时，返回 generate_html。",
-    "4. 用户主要在咨询课标、安全、合规、评价依据，而不是要你产出成品时，返回 consult_standards。",
+    "4. 用户主要在咨询课标、安全、合规、评价依据时，返回 consult_standards。",
     "5. 用户意图过于模糊、缺少任务方向时，返回 clarify。",
     "6. confidence 使用 0 到 1 的小数；reason 用一句简洁的话说明依据。",
   ].join("\n");

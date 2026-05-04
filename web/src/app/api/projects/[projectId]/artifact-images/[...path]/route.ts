@@ -1,4 +1,4 @@
-import { projectIdSchema } from "@/lib/lesson-authoring-contract";
+import { projectIdSchema } from "@/lib/lesson/authoring-contract";
 import {
   ProjectAuthorizationError,
   requireProjectWriteAccess,

@@ -8,7 +8,7 @@ import {
   updateLessonStagePayloadSchema,
   updateLessonSupportPayloadSchema,
   updateLoadEstimatePayloadSchema,
-} from "@/lib/competition-lesson-patch";
+} from "@/lib/lesson/patch";
 
 export const updateLessonMetaTool = createTool({
   id: "update_lesson_meta",
@@ -44,7 +44,7 @@ export const updateLearningObjectivesTool = createTool({
 export const updateLessonStageTool = createTool({
   id: "update_lesson_stage",
   description:
-    "当用户要求修改准备部分、基本部分或结束部分的教学内容、教法、学法、组织形式、时间或强度时调用。只传语义环节名称，不要传数组索引或 JSON Pointer。",
+    "当用户要求修改准备部分、基本部分或结束部分的教学内容、教法、学法、组织形式、时间或强度时调用。传入语义环节名称和原内容关键词。",
   inputSchema: updateLessonStagePayloadSchema,
   outputSchema: z
     .object({

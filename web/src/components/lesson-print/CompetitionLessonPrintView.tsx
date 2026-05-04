@@ -1,6 +1,6 @@
 import type React from "react";
 
-import type { CompetitionLessonPlan, CompetitionLessonPlanRow } from "@/lib/competition-lesson-contract";
+import type { CompetitionLessonPlan, CompetitionLessonPlanRow } from "@/lib/lesson/contract";
 
 interface CompetitionLessonPrintViewProps {
   lesson: CompetitionLessonPlan;

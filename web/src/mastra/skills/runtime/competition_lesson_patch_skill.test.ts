@@ -1,11 +1,11 @@
 import type { FullOutput } from "@mastra/core/stream";
 import { describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
 import {
   CompetitionLessonPatchError,
   type CompetitionLessonSemanticUpdate,
-} from "@/lib/competition-lesson-patch";
+} from "@/lib/lesson/patch";
 
 import { runCompetitionLessonPatchSkill } from "./competition_lesson_patch_skill";
 

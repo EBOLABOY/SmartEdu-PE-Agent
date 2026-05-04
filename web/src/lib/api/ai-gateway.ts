@@ -1,3 +1,8 @@
+/**
+ * @module ai-gateway
+ * AI 网关速率限制。针对 /api/chat 等 AI 路由实施
+ * 项目级速率限制，防止单一项目过度消耗 AI 资源。
+ */
 import {
   readSmartEduProjectIdFromHeaders,
 } from "@/lib/api/smartedu-request-headers";

@@ -22,10 +22,7 @@ export {
 export { runLessonGenerationWithPostProcess } from "./lesson_generation_postprocess";
 export { runStandardsRetrievalSkill } from "./standards_retrieval_skill";
 export { runTextbookRetrievalSkill } from "./textbook_retrieval_skill";
-export {
-  runServerHtmlFocusedPageEditSkill,
-  runServerHtmlGenerationSkill,
-} from "./server_html_generation_skill";
+export { runServerHtmlGenerationSkill } from "./server_html_generation_skill";
 export {
   createServerStandardsPendingWorkflow,
   resolveWorkflowWithServerStandards,

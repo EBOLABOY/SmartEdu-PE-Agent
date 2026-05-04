@@ -49,15 +49,15 @@ describe("pe_teacher", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, { mode: "lesson" });
 
     expect(prompt).toContain("普通聊天");
-    expect(prompt).toContain("直接回复，不调用工具");
+    expect(prompt).toContain("使用聊天口袋直接自然回复");
     expect(prompt).toContain("按需");
     expect(prompt).toContain("CompetitionLessonPlan");
     expect(prompt).toContain("服务端");
-    expect(prompt).toContain("不要输出 lessonPlan JSON");
+    expect(prompt).toContain("聊天侧只保留必要说明");
     expect(prompt).toContain("优先自然追问");
     expect(prompt).toContain("request");
     expect(prompt).toContain("保留教师本轮原始需求");
-    expect(prompt).toContain("用户资料只能放入");
+    expect(prompt).toContain("用户资料放入");
     expect(prompt).toContain("对象");
     expect(prompt).toContain("durationMinutes");
     expect(prompt).toContain("studentCount");
@@ -72,7 +72,7 @@ describe("pe_teacher", () => {
     });
 
     expect(prompt).toContain("正式生成（Generation）阶段输出约束");
-    expect(prompt).toContain("只输出当前服务端结构化子块要求的合法 JSON 对象");
+    expect(prompt).toContain("当前服务端结构化子块要求的合法 JSON 对象");
     expect(prompt).toContain("loadEstimate");
   });
 
@@ -93,8 +93,8 @@ describe("pe_teacher", () => {
     expect(prompt).toContain("水平：水平二");
     expect(prompt).toContain("teacher.school");
     expect(prompt).toContain("teacher.name");
-    expect(prompt).toContain("这不是教师本轮原话");
-    expect(prompt).toContain("不要拼接到 request 字段里");
+    expect(prompt).toContain("与教师本轮原话保持来源边界");
+    expect(prompt).toContain("request 字段保留教师本轮原始需求");
   });
 
   it("html 阶段要求服务端生成课堂学习辅助大屏，不暴露提交工具", () => {
@@ -104,26 +104,32 @@ describe("pe_teacher", () => {
     });
 
     expect(prompt).toContain("服务端");
-    expect(prompt).toContain("不要调用提交工具");
+    expect(prompt).toContain("聊天回复给出简短状态说明");
     expect(prompt).not.toContain("submitHtmlScreenSection");
-    expect(prompt).toContain("完整单页");
-    expect(prompt).toContain("不要拆成 PPT、多页 slide、上下滑动分页");
-    expect(prompt).toContain("不再存在独立分镜规划层");
-    expect(prompt).toContain("开始上课");
+    expect(prompt).toContain("完整 HTML 文件");
+    expect(prompt).toContain("iframe srcDoc");
+    expect(prompt).toContain("1920×1080");
+    expect(prompt).toContain("16:9 投屏画布");
+    expect(prompt).toContain("单个 iframe 投屏画布");
+    expect(prompt).toContain("课堂当前任务");
     expect(prompt).toContain("统一 visualSystem");
     expect(prompt).toContain("基于教学情境的动态视觉推导");
     expect(prompt).toContain("Tailwind CSS 技术偏好");
-    expect(prompt).toContain("禁止所有课时套用同一种固定风格模板");
+    expect(prompt).toContain("本课专属视觉母题");
     expect(prompt).toContain("一次性生成完整文档");
+    expect(prompt).toContain("居中巨型倒计时");
+    expect(prompt).toContain("契合当前阶段的视觉特效");
+    expect(prompt).toContain("真实可运行的计时器");
+    expect(prompt).toContain("数字必须随时间变化");
     expect(prompt).toContain("学习内容和练习任务原则上合并呈现");
-    expect(prompt).toContain("学练区域不能是文字板");
-    expect(prompt).toContain("不要依赖服务端预置类名");
-    expect(prompt).toContain("大屏直接生成契约");
-    expect(prompt).toContain("不要假设服务端会额外注入统一控制脚本");
+    expect(prompt).toContain("学练区域使用图片、SVG 或明确的图形区域");
+    expect(prompt).toContain("使用文档内自定义的少量语义类名");
+    expect(prompt).toContain("关键交互随完整 HTML 文件一起生成");
+    expect(prompt).not.toContain("多页幻灯片序列");
     expect(prompt).not.toContain("iOS 18");
   });
 
-  it("html 阶段不再注入大屏分镜计划", () => {
+  it("html 阶段注入完整 HTML 文档契约", () => {
     const prompt = buildPeTeacherSystemPrompt(undefined, {
       mode: "html",
       lessonPlan: "## 十、课时计划\n| 比赛展示 | 6 分钟 |",
@@ -131,7 +137,7 @@ describe("pe_teacher", () => {
 
     expect(prompt).toContain("课时计划");
     expect(prompt).toContain("比赛展示");
-    expect(prompt).toContain("不再存在独立分镜规划层");
+    expect(prompt).toContain("输出内容专注完整 HTML 文档本体");
     expect(prompt).not.toContain("课堂大屏分镜计划");
     expect(prompt).not.toContain("pageRole=cover");
   });

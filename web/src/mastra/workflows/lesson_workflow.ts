@@ -1,7 +1,7 @@
 import { createStep, createWorkflow } from "@mastra/core/workflows";
 import { z } from "zod";
 
-import { formatLessonAuthoringMemoryForPrompt } from "@/lib/lesson-authoring-memory";
+import { formatLessonAuthoringMemoryForPrompt } from "@/lib/lesson/authoring-memory";
 import {
   artifactViewSchema,
   DEFAULT_STANDARDS_MARKET,
@@ -20,7 +20,7 @@ import {
   type PeTeacherContext,
   type SmartEduUIMessage,
   type UiHint,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 import { buildPeTeacherSystemPrompt } from "../agents/pe_teacher";
 import {
@@ -343,8 +343,7 @@ async function buildResolvedStandardsWorkflowFields(inputData: {
 
 function buildIntentClarificationText(intentResult: LessonIntent) {
   return [
-    "我还不能直接执行当前请求。",
-    "请明确你是要：",
+    "请先明确本轮任务方向：",
     "1. 生成一份新的体育课时计划；",
     "2. 修改当前已确认课时计划；",
     "3. 生成互动大屏；",
@@ -368,7 +367,7 @@ function buildStandardsConsultationText(standardsContext: string) {
 
 function buildMemoryPromptParts(memory?: LessonAuthoringMemory) {
   return [
-    "工作流不再在正式生成前执行信息收集或必要追问。请直接基于本轮用户输入、对话历史、教师上下文和项目教学记忆生成内容。",
+    "正式生成阶段直接基于本轮用户输入、对话历史、教师上下文和项目教学记忆生成内容。",
     "信息不足时优先做合理假设：学生人数未明确时默认 40 人，课时、场地、器材可根据课程内容和安全要求自动匹配。",
     "如果本轮用户明确指令与项目记忆冲突，始终以本轮用户指令为准。",
     formatLessonAuthoringMemoryForPrompt(memory),

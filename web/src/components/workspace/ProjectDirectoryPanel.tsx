@@ -22,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StateLoading } from "@/components/ui/state-surface";
-import type { PersistedProjectSummary } from "@/lib/lesson-authoring-contract";
+import type { PersistedProjectSummary } from "@/lib/lesson/authoring-contract";
 
 interface ProjectDirectoryPanelProps {
   activeProjectId?: string | null;

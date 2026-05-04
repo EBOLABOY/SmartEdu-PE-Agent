@@ -3,19 +3,36 @@ node_modules/
 dist/
 dist-ssr/
 
-# Environment and local state
+# 构建缓存
+.cache/
+.codex-logs/
+.next/
+tsconfig.tsbuildinfo
+
+# 外部数据和备份
+.external/
+downloads/
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Other local state
 **/.env
 .codex-tasks/
 paths.json
-.external/
-downloads/
 scripts/
-
-# Editor and OS noise
-.DS_Store
-.idea/
-.vscode/
-*.local
 
 # Official source attachments and unpacked notice folder
 深圳市教育局关于开展2026年国家智慧教育平台全面深化应用教师数字素养提升实践活动的通知/

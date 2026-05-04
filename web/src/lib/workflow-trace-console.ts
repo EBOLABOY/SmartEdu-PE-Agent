@@ -1,7 +1,12 @@
+/**
+ * @module workflow-trace-console
+ * 工作流追踪的控制台日志适配。将 WorkflowTraceData 转换为
+ * 人类可读的控制台日志条目，便于调试 AI 工作流执行过程。
+ */
 import type {
   WorkflowTraceData,
   WorkflowTraceEntry,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 export type WorkflowConsoleLog = {
   level: "log" | "warn" | "error";

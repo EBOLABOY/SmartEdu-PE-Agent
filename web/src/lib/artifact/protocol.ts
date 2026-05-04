@@ -1,27 +1,30 @@
+/**
+ * @module artifact-protocol
+ * AI 产物的提取与协议适配。从 UIMessage 中提取结构化产物
+ * （教案 JSON / HTML 大屏），处理协议版本和降级逻辑。
+ */
 import { isDataUIPart, type UIMessage } from "ai";
 
 import {
   structuredArtifactDataSchema,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import type {
   ArtifactContentType,
   GenerationMode,
-  HtmlStructuredArtifactData,
   SmartEduUIMessage,
   StructuredArtifactData,
   WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 
 export type ExtractedArtifact = {
   stage?: GenerationMode;
   lessonContent: string;
   html: string;
   htmlComplete: boolean;
-  htmlPages?: HtmlStructuredArtifactData["htmlPages"];
   source: "structured" | "none";
   status?: StructuredArtifactData["status"];
   title?: string;
@@ -112,8 +115,6 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
       structuredArtifact.stage === "lesson"
         ? lessonContentToPlan(structuredArtifact.content, structuredArtifact.contentType)
         : undefined;
-    const htmlPages = structuredArtifact.stage === "html" ? structuredArtifact.htmlPages : undefined;
-
     return {
       stage: structuredArtifact.stage,
       lessonContent:
@@ -123,7 +124,6 @@ export function extractArtifactFromMessage(message: UIMessage): ExtractedArtifac
       html: structuredArtifact.stage === "html" ? structuredArtifact.content : "",
       htmlComplete:
         structuredArtifact.stage === "html" ? structuredArtifact.isComplete : structuredArtifact.status === "ready",
-      htmlPages,
       source: "structured",
       status: structuredArtifact.status,
       title: structuredArtifact.title,

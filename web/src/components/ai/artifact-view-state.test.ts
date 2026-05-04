@@ -7,8 +7,8 @@ import {
   getLessonArtifactDisplayState,
   reconcileArtifactViewForLifecycle,
 } from "@/components/ai/artifact-view-state";
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 describe("artifact-view-state", () => {
   function createReadyLessonMessage() {
@@ -49,15 +49,6 @@ describe("artifact-view-state", () => {
             stage: "html",
             contentType: "html",
             content: "<!DOCTYPE html><html lang=\"zh-CN\"><body><h1>Screen</h1></body></html>",
-            htmlPages: [
-              {
-                pageIndex: 0,
-                pageRole: "cover",
-                pageTitle,
-                sectionHtml:
-                  `<section class="slide cover-slide active" data-slide-kind="cover"><main class="cover-shell"><h1>${pageTitle}</h1></main></section>`,
-              },
-            ],
             isComplete: status === "ready",
             status,
             source: "data-part",
@@ -234,7 +225,7 @@ describe("artifact-view-state", () => {
     expect(reconcileArtifactViewForLifecycle("versions", lifecycle)).toBe("versions");
   });
 
-  it("不会把缺少 htmlPages 的 html artifact 误判为可预览画布", () => {
+  it("会把只携带完整 HTML 文件的 html artifact 作为可预览画布", () => {
     const lifecycle = buildArtifactLifecycle(
       [
         createReadyLessonMessage(),
@@ -266,11 +257,11 @@ describe("artifact-view-state", () => {
     const htmlDisplay = getHtmlArtifactDisplayState(lifecycle);
 
     expect(htmlDisplay).toMatchObject({
-      hasHtml: false,
+      hasHtml: true,
       isPendingRequest: false,
       isStreaming: false,
       shouldShowGenerationPanel: false,
     });
-    expect(getArtifactDefaultView(lifecycle)).toBe("lesson");
+    expect(getArtifactDefaultView(lifecycle)).toBe("canvas");
   });
 });

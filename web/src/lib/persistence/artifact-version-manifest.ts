@@ -1,3 +1,8 @@
+/**
+ * @module artifact-version-manifest
+ * 产物版本清单的 S3 存取。管理 S3 上的版本清单文件，
+ * 支持保存、列出、恢复和解析当前教案版本。
+ */
 import { randomUUID } from "node:crypto";
 
 import {
@@ -6,7 +11,7 @@ import {
   type PersistedArtifactVersion,
   type StructuredArtifactData,
   type WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import {
   getS3ObjectText,

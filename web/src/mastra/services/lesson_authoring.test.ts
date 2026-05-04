@@ -1,7 +1,7 @@
 import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
 import type { runLessonGenerationWithPostProcess } from "@/mastra/skills";
 
 const mocks = vi.hoisted(() => {
@@ -29,6 +29,12 @@ const mocks = vi.hoisted(() => {
       ]),
     ),
     createStructuredAuthoringStreamAdapter: vi.fn(() =>
+      createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    ),
+    createLessonStreamAdapter: vi.fn(() =>
+      createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    ),
+    createUpstreamUiStreamAdapter: vi.fn(() =>
       createChunkStream([{ type: "finish", finishReason: "stop" }]),
     ),
     createServerStandardsPendingWorkflow: vi.fn((workflow) => ({
@@ -148,6 +154,8 @@ vi.mock("@/mastra/skills", () => ({
   createServerStandardsPendingWorkflow: mocks.createServerStandardsPendingWorkflow,
   createServerTextbookPendingWorkflow: mocks.createServerTextbookPendingWorkflow,
   createStructuredAuthoringStreamAdapter: mocks.createStructuredAuthoringStreamAdapter,
+  createLessonStreamAdapter: mocks.createLessonStreamAdapter,
+  createUpstreamUiStreamAdapter: mocks.createUpstreamUiStreamAdapter,
   resolveWorkflowWithServerStandards: mocks.resolveWorkflowWithServerStandards,
   resolveWorkflowWithServerTextbook: mocks.resolveWorkflowWithServerTextbook,
   runLessonGenerationWithPostProcess: mocks.runLessonGenerationWithPostProcess,
@@ -177,6 +185,12 @@ describe("lesson authoring service", () => {
       mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
     );
     mocks.createStructuredAuthoringStreamAdapter.mockReturnValue(
+      mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    );
+    mocks.createLessonStreamAdapter.mockReturnValue(
+      mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
+    );
+    mocks.createUpstreamUiStreamAdapter.mockReturnValue(
       mocks.createChunkStream([{ type: "finish", finishReason: "stop" }]),
     );
     mocks.createServerStandardsPendingWorkflow.mockImplementation((workflow) => ({
@@ -372,9 +386,8 @@ describe("lesson authoring service", () => {
     });
     await readChunks(result.stream);
 
-    expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalledWith(
+    expect(mocks.createLessonStreamAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: "lesson",
         projectId: "00000000-0000-4000-8000-000000000001",
         workflow: expect.objectContaining({
           decision: expect.objectContaining({
@@ -490,7 +503,7 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalled();
+    expect(mocks.createLessonStreamAdapter).toHaveBeenCalled();
   });
 
   it("教材向量检索异常不会阻断课时计划流式生成", async () => {
@@ -558,7 +571,7 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalled();
+    expect(mocks.createLessonStreamAdapter).toHaveBeenCalled();
   });
 
   it("普通问候只走 Agent 文本流，不进入结构化 Artifact adapter", async () => {
@@ -585,7 +598,8 @@ describe("lesson authoring service", () => {
     const chunks = await readChunks(result.stream);
 
     expect(mocks.getAgent).toHaveBeenCalledWith("peTeacherAgent");
-    expect(mocks.createStructuredAuthoringStreamAdapter).not.toHaveBeenCalled();
+    expect(mocks.createLessonStreamAdapter).not.toHaveBeenCalled();
+    expect(mocks.createUpstreamUiStreamAdapter).not.toHaveBeenCalled();
     expect(chunks).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "text-delta", delta: "老师您好，我可以帮您准备体育课。" }),
@@ -610,7 +624,8 @@ describe("lesson authoring service", () => {
     });
     const chunks = await readChunks(result.stream);
 
-    expect(mocks.createStructuredAuthoringStreamAdapter).not.toHaveBeenCalled();
+    expect(mocks.createLessonStreamAdapter).not.toHaveBeenCalled();
+    expect(mocks.createUpstreamUiStreamAdapter).not.toHaveBeenCalled();
     expect(chunks.some((chunk) => chunk.type === "data-trace")).toBe(false);
   });
 
@@ -645,7 +660,7 @@ describe("lesson authoring service", () => {
         }),
       }),
     );
-    expect(mocks.createStructuredAuthoringStreamAdapter).toHaveBeenCalledWith(
+    expect(mocks.createUpstreamUiStreamAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: "html",
         workflow: expect.objectContaining({

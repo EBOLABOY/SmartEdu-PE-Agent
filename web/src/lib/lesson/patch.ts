@@ -1,10 +1,15 @@
+/**
+ * @module competition-lesson-patch
+ * 竞赛课教案的增量修补与语义更新。定义 JSON Patch 操作、
+ * 语义化更新指令（如修改教学目标、评价等级等），以及将补丁应用到教案的执行逻辑。
+ */
 import { z } from "zod";
 
 import {
   competitionLessonLoadChartPointSchema,
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 
 const JSON_POINTER_SEGMENT_LIMIT = 80;
 const JSON_POINTER_DEPTH_LIMIT = 8;

@@ -1,4 +1,9 @@
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+/**
+ * @module competition-lesson-fields
+ * 竞赛课教案可编辑字段的元数据定义。描述每个可编辑字段的
+ * 路径、标签、分组和读取函数，供 AI 语义更新和 UI 编辑使用。
+ */
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
 
 export type CompetitionLessonEditableField = {
   label: string;

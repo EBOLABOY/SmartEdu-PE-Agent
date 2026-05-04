@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { StructuredArtifactData } from "@/lib/lesson-authoring-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
+import type { StructuredArtifactData } from "@/lib/lesson/authoring-contract";
 
 import {
   listArtifactVersionsFromS3Manifest,

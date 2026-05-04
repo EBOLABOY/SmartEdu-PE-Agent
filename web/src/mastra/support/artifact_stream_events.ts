@@ -1,4 +1,4 @@
-import type { StructuredArtifactData } from "@/lib/lesson-authoring-contract";
+import type { StructuredArtifactData } from "@/lib/lesson/authoring-contract";
 
 export type ArtifactStreamStage = "html" | "lesson";
 

@@ -6,8 +6,8 @@ import {
   mergeArtifactLifecycleHistory,
   shouldUsePersistedArtifactState,
 } from "@/components/workspace/artifact-source-policy";
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import type { PersistedArtifactVersion } from "@/lib/lesson-authoring-contract";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
+import type { PersistedArtifactVersion } from "@/lib/lesson/authoring-contract";
 
 const PROJECT_ID = "11111111-1111-1111-1111-111111111111";
 const LESSON_JSON = JSON.stringify(DEFAULT_COMPETITION_LESSON_PLAN);

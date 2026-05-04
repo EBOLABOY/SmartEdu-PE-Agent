@@ -1,7 +1,7 @@
 import {
   rewriteArtifactImageUrlsInHtml,
   type RewriteArtifactImageUrlsResult,
-} from "@/lib/artifact-image-html-rewriter";
+} from "./image-html-rewriter";
 
 export type InlineArtifactImagesForBrowserHtmlInput = {
   htmlContent: string;

@@ -20,7 +20,6 @@ export {
   runLessonGenerationWithPostProcess,
   runStandardsRetrievalSkill,
   runTextbookRetrievalSkill,
-  runServerHtmlFocusedPageEditSkill,
   runServerHtmlGenerationSkill,
   createServerStandardsPendingWorkflow,
   resolveWorkflowWithServerStandards,
@@ -32,8 +31,10 @@ export {
 } from "./runtime";
 export {
   createLessonClarificationStreamAdapter,
+  createLessonStreamAdapter,
   createStructuredArtifactData,
   createStructuredAuthoringStreamAdapter,
+  createUpstreamUiStreamAdapter,
   createWorkflowTraceData,
   createWorkflowTraceStep,
 } from "../support/structured_authoring_stream_adapter";

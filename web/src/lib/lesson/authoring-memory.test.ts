@@ -4,8 +4,8 @@ import {
   buildLessonAuthoringMemoryPatch,
   fillLessonIntakeWithMemory,
   mergeLessonAuthoringMemory,
-} from "@/lib/lesson-authoring-memory";
-import type { LessonAuthoringMemory, LessonIntakeResult } from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-memory";
+import type { LessonAuthoringMemory, LessonIntakeResult } from "@/lib/lesson/authoring-contract";
 
 const memory: LessonAuthoringMemory = {
   defaults: {

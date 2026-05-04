@@ -11,13 +11,13 @@ import {
   exportHtmlRequestBodySchema,
   exportHtmlResponseSchema,
   projectIdSchema,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import {
   EXPORT_HTML_REQUEST_MAX_BYTES,
   jsonRequestErrorResponse,
   readJsonRequest,
 } from "@/lib/api/request";
-import { rewriteArtifactImageUrlsInHtml } from "@/lib/artifact-image-html-rewriter";
+import { rewriteArtifactImageUrlsInHtml } from "@/lib/artifact/image-html-rewriter";
 import { injectBrowserSandboxCsp } from "@/lib/browser-sandbox-html";
 import { toIsoDateTime } from "@/lib/date-time";
 import {

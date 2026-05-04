@@ -31,7 +31,7 @@ import {
   getAssistantSources,
   type AssistantSourceItem,
 } from "@/lib/assistant-reference-ui";
-import type { SmartEduUIMessage, StructuredArtifactData } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage, StructuredArtifactData } from "@/lib/lesson/authoring-contract";
 
 type SmartEduMessagePart = SmartEduUIMessage["parts"][number];
 type AssistantRenderItem =

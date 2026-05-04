@@ -1,3 +1,8 @@
+/**
+ * @module artifact-image-url
+ * 产物图片的 URL 构建与解析。生成 S3 对象键和代理 URL，
+ * 解析代理路径回源，用于 HTML 大屏中图片资源的安全引用。
+ */
 export const ARTIFACT_IMAGE_KINDS = ["lesson-diagrams", "html-screen-visuals"] as const;
 
 export type ArtifactImageKind = (typeof ARTIFACT_IMAGE_KINDS)[number];

@@ -4,8 +4,8 @@ import React, { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 
 import { AutoScrollArea } from "@/components/ai-elements/auto-scroll";
 import CompetitionLessonPrintView from "@/components/lesson-print/CompetitionLessonPrintView";
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
-import { buildCompetitionLessonPrintHtml } from "@/lib/competition-lesson-print-document";
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
+import { buildCompetitionLessonPrintHtml } from "@/lib/lesson/print-document";
 
 export interface CompetitionLessonPrintFrameHandle {
   print: () => void;

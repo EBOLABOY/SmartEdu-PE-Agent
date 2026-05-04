@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 
 import CompetitionLessonPrintView from "@/components/lesson-print/CompetitionLessonPrintView";
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
 
 const COMPETITION_LESSON_PRINT_CSS = `
   :root {

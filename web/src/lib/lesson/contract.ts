@@ -1,3 +1,10 @@
+/**
+ * @module competition-lesson-contract
+ * @description 面向业务数据的类型层。定义 CompetitionLessonPlan 及其子结构的
+ *              Zod schema 与 TypeScript 类型，以及默认值常量。
+ *              本模块不依赖 lesson-authoring-contract 或 competition-lesson-protocol，
+ *              是 competition-lesson 领域类型的最底层定义源。
+ */
 import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);

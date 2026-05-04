@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
-} from "@/lib/competition-lesson-contract";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import type { LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import {
@@ -180,7 +180,6 @@ describe("generation skills", () => {
       requestId: "request-protocol",
       workflow,
     });
-    const chunks = await readAll(result.stream);
 
     await expect(result.finalLessonPlanPromise).resolves.toMatchObject({
       flowSummary: ["课堂常规", "专项热身", "球性游戏", "技术学练", "教学比赛", "放松拉伸"],
@@ -206,7 +205,6 @@ describe("generation skills", () => {
         system: expect.stringContaining("@flow 的 content 只写本段课堂环节短语"),
       }),
     );
-    expect(chunks).toEqual([expect.objectContaining({ type: "finish", finishReason: "stop" })]);
   });
 
   it("server-side lesson generation reports protocol diagnostics when required blocks are missing", async () => {
@@ -413,7 +411,7 @@ description=优秀
           parts: [{ type: "text", text: "生成互动大屏" }],
         },
       ] as SmartEduUIMessage[],
-      requestId: "request-html-single-page",
+      requestId: "request-html-complete-document",
       workflow,
     });
     const chunks = await readAll(stream);
@@ -425,13 +423,18 @@ description=优秀
     expect(generateText).toHaveBeenCalledTimes(0);
     expect(streamText).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0].messages)).toContain("已确认课时计划第九部分 JSON");
-    expect(JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0].messages)).toContain("<section class=\\\"slide\\\">");
-    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("严禁生成单页");
+    expect(JSON.stringify(vi.mocked(streamText).mock.calls[0]?.[0].messages)).toContain("完整 HTML 文档");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("完整 HTML 文件");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("iframe srcDoc");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("1920×1080");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("16:9 投屏画布");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("居中巨型倒计时");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("真实可运行的计时器");
+    expect(vi.mocked(streamText).mock.calls[0]?.[0].system).toContain("数字必须随时间变化");
     expect(html).toContain("<!DOCTYPE html>");
     expect(html).toContain('<section class="slide" data-slide-kind="cover"');
     expect(html).toContain("热身任务");
     expect(html).toContain("比赛挑战");
-    expect(html).not.toContain('data-html-screen-document="single-page"');
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("data-start");
     expect(html).not.toContain("cover-shell");

@@ -1,14 +1,19 @@
+/**
+ * @module conversation-message-manifest
+ * 对话消息清单的 S3 存取。管理 S3 上的消息清单文件，
+ * 支持保存、列出对话消息，供聊天持久化和历史回溯使用。
+ */
 import { randomUUID } from "node:crypto";
 
 import { safeValidateUIMessages } from "ai";
 
-import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact-protocol";
+import { extractArtifactFromMessage, getMessageText } from "@/lib/artifact/protocol";
 import {
   persistedProjectMessageSchema,
   smartEduDataSchemas,
   type PersistedProjectMessage,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
 import {
   getS3ObjectText,

@@ -1,5 +1,5 @@
 import type { ArtifactLifecycle, ArtifactSnapshot } from "@/components/ai/artifact-model";
-import type { PersistedArtifactVersion } from "@/lib/lesson-authoring-contract";
+import type { PersistedArtifactVersion } from "@/lib/lesson/authoring-contract";
 
 export type ArtifactSourcePolicyInput = {
   hasLiveArtifactAuthority: boolean;

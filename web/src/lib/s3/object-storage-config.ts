@@ -1,3 +1,8 @@
+/**
+ * @module object-storage-config
+ * S3 对象存储配置读取。根据用途（artifact/export/workspace）
+ * 从环境变量读取对应的 S3 连接配置，支持多桶分离部署。
+ */
 import type { S3RestConfig } from "./s3-rest-client";
 
 type ObjectStoragePurpose = "artifact" | "export" | "workspace";

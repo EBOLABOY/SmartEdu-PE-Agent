@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   DEFAULT_STANDARDS_MARKET,
   standardsMarketSchema,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 import { getTextbookRetrievalProvider } from "../knowledge/provider-registry";
 import type {

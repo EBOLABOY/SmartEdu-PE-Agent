@@ -7,7 +7,7 @@ import {
   type PersistedProjectSummary,
   type PersistenceState,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { listArtifactVersionsByProject } from "@/lib/persistence/artifact-version-history";
 import {
   getProjectWorkspaceHistory,

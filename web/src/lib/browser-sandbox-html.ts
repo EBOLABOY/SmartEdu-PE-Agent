@@ -1,3 +1,8 @@
+/**
+ * @module browser-sandbox-html
+ * 浏览器沙箱 HTML 安全处理。对 AI 生成的 HTML 进行安全审查，
+ * 拦截外部资源加载、主动网络请求和危险 API 调用，生成安全沙箱标记。
+ */
 import { isArtifactImageProxyUrl } from "@/lib/s3/artifact-image-url";
 
 export type SandboxSecurityReport = {

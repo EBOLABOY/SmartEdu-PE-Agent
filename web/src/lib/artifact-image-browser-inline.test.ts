@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   blobToDataUrl,
   inlineArtifactImagesForBrowserHtml,
-} from "./artifact-image-browser-inline";
+} from "./artifact/image-browser-inline";
 
 const ARTIFACT_IMAGE_URL =
   "/api/projects/33333333-3333-3333-3333-333333333333/artifact-images/html-screen-visuals/request-1/01-image.png";

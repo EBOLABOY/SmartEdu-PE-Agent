@@ -1,4 +1,5 @@
-import type { CompetitionLessonPlan } from "@/lib/competition-lesson-contract";
+import type { CompetitionLessonPlan } from "@/lib/lesson/contract";
+import { isPlainObject } from "@/lib/utils/type-guards";
 
 export type LessonBusinessValidationIssue = {
   code: "empty-text" | "placeholder" | "section-missing" | "evaluation-levels";
@@ -13,10 +14,6 @@ export type LessonBusinessValidationResult = {
 
 const REQUIRED_PERIOD_STRUCTURES = ["准备部分", "基本部分", "结束部分"] as const;
 const REQUIRED_EVALUATION_LEVELS = ["三颗星", "二颗星", "一颗星"] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isPlaceholderText(value: string) {
   const normalized = value.trim();
@@ -66,7 +63,7 @@ function collectTextValidationIssues(
     return;
   }
 
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     return;
   }
 

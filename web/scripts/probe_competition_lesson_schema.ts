@@ -19,7 +19,7 @@ import {
   competitionLessonHeaderSchema,
   competitionLessonPlanSchema,
   competitionLessonTeachingDesignSchema,
-} from "../src/lib/competition-lesson-contract";
+} from "../src/lib/lesson/contract";
 import { createChatModel } from "../src/mastra/models";
 import { runModelOperationWithRetry } from "../src/mastra/skills/runtime/lesson_generation_skill";
 import {

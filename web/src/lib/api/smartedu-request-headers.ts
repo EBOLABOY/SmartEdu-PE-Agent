@@ -1,3 +1,8 @@
+/**
+ * @module smartedu-request-headers
+ * SmartEdu 自定义请求头处理。定义项目 ID 请求头，
+ * 提供请求头的读取、写入和校验工具函数。
+ */
 export const SMARTEDU_PROJECT_HEADER = "x-smartedu-project-id";
 
 export function getOptionalSmartEduProjectId(value: unknown) {

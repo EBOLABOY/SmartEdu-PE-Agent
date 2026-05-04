@@ -1,9 +1,14 @@
-import { extractArtifactFromMessage } from "@/lib/artifact-protocol";
+/**
+ * @module assistant-reference-ui
+ * AI 助手的参考资料与建议 UI 逻辑。提取课标引用条目，
+ * 根据当前状态生成上下文相关的用户建议和操作提示。
+ */
+import { extractArtifactFromMessage } from "@/lib/artifact/protocol";
 import type {
   SmartEduUIMessage,
   WorkflowStandardsReference,
   WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 export type AssistantSourceItem = {
   id: string;

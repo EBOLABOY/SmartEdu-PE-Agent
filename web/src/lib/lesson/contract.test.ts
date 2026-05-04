@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COMPETITION_LESSON_PLAN,
   competitionLessonPlanSchema,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 
 describe("competition-lesson-contract", () => {
   it("默认课时计划符合统一后的字符串数组正文块契约", () => {

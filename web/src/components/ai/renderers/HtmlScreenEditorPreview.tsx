@@ -1,60 +1,18 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-
-import {
-  buildHtmlScreenEditorPreviewDocument,
-  type HtmlScreenPageSelection,
-} from "@/lib/html-screen-editor";
-import type { HtmlArtifactPage } from "@/lib/lesson-authoring-contract";
+import React, { useEffect, useRef, useState } from "react";
 
 interface HtmlScreenEditorPreviewProps {
   htmlContent: string;
-  htmlPages?: HtmlArtifactPage[];
-  onSelectPage?: (page: HtmlScreenPageSelection) => void;
-  selectedPageIndex?: number | null;
 }
 
 export default function HtmlScreenEditorPreview({
   htmlContent,
-  htmlPages,
-  onSelectPage,
-  selectedPageIndex,
 }: HtmlScreenEditorPreviewProps) {
-  const pages = useMemo(
-    () => [...(htmlPages ?? [])].sort((left, right) => left.pageIndex - right.pageIndex),
-    [htmlPages],
-  );
-  const activePage =
-    pages.find((page) => page.pageIndex === selectedPageIndex) ??
-    pages.find((page) => page.pageIndex === pages[0]?.pageIndex) ??
-    pages[0];
-  const previewHtml = activePage
-    ? buildHtmlScreenEditorPreviewDocument({
-      htmlContent,
-      pageIndex: activePage.pageIndex,
-      sectionHtml: activePage.sectionHtml,
-    })
-    : htmlContent;
-
-  useEffect(() => {
-    if (!activePage || !onSelectPage) {
-      return;
-    }
-
-    onSelectPage({
-      pageIndex: activePage.pageIndex,
-      pageRole: activePage.pageRole,
-      pageTitle: activePage.pageTitle,
-    });
-  }, [activePage, onSelectPage]);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
   useEffect(() => {
-    if (!activePage) return;
-    
     const updateScale = () => {
       if (!containerRef.current) return;
       const { width, height } = containerRef.current.getBoundingClientRect();
@@ -70,9 +28,9 @@ export default function HtmlScreenEditorPreview({
       observer.observe(containerRef.current);
     }
     return () => observer.disconnect();
-  }, [activePage]);
+  }, []);
 
-  if (pages.length === 0 && !htmlContent) {
+  if (!htmlContent.trim()) {
     return (
       <div className="flex h-full items-center justify-center bg-slate-950 text-sm text-white/70">
         当前大屏缺少可预览内容，无法进入展示视图。
@@ -95,8 +53,8 @@ export default function HtmlScreenEditorPreview({
           className="h-full w-full border-none"
           loading="lazy"
           sandbox="allow-same-origin allow-scripts"
-          srcDoc={previewHtml}
-          title={activePage?.pageTitle ? `互动大屏预览：${activePage.pageTitle}` : "互动大屏预览"}
+          srcDoc={htmlContent}
+          title="互动大屏预览"
         />
       </div>
     </div>

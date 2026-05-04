@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { lessonIntakeResultSchema } from "@/lib/lesson-authoring-contract";
+import { lessonIntakeResultSchema } from "@/lib/lesson/authoring-contract";
 
 describe("lesson authoring contract", () => {
   it("accepts structured clarifications", () => {

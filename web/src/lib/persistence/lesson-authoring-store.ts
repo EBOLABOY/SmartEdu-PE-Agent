@@ -1,7 +1,12 @@
+/**
+ * @module lesson-authoring-store
+ * 教案创作产物的持久化。将结构化产物版本保存到 S3，
+ * 维护版本清单，创建教案创作持久化服务实例。
+ */
 import type {
   StructuredArtifactData,
   WorkflowTraceData,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
 
 import { saveArtifactVersionToS3Manifest } from "./artifact-version-manifest";

@@ -1,4 +1,4 @@
-import { DEFAULT_STANDARDS_MARKET, type StandardsMarket } from "@/lib/lesson-authoring-contract";
+import { DEFAULT_STANDARDS_MARKET, type StandardsMarket } from "@/lib/lesson/authoring-contract";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 

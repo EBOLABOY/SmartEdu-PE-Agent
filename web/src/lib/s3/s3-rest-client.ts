@@ -1,3 +1,8 @@
+/**
+ * @module s3-rest-client
+ * S3 兼容存储的 REST 客户端。基于 AWS Signature V4 签名，
+ * 提供对象上传、下载、删除等 S3 操作的纯 REST 实现。
+ */
 import { createHash, createHmac } from "node:crypto";
 
 export type S3RestConfig = {

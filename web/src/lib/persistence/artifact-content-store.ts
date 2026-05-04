@@ -1,3 +1,8 @@
+/**
+ * @module artifact-content-store
+ * 产物内容的 S3 对象存储。将产物 JSON/HTML 内容上传到 S3，
+ * 支持内容寻址（checksum 去重）和对象删除。
+ */
 import { createHash } from "node:crypto";
 
 import { getS3ObjectStorageConfig } from "@/lib/s3/object-storage-config";
@@ -6,7 +11,7 @@ import {
   putS3Object,
   type S3RestConfig,
 } from "@/lib/s3/s3-rest-client";
-import type { StructuredArtifactData } from "@/lib/lesson-authoring-contract";
+import type { StructuredArtifactData } from "@/lib/lesson/authoring-contract";
 
 const ARTIFACT_CONTENT_S3_PROVIDER = "s3-compatible" as const;
 

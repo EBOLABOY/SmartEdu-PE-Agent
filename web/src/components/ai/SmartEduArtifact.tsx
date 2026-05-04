@@ -36,8 +36,7 @@ import HtmlScreenEditorPreview from "@/components/ai/renderers/HtmlScreenEditorP
 import HtmlGenerationPanel from "@/components/ai/renderers/HtmlGenerationPanel";
 import IframeSandbox from "@/components/ai/renderers/IframeSandbox";
 import CompetitionLessonPrintFrame from "@/components/lesson-print/CompetitionLessonPrintFrame";
-import type { ArtifactView } from "@/lib/lesson-authoring-contract";
-import type { HtmlScreenPageSelection } from "@/lib/html-screen-editor";
+import type { ArtifactView } from "@/lib/lesson/authoring-contract";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -52,11 +51,9 @@ interface SmartEduArtifactProps {
   isRestoringVersion?: boolean;
   onActiveViewChange?: (view: ArtifactView) => void;
   projectId?: string | null;
-  selectedHtmlPage?: HtmlScreenPageSelection | null;
   showDesktopGenerateAction?: boolean;
   onGenerateHtml: () => void;
   onRestoreArtifactVersion?: (snapshot: ArtifactSnapshot) => Promise<void> | void;
-  onSelectHtmlPage?: (page: HtmlScreenPageSelection) => void;
 }
 
 const STATUS_LABELS: Record<ArtifactLifecycleStatus, string> = {
@@ -195,11 +192,9 @@ export default function SmartEduArtifact({
   isRestoringVersion = false,
   onActiveViewChange,
   projectId,
-  selectedHtmlPage,
   showDesktopGenerateAction = true,
   onGenerateHtml,
   onRestoreArtifactVersion,
-  onSelectHtmlPage,
 }: SmartEduArtifactProps) {
   const {
     activeView,
@@ -356,9 +351,6 @@ export default function SmartEduArtifact({
                     <div className="min-h-0 flex-1">
                         <HtmlScreenEditorPreview
                           htmlContent={html}
-                          htmlPages={lifecycle.htmlPages}
-                          onSelectPage={onSelectHtmlPage}
-                          selectedPageIndex={selectedHtmlPage?.pageIndex}
                         />
                       </div>
                     </div>

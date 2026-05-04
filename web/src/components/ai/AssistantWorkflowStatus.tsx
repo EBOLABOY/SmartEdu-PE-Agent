@@ -20,7 +20,7 @@ import {
   type AssistantWorkflowDetailStatus,
   type AssistantWorkflowState,
 } from "@/lib/assistant-workflow-status";
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 import { cn } from "@/lib/utils";
 
 /* ── Status indicator ──────────────────────────────── */

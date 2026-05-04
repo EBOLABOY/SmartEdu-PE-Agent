@@ -1,5 +1,5 @@
 import type { ArtifactLifecycle } from "@/components/ai/artifact-model";
-import type { ArtifactView } from "@/lib/lesson-authoring-contract";
+import type { ArtifactView } from "@/lib/lesson/authoring-contract";
 
 export type LessonArtifactDisplayState = {
   hasLesson: boolean;
@@ -68,7 +68,7 @@ export function getHtmlArtifactDisplayState(
   lifecycle: ArtifactLifecycle,
   isHtmlGenerationPending = false,
 ): HtmlArtifactDisplayState {
-  const hasHtml = Boolean(lifecycle.html.trim() && lifecycle.htmlPages?.length);
+  const hasHtml = Boolean(lifecycle.html.trim());
   const isStreaming = lifecycle.stage === "html" && lifecycle.isHtmlStreaming;
   const isPendingRequest = isHtmlGenerationPending && !isStreaming && !hasHtml;
 

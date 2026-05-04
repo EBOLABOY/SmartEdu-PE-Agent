@@ -1,15 +1,21 @@
+﻿/**
+ * @module lesson-memory-store
+ * 教案创作记忆的持久化。加载和保存用户上下文与意图采集结果，
+ * 支持增量记忆合并，创建记忆持久化服务实例。
+ */
 import {
   buildLessonAuthoringMemoryPatch,
   mergeLessonAuthoringMemory,
-} from "@/lib/lesson-authoring-memory";
+} from "@/lib/lesson/authoring-memory";
 import {
   lessonAuthoringMemorySchema,
   type LessonAuthoringMemory,
   type LessonIntakeResult,
   type PeTeacherContext,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import type { Json } from "@/lib/supabase/database.types";
 import type { SmartEduSupabaseClient } from "@/lib/supabase/typed-client";
+import { deepClone, isPlainObject } from "@/lib/utils/type-guards";
 
 const LESSON_MEMORY_METADATA_KEY = "lessonAuthoringMemory";
 
@@ -24,15 +30,12 @@ export type LessonMemoryPersistence = {
 };
 
 function toJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value)) as Json;
+  return deepClone(value) as Json;
 }
 
-function isJsonObject(value: Json): value is { [key: string]: Json | undefined } {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function parseMetadata(value: Json) {
-  return isJsonObject(value) ? { ...value } : {};
+  return isPlainObject(value) ? { ...value } : {};
 }
 
 function readMemoryFromMetadata(metadata: Json) {

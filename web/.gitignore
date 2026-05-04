@@ -18,6 +18,12 @@
 /.next/
 /out/
 
+# 构建缓存和产物
+.codex-logs/
+
+# 外部数据
+.external/
+
 # production
 /build
 

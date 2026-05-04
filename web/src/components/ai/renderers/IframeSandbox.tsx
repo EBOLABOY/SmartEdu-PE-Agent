@@ -3,7 +3,7 @@
 import { Info, Maximize2, Minimize2, ShieldAlert } from "lucide-react";
 import React, { useEffect, useState, type CSSProperties } from "react";
 
-import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact-image-browser-inline";
+import { inlineArtifactImagesForBrowserHtml } from "@/lib/artifact/image-browser-inline";
 import {
   analyzeBrowserSandboxHtml,
   injectBrowserSandboxCsp,

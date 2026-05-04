@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
-import { buildCompetitionLessonPrintHtml } from "@/lib/competition-lesson-print-document";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
+import { buildCompetitionLessonPrintHtml } from "@/lib/lesson/print-document";
 
 describe("competition-lesson-print-document", () => {
   it("会生成独立可打印的 A4 课时计划 HTML 文档", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { SmartEduUIMessage } from "@/lib/lesson-authoring-contract";
+import type { SmartEduUIMessage } from "@/lib/lesson/authoring-contract";
 
 import { buildAssistantWorkflowState } from "./assistant-workflow-status";
 

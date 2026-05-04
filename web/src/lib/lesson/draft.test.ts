@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCompetitionLessonDraft } from "@/lib/competition-lesson-draft";
+import { buildCompetitionLessonDraft } from "@/lib/lesson/draft";
 
 describe("competition-lesson-draft", () => {
   it("builds a schema-valid default draft before the model emits partial output", () => {

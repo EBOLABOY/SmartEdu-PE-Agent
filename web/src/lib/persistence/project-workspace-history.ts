@@ -1,7 +1,12 @@
+/**
+ * @module project-workspace-history
+ * 项目工作区历史聚合。从数据库和 S3 目录清单中聚合
+ * 用户项目列表，提供项目标题推导和项目摘要转换。
+ */
 import {
   competitionLessonPlanSchema,
   type CompetitionLessonPlan,
-} from "@/lib/competition-lesson-contract";
+} from "@/lib/lesson/contract";
 import {
   persistedConversationSchema,
   persistedProjectSummarySchema,
@@ -9,7 +14,7 @@ import {
   type PersistedConversation,
   type PersistedProjectMessage,
   type PersistedProjectSummary,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 import { toIsoDateTime } from "@/lib/date-time";
 import {
   readProjectDirectoryManifest,

@@ -1,3 +1,15 @@
+/**
+ * @file Supabase 数据库类型定义（自动生成）
+ *
+ * ⚠️ 此文件由 `npm run generate:supabase-types` 自动生成，请勿手动修改。
+ * 任何手动更改将在下次生成时被覆盖。
+ *
+ * 导出类型：
+ * - Database  — 完整数据库 Schema 类型（Tables、Enums、Functions 等）
+ * - Json      — JSON 列的通用类型
+ * - Tables    — 表级别的 Row/Insert/Update 辅助类型
+ * - Constants — 枚举常量值
+ */
 export type Json =
   | string
   | number

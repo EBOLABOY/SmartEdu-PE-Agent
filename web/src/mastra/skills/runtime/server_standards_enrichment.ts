@@ -1,4 +1,4 @@
-import type { StandardsMarket, WorkflowTraceEntry } from "@/lib/lesson-authoring-contract";
+import type { StandardsMarket, WorkflowTraceEntry } from "@/lib/lesson/authoring-contract";
 import type { LessonWorkflowInput, LessonWorkflowOutput } from "@/mastra/workflows/lesson_workflow";
 
 import { runStandardsRetrievalSkill } from "./standards_retrieval_skill";

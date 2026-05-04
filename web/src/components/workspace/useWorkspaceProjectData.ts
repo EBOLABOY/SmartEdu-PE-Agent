@@ -5,7 +5,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import type {
   PersistedArtifactVersion,
   PersistedProjectSummary,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 interface UseWorkspaceProjectDataInput {
   initialCurrentProject: PersistedProjectSummary | null;

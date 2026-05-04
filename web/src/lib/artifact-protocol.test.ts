@@ -5,14 +5,14 @@ import {
   extractArtifactFromMessage,
   getMessageReasoningText,
   getStructuredArtifactPart,
-} from "@/lib/artifact-protocol";
-import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/competition-lesson-contract";
+} from "@/lib/artifact/protocol";
+import { DEFAULT_COMPETITION_LESSON_PLAN } from "@/lib/lesson/contract";
 import {
   chatRequestBodySchema,
   persistedArtifactVersionSchema,
   structuredArtifactDataSchema,
   type SmartEduUIMessage,
-} from "@/lib/lesson-authoring-contract";
+} from "@/lib/lesson/authoring-contract";
 
 describe("artifact-protocol", () => {
   it("使用 AI SDK v6 原生 data-${name} part 识别结构化数据", () => {
@@ -150,16 +150,10 @@ describe("artifact-protocol", () => {
 
     expect(extracted.html).toContain("<h1>OK</h1>");
     expect(extracted.htmlComplete).toBe(true);
-    expect(extracted.htmlPages).toHaveLength(1);
-    expect(extracted.htmlPages?.[0]).toMatchObject({
-      pageIndex: 0,
-      pageRole: "cover",
-      pageTitle: "OK",
-    });
     expect(extracted.lessonContent).toBe("");
   });
 
-  it("schema 会拒绝缺少 htmlPages 的 html artifact 与 persisted version", () => {
+  it("schema 允许 html artifact 与 persisted version 只携带完整 HTML 文件", () => {
     expect(
       structuredArtifactDataSchema.safeParse({
         protocolVersion: "structured-v1",
@@ -171,7 +165,7 @@ describe("artifact-protocol", () => {
         source: "data-part",
         updatedAt: new Date().toISOString(),
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       persistedArtifactVersionSchema.safeParse({
         id: "11111111-1111-4111-8111-111111111111",
@@ -184,7 +178,7 @@ describe("artifact-protocol", () => {
         versionNumber: 1,
         createdAt: new Date().toISOString(),
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("能从结构化 lesson-json data part 中保留 JSON 内容并解析 lessonPlan", () => {

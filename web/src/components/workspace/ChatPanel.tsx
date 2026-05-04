@@ -22,8 +22,7 @@ import {
   getAttachmentErrorMessage,
 } from "@/components/workspace/chat-attachment-limits";
 import { StateNotice } from "@/components/ui/state-surface";
-import type { SmartEduUIMessage, ArtifactView } from "@/lib/lesson-authoring-contract";
-import type { HtmlScreenPageSelection } from "@/lib/html-screen-editor";
+import type { SmartEduUIMessage, ArtifactView } from "@/lib/lesson/authoring-contract";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 
@@ -36,18 +35,15 @@ interface ChatPanelProps {
   messages: SmartEduUIMessage[];
   onSubmitPrompt: (message: PromptInputMessage) => void;
   projectTitle?: string;
-  selectedHtmlPage?: HtmlScreenPageSelection | null;
   status: ChatStatus;
   stop: () => void;
 }
 
 function buildInputPlaceholder(input: {
   activeArtifactView?: ArtifactView;
-  selectedHtmlPage?: HtmlScreenPageSelection | null;
 }) {
-  if (input.activeArtifactView === "canvas" && input.selectedHtmlPage) {
-    const pageTitle = input.selectedHtmlPage.pageTitle?.trim() || `第 ${input.selectedHtmlPage.pageIndex + 1} 页`;
-    return `当前锁定“${pageTitle}”，描述这一页要修改的标题、布局、文案、图示或配色...`;
+  if (input.activeArtifactView === "canvas") {
+    return "描述要修改的大屏文案、布局、图示、配色或课堂节奏，系统会重新生成完整 HTML 文件...";
   }
 
   return "描述要生成或修改的课时计划、大屏、课堂组织、评价与安全要求...";
@@ -60,12 +56,9 @@ export default function ChatPanel({
   messages,
   onSubmitPrompt,
   projectTitle,
-  selectedHtmlPage,
   status,
   stop,
 }: ChatPanelProps) {
-  const selectedPageTitle = selectedHtmlPage?.pageTitle?.trim() || `第 ${(selectedHtmlPage?.pageIndex ?? 0) + 1} 页`;
-
   return (
     <aside className="z-40 flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-border/80 bg-card/95">
       <div className="flex min-h-20 shrink-0 items-center justify-between border-b border-border/70 bg-card px-4">
@@ -81,14 +74,6 @@ export default function ChatPanel({
               ? "项目历史已恢复，可继续修改课时计划、互动大屏或课堂节奏。"
               : "输入课堂目标，系统会生成结构化课时计划并同步右侧工作台。"}
           </p>
-          {activeArtifactView === "canvas" && selectedHtmlPage ? (
-            <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-brand/20 bg-brand/10 px-2.5 py-1 text-[11px] text-brand">
-              <span className="shrink-0 rounded-full bg-brand/12 px-2 py-0.5 font-medium">
-                当前页
-              </span>
-              <span className="truncate">{selectedPageTitle}</span>
-            </div>
-          ) : null}
           <div className="mt-2 hidden gap-1.5 text-[10px] text-muted-foreground 2xl:flex">
             <span className="rounded-full border border-border/70 bg-background/55 px-2 py-0.5">课时计划</span>
             <span className="rounded-full border border-border/70 bg-background/55 px-2 py-0.5">安全</span>
@@ -147,7 +132,6 @@ export default function ChatPanel({
                   disabled={isLoading}
                   placeholder={buildInputPlaceholder({
                     activeArtifactView,
-                    selectedHtmlPage,
                   })}
                 />
               </PromptInputBody>

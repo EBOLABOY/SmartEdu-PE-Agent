@@ -8,7 +8,7 @@ import {
 import { analyzeRequirementsTool } from "../tools/lesson_authoring_tools";
 import { searchStandardsTool } from "../tools/search_standards";
 
-export type { GenerationMode, PeTeacherContext } from "@/lib/lesson-authoring-contract";
+export type { GenerationMode, PeTeacherContext } from "@/lib/lesson/authoring-contract";
 export { buildPeTeacherSystemPrompt, PE_TEACHER_SYSTEM_PROMPT };
 
 export function createPeTeacherAgent(model: AgentConfig["model"]) {

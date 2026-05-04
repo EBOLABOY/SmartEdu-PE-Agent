@@ -1,3 +1,8 @@
+/**
+ * @module sandbox-viewport
+ * 沙箱视口缩放计算。根据设计稿尺寸和容器尺寸，
+ * 计算 iframe 缩放比例和定位参数，实现响应式沙箱预览。
+ */
 export const SANDBOX_DESIGN_WIDTH = 1920;
 export const SANDBOX_DESIGN_HEIGHT = 1080;
 
